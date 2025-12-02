@@ -5,6 +5,8 @@
 // НИ ОДНОГО JSON-файла на диске.
 
 import puppeteer from "puppeteer";
+import { mapToRiotSlug } from "../utils/slugRemap.mjs";
+import { NAME_PATCHES } from "../utils/slugRemap.mjs";
 
 // ----- Константы китайских эндпоинтов -----
 
@@ -222,7 +224,6 @@ function buildChampionFromCn(slug, heroId, heroObj, rawJson) {
   const cnHeroId = hero.heroId ? String(hero.heroId) : String(heroId);
 
   const zhName = hero.name ?? null;
-  const alias = hero.alias ?? heroObj?.alias ?? null;
 
   // ----- роли из китайских данных -----
   const rolesRaw = Array.isArray(hero.roles) ? hero.roles : [];
@@ -246,9 +247,8 @@ function buildChampionFromCn(slug, heroId, heroObj, rawJson) {
     slug,
     cnHeroId,
     names: {
-      // эти поля потом будут перезаписаны Riot-именами
       ru_ru: null,
-      en_us: alias || null, // сейчас это пиньинь/алиас, Riot потом даст нормальное имя
+      en_us: null,
       zh_cn: zhName,
     },
     roles: roleKeys,
@@ -377,14 +377,23 @@ export async function getChampions() {
 
     // 4) Мержим: имена с Riot, роли/сложность локализуем через маппинг
     for (const champ of champions) {
-      const slug = champ.slug;
+      const riotSlug = mapToRiotSlug(champ.slug);
 
-      // Имена
-      const localeNames = riotNames.get(slug) || {};
+      // Имена из Riot
+      const localeNames = riotNames.get(riotSlug) || {};
       champ.names = {
         ...(champ.names || {}),
         ...localeNames,
       };
+
+      // Ручной фикс имён (если после скрапа что-то не нашлось)
+      const patch = NAME_PATCHES[champ.slug];
+      if (patch) {
+        champ.names = {
+          ...champ.names,
+          ...patch,
+        };
+      }
 
       // Роли – гарантированно массив ключей
       if (!Array.isArray(champ.roles)) {
@@ -413,17 +422,6 @@ export async function getChampions() {
         : null;
     }
 
-    // На выходе объект под твой импорт в БД / API:
-    // {
-    //   slug,
-    //   cnHeroId,
-    //   names: { ru_ru, en_us, zh_cn },
-    //   roles: ["fighter","tank"],
-    //   rolesLocalized: { ru_ru:[..], en_us:[..], zh_cn:[..] },
-    //   difficulty: "easy",
-    //   difficultyLocalized: { ru_ru:"Лёгкая", ... },
-    //   icon
-    // }
     return champions;
   } finally {
     await browser.close();
