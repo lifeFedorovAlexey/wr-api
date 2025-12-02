@@ -2,7 +2,7 @@ name: Update champions
 
 on:
   schedule:
-    - cron: "0 3 * * *" # каждый день в 03:00 UTC
+    - cron: "0 7 * * *" # каждый день в 03:00 UTC
   workflow_dispatch: # запуск руками
 
 jobs:
@@ -21,7 +21,12 @@ jobs:
       - name: Install deps
         run: npm ci
 
-      - name: Run import script
+      - name: Import champions
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: node scripts/import-champions.mjs
+
+      - name: Import CN history
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: node scripts/import-cn-history.mjs
