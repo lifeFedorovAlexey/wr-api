@@ -5,6 +5,7 @@
 
 import "dotenv/config";
 import { db } from "../db/client.js";
+import { client } from "../db/client.js";
 import { champions, championStatsHistory } from "../db/schema.js";
 
 // URL китайской статистики по винрейту
@@ -184,7 +185,25 @@ async function main() {
   log("✅ import-cn-history.mjs завершён");
 }
 
-main().catch((err) => {
-  console.error("❌ Ошибка в import-cn-history.mjs:", err);
-  process.exit(1);
-});
+main()
+  .then(async () => {
+    // корректно закрываем коннект к БД
+    try {
+      await client.end();
+    } catch (e) {
+      console.warn(
+        "⚠ Не удалось корректно закрыть клиент Postgres:",
+        e?.message || e
+      );
+    }
+    process.exit(0);
+  })
+  .catch(async (err) => {
+    console.error("❌ Ошибка в import-cn-history.mjs:", err);
+    try {
+      await client.end();
+    } catch {
+      // игнор
+    }
+    process.exit(1);
+  });
