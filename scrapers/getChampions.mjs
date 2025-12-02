@@ -100,8 +100,12 @@ const DIFFICULTY_LABELS = {
 const DIFFICULTY_KEY_FROM_SCORE = (scoreRaw) => {
   const n = safeNumber(scoreRaw);
   if (n == null) return "medium";
-  if (n <= 3) return "easy";
-  if (n >= 8) return "hard";
+
+  if (n === 1) return "easy";
+  if (n === 2) return "medium";
+  if (n === 3) return "hard";
+
+  // если вдруг когда-нибудь появятся другие значения
   return "medium";
 };
 
