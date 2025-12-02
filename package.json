@@ -1,0 +1,16 @@
+{
+  "name": "wr-api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Public Wild Rift API",
+  "type": "module",
+  "scripts": {
+    "import:champions": "node ./scripts/import-champions.mjs"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "drizzle-orm": "^0.38.0",
+    "postgres": "^3.4.4",
+    "puppeteer": "^24.31.0"
+  }
+}
