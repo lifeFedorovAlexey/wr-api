@@ -12,5 +12,8 @@
     "drizzle-orm": "^0.38.0",
     "postgres": "^3.4.4",
     "puppeteer": "^24.31.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0"
   }
 }
