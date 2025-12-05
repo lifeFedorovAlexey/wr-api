@@ -8,6 +8,7 @@ import {
   doublePrecision,
   timestamp,
   serial,
+  bigint,
 } from "drizzle-orm/pg-core";
 
 export const champions = pgTable("champions", {
@@ -35,6 +36,20 @@ export const championStatsHistory = pgTable("champion_stats_history", {
   banRate: doublePrecision("ban_rate"),
   strengthLevel: integer("strength_level"),
   createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+// 👇 новая таблица логов открытий WebApp
+export const webappOpens = pgTable("webapp_opens", {
+  id: serial("id").primaryKey(),
+
+  tgId: bigint("tg_id", { mode: "number" }).notNull(),
+  username: text("username"),
+  firstName: text("first_name"),
+  lastName: text("last_name"),
+
+  openedAt: timestamp("opened_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
 });
