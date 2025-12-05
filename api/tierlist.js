@@ -22,24 +22,22 @@ function toDateString(value) {
 // маппинг strengthLevel -> тир + цвет
 // маппинг strengthLevel -> тир + цвет (НОВЫЙ)
 function strengthToTier(level) {
-  if (level == null) {
-    return { label: "—", color: "#9ca3af" };
-  }
+  if (level == null) return "C"; // по умолчанию серединка
 
   switch (level) {
     case 0:
-      return { label: "S+", color: "#f97316" }; // имба
+      return "S+";
     case 1:
-      return { label: "S", color: "#f97316" };
+      return "S";
     case 2:
-      return { label: "A", color: "#22c55e" };
+      return "A";
     case 3:
-      return { label: "B", color: "#eab308" };
+      return "B";
     case 4:
-      return { label: "C", color: "#9ca3af" };
+      return "C";
     case 5:
     default:
-      return { label: "D", color: "#6b7280" };
+      return "D";
   }
 }
 
