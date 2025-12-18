@@ -1,7 +1,7 @@
 // api/champion-history.js
 import { db } from "../db/client.js";
 import { championStatsHistory } from "../db/schema.js";
-import { setCors } from "../utils/cors.js";
+import { setCors } from "./utils/cors.js";
 
 import { and, asc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 
