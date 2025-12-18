@@ -1,6 +1,9 @@
 // api/champion-history.js
 import { db } from "../db/client.js";
 import { championStatsHistory } from "../db/schema.js";
+import { setCors } from "../utils/cors.js";
+
+import { and, asc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 
 // Простейший нормалайзер дат: Date -> 'YYYY-MM-DD'
 function toDateString(value) {
@@ -10,21 +13,48 @@ function toDateString(value) {
     return value.toISOString().slice(0, 10);
   }
 
-  // если пришла строка из БД/Drizzle
   const str = String(value);
   if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
 
-  // попытка привести к Date
   const d = new Date(str);
   if (Number.isNaN(d.getTime())) return null;
   return d.toISOString().slice(0, 10);
 }
 
+function splitListParam(v, maxItems) {
+  if (typeof v !== "string") return null;
+  const s = v.trim();
+  if (!s) return null;
+
+  const arr = s
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+
+  if (arr.length > maxItems) {
+    const err = new Error(`Too many values (max ${maxItems})`);
+    err.statusCode = 400;
+    throw err;
+  }
+
+  return arr.length ? arr : null;
+}
+
+function parseDateParam(v) {
+  if (typeof v !== "string") return null;
+  const s = v.trim();
+  if (!s) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const err = new Error("Invalid date format. Use YYYY-MM-DD.");
+    err.statusCode = 400;
+    throw err;
+  }
+  return s;
+}
+
 export default async function handler(req, res) {
-  // CORS
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  // CORS через util
+  setCors(req, res);
 
   if (req.method === "OPTIONS") return res.status(204).end();
   if (req.method !== "GET") {
@@ -34,67 +64,68 @@ export default async function handler(req, res) {
   const { slug, rank, lane, date, from, to } = req.query;
 
   try {
-    // Берём всё из таблицы истории
-    const rows = await db.select().from(championStatsHistory);
+    // 1) Валидация и нормализация фильтров (выходной формат сохраняем)
+    const safeSlug =
+      typeof slug === "string" && slug.trim() ? slug.trim() : null;
 
-    // Подготовим фильтры
-    const rankList =
-      typeof rank === "string" && rank.trim()
-        ? rank.split(",").map((v) => v.trim())
-        : null;
+    if (safeSlug && safeSlug.length > 64) {
+      return res.status(400).json({ error: "Invalid slug" });
+    }
 
-    const laneList =
-      typeof lane === "string" && lane.trim()
-        ? lane.split(",").map((v) => v.trim())
-        : null;
+    const rankList = splitListParam(rank, 10); // не даём прислать мегасписи
+    const laneList = splitListParam(lane, 10);
 
     let fromDate = null;
     let toDate = null;
 
-    if (typeof date === "string" && date.trim()) {
-      fromDate = date.trim();
-      toDate = date.trim();
+    const dateOne = parseDateParam(date);
+    if (dateOne) {
+      fromDate = dateOne;
+      toDate = dateOne;
     } else {
-      if (typeof from === "string" && from.trim()) {
-        fromDate = from.trim();
-      }
-      if (typeof to === "string" && to.trim()) {
-        toDate = to.trim();
-      }
+      fromDate = parseDateParam(from);
+      toDate = parseDateParam(to);
     }
 
-    const filtered = rows.filter((row) => {
-      const rowDate = toDateString(row.date);
+    // 2) Собираем WHERE в SQL (вместо rows.filter)
+    const conditions = [];
 
-      if (slug && row.slug !== slug) return false;
+    if (safeSlug) {
+      conditions.push(eq(championStatsHistory.slug, safeSlug));
+    }
 
-      if (rankList && rankList.length > 0 && !rankList.includes(row.rank)) {
-        return false;
-      }
+    if (rankList && rankList.length > 0) {
+      conditions.push(inArray(championStatsHistory.rank, rankList));
+    }
 
-      if (laneList && laneList.length > 0 && !laneList.includes(row.lane)) {
-        return false;
-      }
+    if (laneList && laneList.length > 0) {
+      conditions.push(inArray(championStatsHistory.lane, laneList));
+    }
 
-      if (fromDate && rowDate && rowDate < fromDate) return false;
-      if (toDate && rowDate && rowDate > toDate) return false;
+    // date диапазон (колонка date), сравнение через ::date чтобы не было сюрпризов
+    if (fromDate) {
+      conditions.push(gte(championStatsHistory.date, sql`${fromDate}::date`));
+    }
+    if (toDate) {
+      conditions.push(lte(championStatsHistory.date, sql`${toDate}::date`));
+    }
 
-      return true;
-    });
+    const whereClause = conditions.length ? and(...conditions) : undefined;
 
-    // Можно отсортировать: по дате, потом по slug, rank, lane
-    filtered.sort((a, b) => {
-      const da = toDateString(a.date) || "";
-      const dbb = toDateString(b.date) || "";
+    // 3) Запрос сразу отсортированный в БД
+    const rows = await db
+      .select()
+      .from(championStatsHistory)
+      .where(whereClause)
+      .orderBy(
+        asc(championStatsHistory.date),
+        asc(championStatsHistory.slug),
+        asc(championStatsHistory.rank),
+        asc(championStatsHistory.lane)
+      );
 
-      if (da !== dbb) return da.localeCompare(dbb);
-      if (a.slug !== b.slug) return a.slug.localeCompare(b.slug);
-      if (a.rank !== b.rank) return a.rank.localeCompare(b.rank);
-      if (a.lane !== b.lane) return a.lane.localeCompare(b.lane);
-      return 0;
-    });
-
-    const items = filtered.map((row) => ({
+    // 4) Формат ответа — как у тебя
+    const items = rows.map((row) => ({
       date: toDateString(row.date),
       slug: row.slug,
       cnHeroId: row.cnHeroId,
@@ -109,7 +140,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       filters: {
-        slug: slug || null,
+        slug: safeSlug || null,
         rank: rankList,
         lane: laneList,
         from: fromDate,
@@ -119,9 +150,11 @@ export default async function handler(req, res) {
       items,
     });
   } catch (e) {
+    const status =
+      e?.statusCode && Number.isInteger(e.statusCode) ? e.statusCode : 500;
     console.error("[wr-api] /api/champion-history error:", e);
-    return res
-      .status(500)
-      .json({ error: "Internal Server Error", message: e.message });
+    return res.status(status).json({
+      error: status === 400 ? "Bad Request" : "Internal Server Error",
+    });
   }
 }
