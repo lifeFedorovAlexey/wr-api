@@ -1,8 +1,11 @@
 // api/tierlist.js
 import { db } from "../db/client.js";
 import { championStatsHistory, champions } from "../db/schema.js";
+import { setCors } from "./utils/cors.js";
 
-// Простейший нормалайзер дат: Date -> 'YYYY-MM-DD'
+import { and, desc, eq, sql } from "drizzle-orm";
+
+// Date -> 'YYYY-MM-DD'
 function toDateString(value) {
   if (!value) return null;
 
@@ -18,11 +21,9 @@ function toDateString(value) {
   return d.toISOString().slice(0, 10);
 }
 
-// маппинг strengthLevel -> тир
-// маппинг strengthLevel -> тир + цвет
-// маппинг strengthLevel -> тир + цвет (НОВЫЙ)
+// strengthLevel -> tier
 function strengthToTier(level) {
-  if (level == null) return "C"; // по умолчанию серединка
+  if (level == null) return "C";
 
   switch (level) {
     case 0:
@@ -43,48 +44,42 @@ function strengthToTier(level) {
 
 export default async function handler(req, res) {
   // CORS
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  setCors(req, res);
 
   if (req.method === "OPTIONS") return res.status(204).end();
   if (req.method !== "GET") {
     return res.status(405).json({ error: "Method Not Allowed" });
   }
 
-  // rank и lane — фильтры для тирлиста
   const { rank, lane, lang } = req.query;
 
   const rankKey =
     typeof rank === "string" && rank.trim() ? rank.trim() : "diamondPlus";
   const laneKey = typeof lane === "string" && lane.trim() ? lane.trim() : "top";
-
   const language =
     typeof lang === "string" && lang.trim() ? lang.trim() : "ru_ru";
 
   try {
-    // 1) Забираем всю историю и всех чемпионов
-    const [historyRows, championsRows] = await Promise.all([
-      db.select().from(championStatsHistory),
-      db.select().from(champions),
-    ]);
+    // 1) Узнаём последнюю дату ТОЛЬКО для нужных rank+lane
+    const latestRow = await db
+      .select({
+        date: championStatsHistory.date,
+      })
+      .from(championStatsHistory)
+      .where(
+        and(
+          eq(championStatsHistory.rank, rankKey),
+          eq(championStatsHistory.lane, laneKey)
+        )
+      )
+      .orderBy(desc(championStatsHistory.date))
+      .limit(1);
 
-    // 2) Мап по slug -> champion
-    const champBySlug = {};
-    for (const ch of championsRows) {
-      if (!ch || !ch.slug) continue;
-      champBySlug[ch.slug] = ch;
-    }
+    const latestDate = latestRow.length
+      ? toDateString(latestRow[0].date)
+      : null;
 
-    // 3) Фильтруем по rank+lane
-    const filtered = historyRows.filter((row) => {
-      if (!row) return false;
-      if (row.rank !== rankKey) return false;
-      if (row.lane !== laneKey) return false;
-      return true;
-    });
-
-    if (!filtered.length) {
+    if (!latestDate) {
       return res.status(200).json({
         filters: {
           rank: rankKey,
@@ -104,23 +99,27 @@ export default async function handler(req, res) {
       });
     }
 
-    // 4) Находим последнюю дату для этого rank+lane
-    let latestDate = null;
-    for (const row of filtered) {
-      const d = toDateString(row.date);
-      if (!d) continue;
-      if (!latestDate || d > latestDate) {
-        latestDate = d;
-      }
+    // 2) Берём ТОЛЬКО нужные строки истории (rank+lane+date)
+    const historyRows = await db
+      .select()
+      .from(championStatsHistory)
+      .where(
+        and(
+          eq(championStatsHistory.rank, rankKey),
+          eq(championStatsHistory.lane, laneKey),
+          eq(championStatsHistory.date, sql`${latestDate}::date`)
+        )
+      );
+
+    // 3) Чемпионы (маленькая таблица, можно целиком)
+    const championsRows = await db.select().from(champions);
+
+    const champBySlug = {};
+    for (const ch of championsRows) {
+      if (ch?.slug) champBySlug[ch.slug] = ch;
     }
 
-    // 5) Оставляем только последнюю дату
-    const latestRows = filtered.filter((row) => {
-      const d = toDateString(row.date);
-      return d && d === latestDate;
-    });
-
-    // 6) Собираем тирлист по strengthLevel
+    // 4) Собираем тиры
     const tiersOrder = ["S+", "S", "A", "B", "C", "D"];
     const tiers = {
       "S+": [],
@@ -131,31 +130,24 @@ export default async function handler(req, res) {
       D: [],
     };
 
-    for (const row of latestRows) {
+    for (const row of historyRows) {
       const slug = row.slug;
       if (!slug) continue;
 
       const tier = strengthToTier(row.strengthLevel);
-
       const ch = champBySlug[slug];
 
-      // локализованное имя
       let displayName = slug;
       if (ch) {
         const nameLoc = ch.nameLocalizations || {};
-        const byLang = nameLoc[language];
-        const en = nameLoc.en_us;
-        const baseName = ch.name;
-        displayName = byLang || en || baseName || slug;
+        displayName = nameLoc[language] || nameLoc.en_us || ch.name || slug;
       }
-
-      const icon = ch?.icon || null;
 
       tiers[tier].push({
         slug,
         cnHeroId: row.cnHeroId,
         name: displayName,
-        icon,
+        icon: ch?.icon || null,
         rank: row.rank,
         lane: row.lane,
         date: latestDate,
@@ -167,7 +159,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // 7) Внутри каждого тира отсортируем по winRate desc, потом по pickRate desc
+    // 5) Сортировка внутри тиров (как у тебя)
     for (const key of tiersOrder) {
       tiers[key].sort((a, b) => {
         const aw = a.winRate ?? 0;
@@ -192,8 +184,6 @@ export default async function handler(req, res) {
     });
   } catch (e) {
     console.error("[wr-api] /api/tierlist error:", e);
-    return res
-      .status(500)
-      .json({ error: "Internal Server Error", message: e.message });
+    return res.status(500).json({ error: "Internal Server Error" });
   }
 }

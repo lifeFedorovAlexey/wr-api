@@ -1,12 +1,11 @@
 // api/champions.js
 import { db } from "../db/client.js";
 import { champions } from "../db/schema.js";
+import { setCors } from "./utils/cors.js";
 
 export default async function handler(req, res) {
-  // CORS
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  // CORS через util
+  setCors(req, res);
 
   if (req.method === "OPTIONS") return res.status(204).end();
   if (req.method !== "GET") {
@@ -34,27 +33,13 @@ export default async function handler(req, res) {
 
       return {
         slug: ch.slug,
-
-        // уже локализованное имя по ?lang=
         name: localizedName,
-
-        // полный словарь имён
         nameLocalizations,
-
-        // ключи ролей (для фильтров / логики)
         roles: ch.roles || [],
-
-        // локализованные роли под текущий lang
         rolesLocalized: localizedRoles,
-
-        // ключ сложности
         difficulty: ch.difficulty || null,
-
-        // локализованная сложность
         difficultyLocalized: localizedDifficulty,
-
         icon: ch.icon || null,
-
         ids: {
           slug: ch.slug,
           cnHeroId: ch.cnHeroId || null,
@@ -65,8 +50,6 @@ export default async function handler(req, res) {
     return res.status(200).json(data);
   } catch (e) {
     console.error("[wr-api] /api/champions error:", e);
-    return res
-      .status(500)
-      .json({ error: "Internal Server Error", message: e.message });
+    return res.status(500).json({ error: "Internal Server Error" });
   }
 }
