@@ -1,4 +1,3 @@
-// api/champion-history.js
 import { db } from "../db/client.js";
 import { championStatsHistory } from "../db/schema.js";
 import { setCors } from "./utils/cors.js";
@@ -53,7 +52,6 @@ function parseDateParam(v) {
 }
 
 export default async function handler(req, res) {
-  // CORS через util
   setCors(req, res);
 
   if (req.method === "OPTIONS") return res.status(204).end();
@@ -61,10 +59,9 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method Not Allowed" });
   }
 
-  const { slug, rank, lane, date, from, to } = req.query;
+  const { slug, rank, lane, date, from, to, latest } = req.query;
 
   try {
-    // 1) Валидация и нормализация фильтров (выходной формат сохраняем)
     const safeSlug =
       typeof slug === "string" && slug.trim() ? slug.trim() : null;
 
@@ -72,7 +69,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Invalid slug" });
     }
 
-    const rankList = splitListParam(rank, 10); // не даём прислать мегасписи
+    const rankList = splitListParam(rank, 10);
     const laneList = splitListParam(lane, 10);
 
     let fromDate = null;
@@ -87,22 +84,43 @@ export default async function handler(req, res) {
       toDate = parseDateParam(to);
     }
 
-    // 2) Собираем WHERE в SQL (вместо rows.filter)
-    const conditions = [];
+    // WHERE без дат (нужно для latest=1)
+    const baseConditions = [];
 
-    if (safeSlug) {
-      conditions.push(eq(championStatsHistory.slug, safeSlug));
-    }
-
+    if (safeSlug) baseConditions.push(eq(championStatsHistory.slug, safeSlug));
     if (rankList && rankList.length > 0) {
-      conditions.push(inArray(championStatsHistory.rank, rankList));
+      baseConditions.push(inArray(championStatsHistory.rank, rankList));
     }
-
     if (laneList && laneList.length > 0) {
-      conditions.push(inArray(championStatsHistory.lane, laneList));
+      baseConditions.push(inArray(championStatsHistory.lane, laneList));
     }
 
-    // date диапазон (колонка date), сравнение через ::date чтобы не было сюрпризов
+    const baseWhere = baseConditions.length
+      ? and(...baseConditions)
+      : undefined;
+
+    // ✅ latest=1: если даты не заданы — берём максимальную дату и режем по ней
+    const wantLatest = String(latest) === "1" || String(latest) === "true";
+    if (wantLatest && !fromDate && !toDate) {
+      const maxRow = await db
+        .select({
+          maxDate: sql`max(${championStatsHistory.date})`.as("maxDate"),
+        })
+        .from(championStatsHistory)
+        .where(baseWhere);
+
+      const maxDateRaw = maxRow?.[0]?.maxDate ?? null;
+      const maxDateStr = toDateString(maxDateRaw);
+
+      if (maxDateStr) {
+        fromDate = maxDateStr;
+        toDate = maxDateStr;
+      }
+    }
+
+    // WHERE с датами
+    const conditions = [...baseConditions];
+
     if (fromDate) {
       conditions.push(gte(championStatsHistory.date, sql`${fromDate}::date`));
     }
@@ -112,7 +130,6 @@ export default async function handler(req, res) {
 
     const whereClause = conditions.length ? and(...conditions) : undefined;
 
-    // 3) Запрос сразу отсортированный в БД
     const rows = await db
       .select()
       .from(championStatsHistory)
@@ -124,7 +141,6 @@ export default async function handler(req, res) {
         asc(championStatsHistory.lane)
       );
 
-    // 4) Формат ответа — как у тебя
     const items = rows.map((row) => ({
       date: toDateString(row.date),
       slug: row.slug,
@@ -145,6 +161,7 @@ export default async function handler(req, res) {
         lane: laneList,
         from: fromDate,
         to: toDate || (fromDate && !toDate ? fromDate : toDate),
+        latest: wantLatest || null,
       },
       count: items.length,
       items,
