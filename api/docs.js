@@ -28,5 +28,9 @@ export default function handler(req, res) {
 </html>`;
 
   res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.setHeader(
+    "Cache-Control",
+    "public, s-maxage=60, stale-while-revalidate=300"
+  );
   res.status(200).send(html);
 }
