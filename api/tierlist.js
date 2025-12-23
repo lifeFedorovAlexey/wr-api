@@ -5,6 +5,18 @@ import { setCors } from "./utils/cors.js";
 
 import { and, desc, eq, sql } from "drizzle-orm";
 
+function setPublicCache(res, { sMaxAge = 300, swr = 1800 } = {}) {
+  // Общий CDN-кеш (Vercel). Ключ кеша = полный URL (path + query).
+  res.setHeader(
+    "Cache-Control",
+    `public, s-maxage=${sMaxAge}, stale-while-revalidate=${swr}`
+  );
+}
+
+function setNoStore(res) {
+  res.setHeader("Cache-Control", "no-store");
+}
+
 // Date -> 'YYYY-MM-DD'
 function toDateString(value) {
   if (!value) return null;
@@ -48,6 +60,7 @@ export default async function handler(req, res) {
 
   if (req.method === "OPTIONS") return res.status(204).end();
   if (req.method !== "GET") {
+    setNoStore(res);
     return res.status(405).json({ error: "Method Not Allowed" });
   }
 
@@ -80,6 +93,7 @@ export default async function handler(req, res) {
       : null;
 
     if (!latestDate) {
+      setPublicCache(res, { sMaxAge: 60, swr: 300 });
       return res.status(200).json({
         filters: {
           rank: rankKey,
@@ -172,6 +186,7 @@ export default async function handler(req, res) {
       });
     }
 
+    setPublicCache(res, { sMaxAge: 300, swr: 1800 });
     return res.status(200).json({
       filters: {
         rank: rankKey,
@@ -184,6 +199,7 @@ export default async function handler(req, res) {
     });
   } catch (e) {
     console.error("[wr-api] /api/tierlist error:", e);
+    setNoStore(res);
     return res.status(500).json({ error: "Internal Server Error" });
   }
 }

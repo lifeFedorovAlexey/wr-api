@@ -2,19 +2,26 @@
 import { db } from "../db/client.js";
 import { championStatsHistory } from "../db/schema.js";
 import { max } from "drizzle-orm";
+import { setCors } from "./utils/cors.js";
 
-export default async function handler(req, res) {
-  // CORS
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+function setPublicCache(res, { sMaxAge = 60, swr = 300 } = {}) {
   res.setHeader(
     "Cache-Control",
-    "public, s-maxage=60, stale-while-revalidate=300"
+    `public, s-maxage=${sMaxAge}, stale-while-revalidate=${swr}`
   );
+}
+
+function setNoStore(res) {
+  res.setHeader("Cache-Control", "no-store");
+}
+
+export default async function handler(req, res) {
+  setCors(req, res);
+  setPublicCache(res, { sMaxAge: 60, swr: 300 });
 
   if (req.method === "OPTIONS") return res.status(204).end();
   if (req.method !== "GET") {
+    setNoStore(res);
     return res.status(405).json({ error: "Method Not Allowed" });
   }
 
@@ -31,6 +38,7 @@ export default async function handler(req, res) {
     });
   } catch (e) {
     console.error("[wr-api] /api/updated-at error:", e);
+    setNoStore(res);
     return res
       .status(500)
       .json({ error: "Internal Server Error", message: e.message });

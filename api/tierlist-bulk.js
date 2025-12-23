@@ -3,6 +3,17 @@ import { championStatsHistory, champions } from "../db/schema.js";
 import { setCors } from "./utils/cors.js";
 import { desc, eq, sql } from "drizzle-orm";
 
+function setPublicCache(res, { sMaxAge = 300, swr = 1800 } = {}) {
+  res.setHeader(
+    "Cache-Control",
+    `public, s-maxage=${sMaxAge}, stale-while-revalidate=${swr}`
+  );
+}
+
+function setNoStore(res) {
+  res.setHeader("Cache-Control", "no-store");
+}
+
 function toDateString(value) {
   if (!value) return null;
   if (value instanceof Date) return value.toISOString().slice(0, 10);
@@ -36,8 +47,10 @@ export default async function handler(req, res) {
   setCors(req, res);
 
   if (req.method === "OPTIONS") return res.status(204).end();
-  if (req.method !== "GET")
+  if (req.method !== "GET") {
+    setNoStore(res);
     return res.status(405).json({ error: "Method Not Allowed" });
+  }
 
   const { lang } = req.query;
   const language =
@@ -56,6 +69,7 @@ export default async function handler(req, res) {
       : null;
 
     if (!latestDate) {
+      setPublicCache(res, { sMaxAge: 60, swr: 300 });
       return res.status(200).json({
         filters: { date: null, lang: language },
         tiersOrder: ["S+", "S", "A", "B", "C", "D"],
@@ -142,6 +156,7 @@ export default async function handler(req, res) {
       }
     }
 
+    setPublicCache(res, { sMaxAge: 300, swr: 1800 });
     return res.status(200).json({
       filters: { date: latestDate, lang: language },
       tiersOrder,
@@ -149,6 +164,7 @@ export default async function handler(req, res) {
     });
   } catch (e) {
     console.error("[wr-api] /api/tierlist-bulk error:", e);
+    setNoStore(res);
     return res.status(500).json({ error: "Internal Server Error" });
   }
 }

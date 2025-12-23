@@ -3,9 +3,15 @@ import { db } from "../db/client.js";
 import { webappOpens } from "../db/schema.js";
 import { setCors } from "./utils/cors.js";
 
+function setNoStore(res) {
+  // POST-эндпоинты не должны попадать в CDN-кеш.
+  res.setHeader("Cache-Control", "no-store");
+}
+
 export default async function handler(req, res) {
   // CORS
   setCors(req, res);
+  setNoStore(res);
 
   if (req.method === "OPTIONS") return res.status(204).end();
   if (req.method !== "POST") {

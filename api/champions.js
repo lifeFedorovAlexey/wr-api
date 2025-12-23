@@ -3,12 +3,26 @@ import { db } from "../db/client.js";
 import { champions } from "../db/schema.js";
 import { setCors } from "./utils/cors.js";
 
+function setPublicCache(res, { sMaxAge = 3600, swr = 21600 } = {}) {
+  // Общий CDN-кеш (Vercel). Ключ кеша = полный URL (path + query).
+  res.setHeader(
+    "Cache-Control",
+    `public, s-maxage=${sMaxAge}, stale-while-revalidate=${swr}`
+  );
+}
+
+function setNoStore(res) {
+  // Ошибки/валидацию лучше не кешировать.
+  res.setHeader("Cache-Control", "no-store");
+}
+
 export default async function handler(req, res) {
   // CORS через util
   setCors(req, res);
 
   if (req.method === "OPTIONS") return res.status(204).end();
   if (req.method !== "GET") {
+    setNoStore(res);
     return res.status(405).json({ error: "Method Not Allowed" });
   }
 
@@ -47,9 +61,11 @@ export default async function handler(req, res) {
       };
     });
 
+    setPublicCache(res, { sMaxAge: 3600, swr: 21600 });
     return res.status(200).json(data);
   } catch (e) {
     console.error("[wr-api] /api/champions error:", e);
+    setNoStore(res);
     return res.status(500).json({ error: "Internal Server Error" });
   }
 }

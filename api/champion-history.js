@@ -4,6 +4,20 @@ import { setCors } from "./utils/cors.js";
 
 import { and, asc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 
+function setPublicCache(res, { sMaxAge = 60, swr = 300 } = {}) {
+  // Vercel CDN уважает s-maxage для API Routes.
+  // Ключ кеша включает полный URL (path + query), так что разные фильтры не мешают друг другу.
+  res.setHeader(
+    "Cache-Control",
+    `public, s-maxage=${sMaxAge}, stale-while-revalidate=${swr}`
+  );
+}
+
+function setNoStore(res) {
+  // Не кешируем ошибки/валидацию — иначе можно словить "вечный" 400 на CDN.
+  res.setHeader("Cache-Control", "no-store");
+}
+
 // Простейший нормалайзер дат: Date -> 'YYYY-MM-DD'
 function toDateString(value) {
   if (!value) return null;
@@ -56,6 +70,7 @@ export default async function handler(req, res) {
 
   if (req.method === "OPTIONS") return res.status(204).end();
   if (req.method !== "GET") {
+    setNoStore(res);
     return res.status(405).json({ error: "Method Not Allowed" });
   }
 
@@ -66,6 +81,7 @@ export default async function handler(req, res) {
       typeof slug === "string" && slug.trim() ? slug.trim() : null;
 
     if (safeSlug && safeSlug.length > 64) {
+      setNoStore(res);
       return res.status(400).json({ error: "Invalid slug" });
     }
 
@@ -154,6 +170,10 @@ export default async function handler(req, res) {
       strengthLevel: row.strengthLevel,
     }));
 
+    // Кеш общий (CDN), а не "на пользователя": ключ = полный URL запроса.
+    // Подбирай TTL по частоте обновления твоих данных.
+    setPublicCache(res, { sMaxAge: 300, swr: 1800 });
+
     return res.status(200).json({
       filters: {
         slug: safeSlug || null,
@@ -170,6 +190,7 @@ export default async function handler(req, res) {
     const status =
       e?.statusCode && Number.isInteger(e.statusCode) ? e.statusCode : 500;
     console.error("[wr-api] /api/champion-history error:", e);
+    setNoStore(res);
     return res.status(status).json({
       error: status === 400 ? "Bad Request" : "Internal Server Error",
     });
