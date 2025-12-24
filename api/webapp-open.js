@@ -8,6 +8,13 @@ function setNoStore(res) {
   res.setHeader("Cache-Control", "no-store");
 }
 
+function sanitizeName(value) {
+  if (typeof value !== "string") return null;
+  if (value.length === 0 || value.length > 64) return null;
+  if (/^(.)\1+$/.test(value)) return null;
+  return value;
+}
+
 export default async function handler(req, res) {
   // CORS
   setCors(req, res);
@@ -28,16 +35,9 @@ export default async function handler(req, res) {
     }
 
     // лёгкая санитария строк
-    const safeUsername =
-      typeof username === "string" && username.length <= 64 ? username : null;
-
-    const safeFirstName =
-      typeof firstName === "string" && firstName.length <= 64
-        ? firstName
-        : null;
-
-    const safeLastName =
-      typeof lastName === "string" && lastName.length <= 64 ? lastName : null;
+    const safeUsername = sanitizeName(username);
+    const safeFirstName = sanitizeName(firstName);
+    const safeLastName = sanitizeName(lastName);
 
     await db.insert(webappOpens).values({
       tgId: tgIdNum,
