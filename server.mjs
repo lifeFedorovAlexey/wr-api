@@ -7,6 +7,9 @@ import { URL } from "node:url";
 import championsHandler from "./api/champions.js";
 import championHistoryHandler from "./api/champion-history.js";
 import cronImportChampionsHandler from "./api/cron-import-champions.js";
+import guidesDetailHandler from "./api/guides-detail.js";
+import guidesImportHandler from "./api/guides-import.js";
+import guidesHandler from "./api/guides.js";
 import latestStatsSnapshotHandler from "./api/latest-stats-snapshot.js";
 import tierlistBulkHandler from "./api/tierlist-bulk.js";
 import tierlistHandler from "./api/tierlist.js";
@@ -23,6 +26,8 @@ const routes = new Map([
   ["/api/champions", championsHandler],
   ["/api/champion-history", championHistoryHandler],
   ["/api/cron-import-champions", cronImportChampionsHandler],
+  ["/api/guides", guidesHandler],
+  ["/api/guides/import", guidesImportHandler],
   ["/api/latest-stats-snapshot", latestStatsSnapshotHandler],
   ["/api/tierlist-bulk", tierlistBulkHandler],
   ["/api/tierlist", tierlistHandler],
@@ -155,6 +160,31 @@ const server = http.createServer(async (req, res) => {
   attachQuery(req, url);
 
   if (await tryServeIcon(req, res, url)) {
+    return;
+  }
+
+  if (!handler && url.pathname.startsWith("/api/guides/")) {
+    req.params = {
+      slug: decodeURIComponent(url.pathname.slice("/api/guides/".length)),
+    };
+
+    try {
+      req.body = await readJsonBody(req);
+      await guidesDetailHandler(req, res);
+    } catch (error) {
+      const statusCode =
+        error?.statusCode && Number.isInteger(error.statusCode)
+          ? error.statusCode
+          : 500;
+
+      if (!res.headersSent) {
+        res.status(statusCode).json({
+          error: statusCode === 400 ? "Bad Request" : "Internal Server Error",
+        });
+      }
+
+      console.error("[wr-api] server error:", error);
+    }
     return;
   }
 

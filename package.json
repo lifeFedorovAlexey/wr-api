@@ -8,6 +8,7 @@
     "start": "node ./server.mjs",
     "dev": "node --watch ./server.mjs",
     "import:champions": "node ./scripts/import-champions.mjs",
+    "setup:guides": "node ./scripts/setup-guides-table.mjs",
     "test": "node --test ./test"
   },
   "dependencies": {
