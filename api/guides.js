@@ -1,7 +1,7 @@
 import { asc } from "drizzle-orm";
 
 import { db } from "../db/client.js";
-import { championGuides } from "../db/schema.js";
+import { guideSummaries } from "../db/schema.js";
 import { setCors } from "./utils/cors.js";
 
 function setPublicCache(res, { sMaxAge = 3600, swr = 21600 } = {}) {
@@ -28,20 +28,9 @@ export default async function handler(req, res) {
     const fields = typeof req.query.fields === "string" ? req.query.fields.trim() : "";
 
     const rows = await db
-      .select({
-        slug: championGuides.slug,
-        name: championGuides.name,
-        title: championGuides.title,
-        icon: championGuides.icon,
-        patch: championGuides.patch,
-        tier: championGuides.tier,
-        recommendedRole: championGuides.recommendedRole,
-        roles: championGuides.roles,
-        buildCount: championGuides.buildCount,
-        updatedAt: championGuides.updatedAt,
-      })
-      .from(championGuides)
-      .orderBy(asc(championGuides.name));
+      .select()
+      .from(guideSummaries)
+      .orderBy(asc(guideSummaries.name));
 
     if (fields === "slug") {
       setPublicCache(res, { sMaxAge: 3600, swr: 21600 });

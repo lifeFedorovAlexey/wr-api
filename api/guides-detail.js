@@ -1,7 +1,19 @@
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 
 import { db } from "../db/client.js";
-import { championGuides } from "../db/schema.js";
+import {
+  guideAbilities,
+  guideBuildBreakdowns,
+  guideEntities,
+  guideOfficialMeta,
+  guideSummaries,
+  guideVariantMatchups,
+  guideVariantSections,
+  guideVariantSkillOrders,
+  guideVariantSkillRows,
+  guideVariants,
+} from "../db/schema.js";
+import { assembleGuideDetail } from "../lib/guides.mjs";
 import { setCors } from "./utils/cors.js";
 
 function setPublicCache(res, { sMaxAge = 3600, swr = 21600 } = {}) {
@@ -32,21 +44,78 @@ export default async function handler(req, res) {
   }
 
   try {
-    const rows = await db
-      .select({
-        payload: championGuides.payload,
-      })
-      .from(championGuides)
-      .where(eq(championGuides.slug, slug))
+    const summaryRows = await db
+      .select()
+      .from(guideSummaries)
+      .where(eq(guideSummaries.slug, slug))
       .limit(1);
 
-    if (!rows.length || !rows[0]?.payload) {
+    if (!summaryRows.length) {
       setNoStore(res);
       return res.status(404).json({ error: "Not Found" });
     }
 
+    const [officialMetaRows, abilityRows, buildBreakdownRows, variantRows, sectionRows, skillOrderRows, skillRowRows, matchupRows] =
+      await Promise.all([
+        db.select().from(guideOfficialMeta).where(eq(guideOfficialMeta.guideSlug, slug)),
+        db.select().from(guideAbilities).where(eq(guideAbilities.guideSlug, slug)),
+        db
+          .select()
+          .from(guideBuildBreakdowns)
+          .where(eq(guideBuildBreakdowns.guideSlug, slug)),
+        db.select().from(guideVariants).where(eq(guideVariants.guideSlug, slug)),
+        db.select().from(guideVariantSections).where(eq(guideVariantSections.guideSlug, slug)),
+        db
+          .select()
+          .from(guideVariantSkillOrders)
+          .where(eq(guideVariantSkillOrders.guideSlug, slug)),
+        db.select().from(guideVariantSkillRows).where(eq(guideVariantSkillRows.guideSlug, slug)),
+        db.select().from(guideVariantMatchups).where(eq(guideVariantMatchups.guideSlug, slug)),
+      ]);
+
+    const entitySlugs = new Set();
+
+    for (const row of sectionRows) {
+      for (const entitySlug of row.entitySlugs || []) entitySlugs.add(entitySlug);
+    }
+    for (const row of skillOrderRows) {
+      for (const entitySlug of row.quickOrder || []) entitySlugs.add(entitySlug);
+    }
+    for (const row of skillRowRows) {
+      if (row.abilitySlug) entitySlugs.add(row.abilitySlug);
+    }
+    for (const row of matchupRows) {
+      if (row.championSlug) entitySlugs.add(row.championSlug);
+    }
+    for (const row of abilityRows) {
+      if (row.abilitySlug) entitySlugs.add(row.abilitySlug);
+    }
+    for (const entitySlug of buildBreakdownRows[0]?.featuredItemSlugs || []) {
+      entitySlugs.add(entitySlug);
+    }
+
+    const entityRows = entitySlugs.size
+      ? await db
+          .select()
+          .from(guideEntities)
+          .where(inArray(guideEntities.slug, Array.from(entitySlugs)))
+      : [];
+
+    const detail = assembleGuideDetail({
+      summary: summaryRows[0],
+      officialMeta: officialMetaRows[0] || null,
+      abilities: abilityRows,
+      buildBreakdown: buildBreakdownRows[0] || null,
+      variants: variantRows,
+      sections: sectionRows,
+      skillOrders: skillOrderRows,
+      skillRows: skillRowRows,
+      matchups: matchupRows,
+      entities: entityRows,
+    });
+
     setPublicCache(res, { sMaxAge: 3600, swr: 21600 });
-    return res.status(200).json(rows[0].payload);
+    return res.status(200).json(detail);
   } catch (error) {
     console.error("[wr-api] /api/guides/:slug error:", error);
     setNoStore(res);
