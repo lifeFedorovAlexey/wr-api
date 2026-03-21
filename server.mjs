@@ -5,6 +5,7 @@ import { URL } from "node:url";
 import championsHandler from "./api/champions.js";
 import championHistoryHandler from "./api/champion-history.js";
 import cronImportChampionsHandler from "./api/cron-import-champions.js";
+import latestStatsSnapshotHandler from "./api/latest-stats-snapshot.js";
 import tierlistBulkHandler from "./api/tierlist-bulk.js";
 import tierlistHandler from "./api/tierlist.js";
 import updatedAtHandler from "./api/updated-at.js";
@@ -18,6 +19,7 @@ const routes = new Map([
   ["/api/champions", championsHandler],
   ["/api/champion-history", championHistoryHandler],
   ["/api/cron-import-champions", cronImportChampionsHandler],
+  ["/api/latest-stats-snapshot", latestStatsSnapshotHandler],
   ["/api/tierlist-bulk", tierlistBulkHandler],
   ["/api/tierlist", tierlistHandler],
   ["/api/updated-at", updatedAtHandler],
