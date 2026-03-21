@@ -13,8 +13,11 @@ import {
   guideVariantSkillRows,
   guideVariants,
 } from "../db/schema.js";
+import { createGuideHeroMediaStore } from "../lib/guideHeroMedia.mjs";
 import { buildGuideImportRecord } from "../lib/guides.mjs";
 import { setCors } from "./utils/cors.js";
+
+const guideHeroMediaStorePromise = createGuideHeroMediaStore();
 
 function setNoStore(res) {
   res.setHeader("Cache-Control", "no-store");
@@ -59,6 +62,20 @@ export default async function handler(req, res) {
 
   try {
     const record = buildGuideImportRecord(guide);
+    const heroRemoteVideoUrl = record.officialMeta.heroRemoteVideoUrl;
+
+    if (record.summary.slug && heroRemoteVideoUrl) {
+      const heroMediaStore = await guideHeroMediaStorePromise;
+      const localVideoPath = await heroMediaStore.mirror(
+        record.summary.slug,
+        heroRemoteVideoUrl,
+      );
+
+      if (localVideoPath) {
+        record.officialMeta.heroLocalVideoPath = localVideoPath;
+      }
+    }
+
     const now = new Date();
 
     await db.transaction(async (tx) => {

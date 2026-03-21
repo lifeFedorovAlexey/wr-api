@@ -17,10 +17,12 @@ import updatedAtHandler from "./api/updated-at.js";
 import winratesSnapshotHandler from "./api/winrates-snapshot.js";
 import webappOpenHandler from "./api/webapp-open.js";
 import { createChampionIconStore } from "./lib/championIcons.mjs";
+import { createGuideHeroMediaStore } from "./lib/guideHeroMedia.mjs";
 
 const PORT = Number(process.env.PORT || 3001);
 const HOST = process.env.HOST || "127.0.0.1";
 const iconStorePromise = createChampionIconStore();
+const guideHeroMediaStorePromise = createGuideHeroMediaStore();
 
 const routes = new Map([
   ["/api/champions", championsHandler],
@@ -152,6 +154,45 @@ async function tryServeIcon(req, res, url) {
   return true;
 }
 
+async function tryServeGuideHeroMedia(req, res, url) {
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    return false;
+  }
+
+  if (!url.pathname.startsWith("/hero-media/")) {
+    return false;
+  }
+
+  const slug = path.basename(url.pathname.slice("/hero-media/".length));
+  if (!slug) {
+    res.status(404).json({ error: "Not Found" });
+    return true;
+  }
+
+  const mediaStore = await guideHeroMediaStorePromise;
+  const filePath = mediaStore.getCachedFilePath(slug);
+  if (!filePath) {
+    res.status(404).json({ error: "Not Found" });
+    return true;
+  }
+
+  const ext = path.extname(filePath).toLowerCase();
+  const contentType =
+    ext === ".webm" ? "video/webm" : ext === ".ogv" ? "video/ogg" : "video/mp4";
+
+  res.setHeader("Content-Type", contentType);
+  res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+
+  if (req.method === "HEAD") {
+    res.statusCode = 200;
+    res.end();
+    return true;
+  }
+
+  createReadStream(filePath).pipe(res);
+  return true;
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
   const handler = routes.get(url.pathname);
@@ -160,6 +201,10 @@ const server = http.createServer(async (req, res) => {
   attachQuery(req, url);
 
   if (await tryServeIcon(req, res, url)) {
+    return;
+  }
+
+  if (await tryServeGuideHeroMedia(req, res, url)) {
     return;
   }
 
