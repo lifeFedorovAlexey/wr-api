@@ -25,6 +25,7 @@ jobs:
           script: |
             set -e
             cd /var/www/wr-api
+            git stash push --include-untracked -m "deploy-api-$(date +%s)" || true
             git fetch origin
             git checkout main
             git pull --ff-only origin main
