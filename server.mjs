@@ -1,5 +1,7 @@
 import "dotenv/config";
+import { createReadStream, existsSync } from "node:fs";
 import http from "node:http";
+import path from "node:path";
 import { URL } from "node:url";
 
 import championsHandler from "./api/champions.js";
@@ -11,9 +13,11 @@ import tierlistHandler from "./api/tierlist.js";
 import updatedAtHandler from "./api/updated-at.js";
 import winratesSnapshotHandler from "./api/winrates-snapshot.js";
 import webappOpenHandler from "./api/webapp-open.js";
+import { resolveIconsDir } from "./lib/championIcons.mjs";
 
 const PORT = Number(process.env.PORT || 3001);
 const HOST = process.env.HOST || "127.0.0.1";
+const ICONS_DIR = resolveIconsDir();
 
 const routes = new Map([
   ["/api/champions", championsHandler],
@@ -88,12 +92,56 @@ function attachQuery(req, url) {
   }
 }
 
+function tryServeIcon(req, res, url) {
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    return false;
+  }
+
+  if (!url.pathname.startsWith("/icons/")) {
+    return false;
+  }
+
+  const fileName = path.basename(url.pathname.slice("/icons/".length));
+  const filePath = path.join(ICONS_DIR, fileName);
+
+  if (!fileName || !existsSync(filePath)) {
+    res.status(404).json({ error: "Not Found" });
+    return true;
+  }
+
+  const ext = path.extname(fileName).toLowerCase();
+  const contentType =
+    ext === ".webp"
+      ? "image/webp"
+      : ext === ".jpg" || ext === ".jpeg"
+        ? "image/jpeg"
+        : ext === ".avif"
+          ? "image/avif"
+          : "image/png";
+
+  res.setHeader("Content-Type", contentType);
+  res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+
+  if (req.method === "HEAD") {
+    res.statusCode = 200;
+    res.end();
+    return true;
+  }
+
+  createReadStream(filePath).pipe(res);
+  return true;
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
   const handler = routes.get(url.pathname);
 
   patchResponse(res);
   attachQuery(req, url);
+
+  if (tryServeIcon(req, res, url)) {
+    return;
+  }
 
   if (!handler) {
     res.status(404).json({ error: "Not Found" });
