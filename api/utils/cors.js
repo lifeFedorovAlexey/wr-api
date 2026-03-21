@@ -1,9 +1,7 @@
 const ALLOWED_ORIGINS = new Set([
   "https://wildriftallstats.ru",
-  "https://wildriftchampions-data.vercel.app",
   "http://localhost:3000",
   "https://web.telegram.org",
-  "https://gektorquiz.vercel.app",
 ]);
 
 const extraOrigins = (process.env.CORS_ALLOWED_ORIGINS || "")

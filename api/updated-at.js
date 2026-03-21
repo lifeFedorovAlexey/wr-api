@@ -27,14 +27,18 @@ export default async function handler(req, res) {
 
   try {
     const rows = await db
-      .select({ lastDate: max(championStatsHistory.date) })
+      .select({
+        lastDate: max(championStatsHistory.date),
+        lastRunAt: max(championStatsHistory.createdAt),
+      })
       .from(championStatsHistory);
 
     const lastDate = rows[0]?.lastDate || null;
+    const lastRunAt = rows[0]?.lastRunAt || null;
 
-    // lastDate у тебя pgDate → строка 'YYYY-MM-DD'
     return res.status(200).json({
-      updatedAt: lastDate, // например "2025-12-05"
+      updatedAt: lastRunAt,
+      statsDate: lastDate,
     });
   } catch (e) {
     console.error("[wr-api] /api/updated-at error:", e);

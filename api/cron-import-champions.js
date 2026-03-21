@@ -1,5 +1,5 @@
 // api/cron-import-champions.js
-// Эту функцию будет дёргать Vercel Cron раз в сутки.
+// Legacy HTTP entrypoint for manual/remote cron triggering.
 
 import { updateChampions } from "../lib/updateChampions.mjs";
 

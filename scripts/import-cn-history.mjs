@@ -116,6 +116,7 @@ async function loadChampionsFromDb() {
 
 async function main() {
   const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const runStartedAt = new Date();
   log("🚀 Старт import-cn-history.mjs, date =", today);
 
   // 1) чемпионы из БД (только те, у кого есть cnHeroId)
@@ -155,6 +156,7 @@ async function main() {
           pickRate: cell.pickRate,
           banRate: cell.banRate,
           strengthLevel: cell.strengthLevel,
+          createdAt: runStartedAt,
         };
 
         // UPSERT по (date, slug, rank, lane)

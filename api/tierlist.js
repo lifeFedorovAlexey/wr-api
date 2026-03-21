@@ -6,7 +6,7 @@ import { setCors } from "./utils/cors.js";
 import { and, desc, eq, sql } from "drizzle-orm";
 
 function setPublicCache(res, { sMaxAge = 300, swr = 1800 } = {}) {
-  // Общий CDN-кеш (Vercel). Ключ кеша = полный URL (path + query).
+  // Общий CDN-кеш. Ключ кеша = полный URL (path + query).
   res.setHeader(
     "Cache-Control",
     `public, s-maxage=${sMaxAge}, stale-while-revalidate=${swr}`

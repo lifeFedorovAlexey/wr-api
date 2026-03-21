@@ -4,7 +4,7 @@ import { champions } from "../db/schema.js";
 import { setCors } from "./utils/cors.js";
 
 function setPublicCache(res, { sMaxAge = 3600, swr = 21600 } = {}) {
-  // Общий CDN-кеш (Vercel). Ключ кеша = полный URL (path + query).
+  // Общий CDN-кеш. Ключ кеша = полный URL (path + query).
   res.setHeader(
     "Cache-Control",
     `public, s-maxage=${sMaxAge}, stale-while-revalidate=${swr}`

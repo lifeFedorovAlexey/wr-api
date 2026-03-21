@@ -5,7 +5,7 @@ import { setCors } from "./utils/cors.js";
 import { and, asc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 
 function setPublicCache(res, { sMaxAge = 60, swr = 300 } = {}) {
-  // Vercel CDN уважает s-maxage для API Routes.
+  // CDN уважает s-maxage для API routes.
   // Ключ кеша включает полный URL (path + query), так что разные фильтры не мешают друг другу.
   res.setHeader(
     "Cache-Control",
