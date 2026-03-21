@@ -8,6 +8,7 @@ import cronImportChampionsHandler from "./api/cron-import-champions.js";
 import tierlistBulkHandler from "./api/tierlist-bulk.js";
 import tierlistHandler from "./api/tierlist.js";
 import updatedAtHandler from "./api/updated-at.js";
+import winratesSnapshotHandler from "./api/winrates-snapshot.js";
 import webappOpenHandler from "./api/webapp-open.js";
 
 const PORT = Number(process.env.PORT || 3001);
@@ -20,6 +21,7 @@ const routes = new Map([
   ["/api/tierlist-bulk", tierlistBulkHandler],
   ["/api/tierlist", tierlistHandler],
   ["/api/updated-at", updatedAtHandler],
+  ["/api/winrates-snapshot", winratesSnapshotHandler],
   ["/api/webapp-open", webappOpenHandler],
 ]);
 
