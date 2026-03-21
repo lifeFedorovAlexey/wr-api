@@ -6,6 +6,15 @@ const ALLOWED_ORIGINS = new Set([
   "https://gektorquiz.vercel.app",
 ]);
 
+const extraOrigins = (process.env.CORS_ALLOWED_ORIGINS || "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
+
+for (const origin of extraOrigins) {
+  ALLOWED_ORIGINS.add(origin);
+}
+
 export function setCors(req, res) {
   const origin = req.headers.origin;
 

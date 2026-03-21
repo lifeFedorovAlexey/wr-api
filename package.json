@@ -5,6 +5,8 @@
   "description": "Public Wild Rift API",
   "type": "module",
   "scripts": {
+    "start": "node ./server.mjs",
+    "dev": "node --watch ./server.mjs",
     "import:champions": "node ./scripts/import-champions.mjs"
   },
   "dependencies": {
