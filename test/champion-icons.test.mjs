@@ -30,5 +30,9 @@ test("buildStoredIconFileName uses slug plus resolved extension", () => {
 });
 
 test("buildPublicIconPath returns proxied api icon path", () => {
-  assert.equal(buildPublicIconPath("teemo.png"), "/wr-api/icons/teemo.png");
+  assert.equal(buildPublicIconPath("teemo"), "/wr-api/icons/teemo");
+  assert.equal(
+    buildPublicIconPath("ahri", "https://example.com/ahri.png"),
+    "/wr-api/icons/ahri?src=https%3A%2F%2Fexample.com%2Fahri.png",
+  );
 });

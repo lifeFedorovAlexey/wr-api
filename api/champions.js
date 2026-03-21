@@ -2,6 +2,7 @@
 import { db } from "../db/client.js";
 import { champions } from "../db/schema.js";
 import { setCors } from "./utils/cors.js";
+import { buildPublicIconPath } from "../lib/championIcons.mjs";
 
 function setPublicCache(res, { sMaxAge = 3600, swr = 21600 } = {}) {
   // Общий CDN-кеш. Ключ кеша = полный URL (path + query).
@@ -53,7 +54,7 @@ export default async function handler(req, res) {
         rolesLocalized: localizedRoles,
         difficulty: ch.difficulty || null,
         difficultyLocalized: localizedDifficulty,
-        icon: ch.icon || null,
+        icon: ch.icon ? buildPublicIconPath(ch.slug, ch.icon) : null,
         ids: {
           slug: ch.slug,
           cnHeroId: ch.cnHeroId || null,

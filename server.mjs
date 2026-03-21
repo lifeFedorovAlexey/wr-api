@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { createReadStream, existsSync } from "node:fs";
+import { createReadStream } from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { URL } from "node:url";
@@ -13,11 +13,11 @@ import tierlistHandler from "./api/tierlist.js";
 import updatedAtHandler from "./api/updated-at.js";
 import winratesSnapshotHandler from "./api/winrates-snapshot.js";
 import webappOpenHandler from "./api/webapp-open.js";
-import { resolveIconsDir } from "./lib/championIcons.mjs";
+import { createChampionIconStore } from "./lib/championIcons.mjs";
 
 const PORT = Number(process.env.PORT || 3001);
 const HOST = process.env.HOST || "127.0.0.1";
-const ICONS_DIR = resolveIconsDir();
+const iconStorePromise = createChampionIconStore();
 
 const routes = new Map([
   ["/api/champions", championsHandler],
@@ -92,7 +92,7 @@ function attachQuery(req, url) {
   }
 }
 
-function tryServeIcon(req, res, url) {
+async function tryServeIcon(req, res, url) {
   if (req.method !== "GET" && req.method !== "HEAD") {
     return false;
   }
@@ -101,15 +101,30 @@ function tryServeIcon(req, res, url) {
     return false;
   }
 
-  const fileName = path.basename(url.pathname.slice("/icons/".length));
-  const filePath = path.join(ICONS_DIR, fileName);
-
-  if (!fileName || !existsSync(filePath)) {
+  const slug = path.basename(url.pathname.slice("/icons/".length));
+  if (!slug) {
     res.status(404).json({ error: "Not Found" });
     return true;
   }
 
-  const ext = path.extname(fileName).toLowerCase();
+  const sourceUrl =
+    typeof url.searchParams.get("src") === "string"
+      ? url.searchParams.get("src")
+      : null;
+
+  const iconStore = await iconStorePromise;
+
+  if (sourceUrl) {
+    await iconStore.mirror(slug, sourceUrl);
+  }
+
+  const filePath = iconStore.getCachedFilePath(slug);
+  if (!filePath) {
+    res.status(404).json({ error: "Not Found" });
+    return true;
+  }
+
+  const ext = path.extname(filePath).toLowerCase();
   const contentType =
     ext === ".webp"
       ? "image/webp"
@@ -139,7 +154,7 @@ const server = http.createServer(async (req, res) => {
   patchResponse(res);
   attachQuery(req, url);
 
-  if (tryServeIcon(req, res, url)) {
+  if (await tryServeIcon(req, res, url)) {
     return;
   }
 

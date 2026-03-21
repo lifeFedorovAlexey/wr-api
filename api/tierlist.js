@@ -2,6 +2,7 @@
 import { db } from "../db/client.js";
 import { championStatsHistory, champions } from "../db/schema.js";
 import { setCors } from "./utils/cors.js";
+import { buildPublicIconPath } from "../lib/championIcons.mjs";
 
 import { and, desc, eq, sql } from "drizzle-orm";
 
@@ -161,7 +162,7 @@ export default async function handler(req, res) {
         slug,
         cnHeroId: row.cnHeroId,
         name: displayName,
-        icon: ch?.icon || null,
+        icon: ch?.icon ? buildPublicIconPath(slug, ch.icon) : null,
         rank: row.rank,
         lane: row.lane,
         date: latestDate,
