@@ -21,7 +21,7 @@ jobs:
           host: ${{ secrets.TIMEWEB_HOST }}
           username: ${{ secrets.TIMEWEB_USER }}
           password: ${{ secrets.TIMEWEB_PASSWORD }}
-          script_stop: true
+          debug: true
           script: |
             set -e
             cd /var/www/wr-api
@@ -29,5 +29,6 @@ jobs:
             git checkout main
             git pull --ff-only origin main
             npm ci
-            pm2 restart wr-api --update-env
+            pm2 delete wr-api || true
+            pm2 start npm --name wr-api --cwd /var/www/wr-api -- start
             pm2 save
