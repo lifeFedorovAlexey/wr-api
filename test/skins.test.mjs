@@ -6,6 +6,7 @@ import {
   buildSkinAssetKey,
   buildSkinSlug,
   normalizeSkinAssetPath,
+  toSkinDto,
 } from "../lib/skins.mjs";
 
 test("buildSkinSlug normalizes champion and skin names", () => {
@@ -47,4 +48,53 @@ test("normalizeSkinAssetPath leaves local paths and wraps remote ones", () => {
     ),
     "/wr-api/assets/skin-ahri-arcade-ahri-image?src=https%3A%2F%2Fcmsassets.rgpub.io%2Fexample.jpg",
   );
+});
+
+test("skin asset helpers return direct S3 urls when public mode is enabled", () => {
+  const env = {
+    S3_ENDPOINT: "https://s3.twcstorage.ru",
+    S3_BUCKET: "bucket-name",
+    S3_ACCESS_KEY_ID: "key",
+    S3_SECRET_ACCESS_KEY: "secret",
+    S3_PUBLIC_BASE_URL: "https://s3.twcstorage.ru/bucket-name",
+    ASSET_PUBLIC_MODE: "s3",
+  };
+
+  assert.equal(
+    normalizeSkinAssetPath(
+      "ahri",
+      "Arcade Ahri",
+      "image",
+      "https://cmsassets.rgpub.io/example.jpg",
+      env,
+    ),
+    "https://s3.twcstorage.ru/bucket-name/assets/skin-ahri-arcade-ahri-image.jpg",
+  );
+});
+
+test("toSkinDto prefers source urls and rebuilds public asset urls from them", () => {
+  const env = {
+    S3_ENDPOINT: "https://s3.twcstorage.ru",
+    S3_BUCKET: "bucket-name",
+    S3_ACCESS_KEY_ID: "key",
+    S3_SECRET_ACCESS_KEY: "secret",
+    S3_PUBLIC_BASE_URL: "https://s3.twcstorage.ru/bucket-name",
+    ASSET_PUBLIC_MODE: "s3",
+  };
+
+  const dto = toSkinDto(
+    {
+      championSlug: "ahri",
+      skinName: "Arcade Ahri",
+      imageSourceUrl: "https://cmsassets.rgpub.io/example.jpg",
+      imageAssetPath: "/wr-api/assets/old-local-image",
+      modelSourceUrl: "https://cdn.modelviewer.lol/example.glb",
+      modelAssetPath: "/wr-api/assets/old-local-model",
+      has3d: true,
+    },
+    env,
+  );
+
+  assert.equal(dto.image.preview, "https://s3.twcstorage.ru/bucket-name/assets/skin-ahri-arcade-ahri-image.jpg");
+  assert.equal(dto.model?.cdn, "https://s3.twcstorage.ru/bucket-name/assets/skin-ahri-arcade-ahri-model.glb");
 });
