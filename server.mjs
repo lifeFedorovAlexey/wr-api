@@ -322,8 +322,7 @@ const server = http.createServer(async (req, res) => {
 
   if (!handler && url.pathname.startsWith("/api/news/")) {
     const id = decodeURIComponent(url.pathname.slice("/api/news/".length));
-
-    if (id === "import") {
+    if (!id || id === "import") {
       res.status(404).json({ error: "Not Found" });
       return;
     }
