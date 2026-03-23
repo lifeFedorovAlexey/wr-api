@@ -20,6 +20,7 @@ import winratesSnapshotHandler from "./api/winrates-snapshot.js";
 import webappOpenHandler from "./api/webapp-open.js";
 import { createChampionIconStore } from "./lib/championIcons.mjs";
 import { createGuideAssetStore, detectGuideAssetContentType } from "./lib/guideAssets.mjs";
+import { resolveGuideHeroMediaFilePath } from "./lib/guideHeroMedia.mjs";
 
 const PORT = Number(process.env.PORT || 3001);
 const HOST = process.env.HOST || "127.0.0.1";
@@ -202,6 +203,41 @@ async function tryServeGuideAsset(req, res, url) {
   return true;
 }
 
+async function tryServeGuideHeroMedia(req, res, url) {
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    return false;
+  }
+
+  if (!url.pathname.startsWith("/hero-media/")) {
+    return false;
+  }
+
+  const baseName = path.basename(decodeURIComponent(url.pathname.slice("/hero-media/".length)));
+  const slug = baseName.replace(/\.mp4$/i, "");
+  if (!slug) {
+    res.status(404).json({ error: "Not Found" });
+    return true;
+  }
+
+  const filePath = resolveGuideHeroMediaFilePath(slug);
+  if (!filePath) {
+    res.status(404).json({ error: "Not Found" });
+    return true;
+  }
+
+  res.setHeader("Content-Type", "video/mp4");
+  res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+
+  if (req.method === "HEAD") {
+    res.statusCode = 200;
+    res.end();
+    return true;
+  }
+
+  createReadStream(filePath).pipe(res);
+  return true;
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
   const handler = routes.get(url.pathname);
@@ -214,6 +250,10 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (await tryServeGuideAsset(req, res, url)) {
+    return;
+  }
+
+  if (await tryServeGuideHeroMedia(req, res, url)) {
     return;
   }
 
