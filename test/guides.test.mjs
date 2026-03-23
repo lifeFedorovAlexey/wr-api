@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { localizeRole, summarizeGuide } from "../lib/guides.mjs";
+import { buildGuideAssetKey, buildPublicGuideAssetPath } from "../lib/guideAssets.mjs";
 
 test("localizeRole normalizes common lane names", () => {
   assert.equal(localizeRole("Support Lane"), "Саппорт");
@@ -51,4 +52,14 @@ test("summarizeGuide builds lightweight summary for list endpoint", () => {
   assert.equal(summary.recommendedRole, "Саппорт");
   assert.deepEqual(summary.roles, ["Саппорт", "Мид"]);
   assert.equal(summary.buildCount, 2);
+});
+
+test("guide asset helpers build stable proxied paths", () => {
+  const assetKey = buildGuideAssetKey("guide", "lux", "q", "ability");
+
+  assert.equal(assetKey, "guide-lux-q-ability");
+  assert.equal(
+    buildPublicGuideAssetPath(assetKey, "https://example.com/lux-q.png"),
+    "/wr-api/assets/guide-lux-q-ability?src=https%3A%2F%2Fexample.com%2Flux-q.png",
+  );
 });

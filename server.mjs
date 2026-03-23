@@ -17,10 +17,12 @@ import updatedAtHandler from "./api/updated-at.js";
 import winratesSnapshotHandler from "./api/winrates-snapshot.js";
 import webappOpenHandler from "./api/webapp-open.js";
 import { createChampionIconStore } from "./lib/championIcons.mjs";
+import { createGuideAssetStore, detectGuideAssetContentType } from "./lib/guideAssets.mjs";
 
 const PORT = Number(process.env.PORT || 3001);
 const HOST = process.env.HOST || "127.0.0.1";
 const iconStorePromise = createChampionIconStore();
+const guideAssetStorePromise = createGuideAssetStore();
 
 const routes = new Map([
   ["/api/champions", championsHandler],
@@ -152,6 +154,51 @@ async function tryServeIcon(req, res, url) {
   return true;
 }
 
+async function tryServeGuideAsset(req, res, url) {
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    return false;
+  }
+
+  if (!url.pathname.startsWith("/assets/")) {
+    return false;
+  }
+
+  const assetKey = path.basename(decodeURIComponent(url.pathname.slice("/assets/".length)));
+  if (!assetKey) {
+    res.status(404).json({ error: "Not Found" });
+    return true;
+  }
+
+  const sourceUrl =
+    typeof url.searchParams.get("src") === "string"
+      ? url.searchParams.get("src")
+      : null;
+
+  const guideAssetStore = await guideAssetStorePromise;
+
+  if (sourceUrl) {
+    await guideAssetStore.mirror(assetKey, sourceUrl);
+  }
+
+  const filePath = guideAssetStore.getCachedFilePath(assetKey);
+  if (!filePath) {
+    res.status(404).json({ error: "Not Found" });
+    return true;
+  }
+
+  res.setHeader("Content-Type", detectGuideAssetContentType(filePath));
+  res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+
+  if (req.method === "HEAD") {
+    res.statusCode = 200;
+    res.end();
+    return true;
+  }
+
+  createReadStream(filePath).pipe(res);
+  return true;
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
   const handler = routes.get(url.pathname);
@@ -160,6 +207,10 @@ const server = http.createServer(async (req, res) => {
   attachQuery(req, url);
 
   if (await tryServeIcon(req, res, url)) {
+    return;
+  }
+
+  if (await tryServeGuideAsset(req, res, url)) {
     return;
   }
 

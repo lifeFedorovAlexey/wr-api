@@ -2,6 +2,7 @@ import { asc } from "drizzle-orm";
 
 import { db } from "../db/client.js";
 import { guideSummaries } from "../db/schema.js";
+import { buildPublicIconPath } from "../lib/championIcons.mjs";
 import { setCors } from "./utils/cors.js";
 
 function setPublicCache(res, { sMaxAge = 3600, swr = 21600 } = {}) {
@@ -41,7 +42,7 @@ export default async function handler(req, res) {
       slug: row.slug,
       name: row.name,
       title: row.title,
-      iconUrl: row.icon,
+      iconUrl: row.icon ? buildPublicIconPath(row.slug, row.icon) : null,
       patch: row.patch,
       tier: row.tier,
       recommendedRole: row.recommendedRole,
