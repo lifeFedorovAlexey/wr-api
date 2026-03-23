@@ -195,3 +195,37 @@ export const guideVariantMatchups = pgTable("guide_variant_matchups", {
   championSlug: text("champion_slug").notNull(),
   orderIndex: integer("order_index").notNull(),
 });
+
+export const skinCollections = pgTable("skin_collections", {
+  championSlug: text("champion_slug").primaryKey(),
+  championName: text("champion_name").notNull(),
+  source: text("source").notNull().default("merged-json"),
+  sourceUpdatedAt: timestamp("source_updated_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+export const skinEntries = pgTable("skin_entries", {
+  id: serial("id").primaryKey(),
+  championSlug: text("champion_slug").notNull(),
+  skinSlug: text("skin_slug").notNull(),
+  skinName: text("skin_name").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  has3d: boolean("has_3d").notNull().default(false),
+  imageSourceUrl: text("image_source_url"),
+  imageAssetPath: text("image_asset_path"),
+  modelSourceUrl: text("model_source_url"),
+  modelAssetPath: text("model_asset_path"),
+  rawPayload: jsonb("raw_payload"),
+  sourceUpdatedAt: timestamp("source_updated_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});

@@ -8,7 +8,9 @@
     "start": "node ./server.mjs",
     "dev": "node --watch ./server.mjs",
     "import:champions": "node ./scripts/import-champions.mjs",
+    "import:skins": "node ./scripts/import-skins.mjs",
     "setup:guides": "node ./scripts/setup-guides-table.mjs",
+    "setup:skins": "node ./scripts/setup-skins-table.mjs",
     "test": "node --test ./test"
   },
   "dependencies": {

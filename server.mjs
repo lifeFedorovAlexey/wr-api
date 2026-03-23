@@ -11,6 +11,8 @@ import guidesDetailHandler from "./api/guides-detail.js";
 import guidesImportHandler from "./api/guides-import.js";
 import guidesHandler from "./api/guides.js";
 import latestStatsSnapshotHandler from "./api/latest-stats-snapshot.js";
+import skinsDetailHandler from "./api/skins-detail.js";
+import skinsHandler from "./api/skins.js";
 import tierlistBulkHandler from "./api/tierlist-bulk.js";
 import tierlistHandler from "./api/tierlist.js";
 import updatedAtHandler from "./api/updated-at.js";
@@ -31,6 +33,7 @@ const routes = new Map([
   ["/api/guides", guidesHandler],
   ["/api/guides/import", guidesImportHandler],
   ["/api/latest-stats-snapshot", latestStatsSnapshotHandler],
+  ["/api/skins", skinsHandler],
   ["/api/tierlist-bulk", tierlistBulkHandler],
   ["/api/tierlist", tierlistHandler],
   ["/api/updated-at", updatedAtHandler],
@@ -222,6 +225,31 @@ const server = http.createServer(async (req, res) => {
     try {
       req.body = await readJsonBody(req);
       await guidesDetailHandler(req, res);
+    } catch (error) {
+      const statusCode =
+        error?.statusCode && Number.isInteger(error.statusCode)
+          ? error.statusCode
+          : 500;
+
+      if (!res.headersSent) {
+        res.status(statusCode).json({
+          error: statusCode === 400 ? "Bad Request" : "Internal Server Error",
+        });
+      }
+
+      console.error("[wr-api] server error:", error);
+    }
+    return;
+  }
+
+  if (!handler && url.pathname.startsWith("/api/skins/")) {
+    req.params = {
+      slug: decodeURIComponent(url.pathname.slice("/api/skins/".length)),
+    };
+
+    try {
+      req.body = await readJsonBody(req);
+      await skinsDetailHandler(req, res);
     } catch (error) {
       const statusCode =
         error?.statusCode && Number.isInteger(error.statusCode)
