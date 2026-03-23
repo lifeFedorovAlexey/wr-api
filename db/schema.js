@@ -10,6 +10,8 @@ import {
   timestamp,
   serial,
   bigint,
+  uniqueIndex,
+  index,
 } from "drizzle-orm/pg-core";
 
 export const champions = pgTable("champions", {
@@ -229,3 +231,66 @@ export const skinEntries = pgTable("skin_entries", {
     .defaultNow()
     .notNull(),
 });
+
+export const newsArticles = pgTable(
+  "news_articles",
+  {
+    id: serial("id").primaryKey(),
+    sourceUrl: text("source_url").notNull(),
+    normalizedUrl: text("normalized_url"),
+    title: text("title"),
+    description: text("description"),
+    category: text("category"),
+    locale: text("locale"),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    contentId: text("content_id"),
+    bodyText: text("body_text"),
+    rawPayload: jsonb("raw_payload").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    sourceUrlUidx: uniqueIndex("news_articles_source_url_uidx").on(table.sourceUrl),
+    publishedAtIdx: index("news_articles_published_at_idx").on(table.publishedAt),
+    categoryIdx: index("news_articles_category_idx").on(table.category),
+  }),
+);
+
+export const championEvents = pgTable(
+  "champion_events",
+  {
+    id: serial("id").primaryKey(),
+    articleId: integer("article_id").notNull(),
+    eventDate: pgDate("event_date").notNull(),
+    championSlug: text("champion_slug").notNull(),
+    eventType: text("event_type").notNull(),
+    scope: text("scope").notNull(),
+    abilityName: text("ability_name"),
+    skinName: text("skin_name"),
+    title: text("title"),
+    summary: text("summary"),
+    details: jsonb("details").notNull(),
+    confidence: doublePrecision("confidence"),
+    sourceMethod: text("source_method").notNull(),
+    dedupeKey: text("dedupe_key").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    dedupeKeyUidx: uniqueIndex("champion_events_dedupe_key_uidx").on(table.dedupeKey),
+    articleIdIdx: index("champion_events_article_id_idx").on(table.articleId),
+    championDateIdx: index("champion_events_champion_date_idx").on(
+      table.championSlug,
+      table.eventDate,
+    ),
+    typeIdx: index("champion_events_event_type_idx").on(table.eventType),
+  }),
+);

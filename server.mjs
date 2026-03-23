@@ -6,11 +6,15 @@ import { URL } from "node:url";
 
 import championsHandler from "./api/champions.js";
 import championHistoryHandler from "./api/champion-history.js";
+import championEventsHandler from "./api/champion-events.js";
 import cronImportChampionsHandler from "./api/cron-import-champions.js";
 import guidesDetailHandler from "./api/guides-detail.js";
 import guidesImportHandler from "./api/guides-import.js";
 import guidesHandler from "./api/guides.js";
 import latestStatsSnapshotHandler from "./api/latest-stats-snapshot.js";
+import newsDetailHandler from "./api/news-detail.js";
+import newsHandler from "./api/news.js";
+import newsImportHandler from "./api/news-import.js";
 import skinsDetailHandler from "./api/skins-detail.js";
 import skinsHandler from "./api/skins.js";
 import tierlistBulkHandler from "./api/tierlist-bulk.js";
@@ -30,10 +34,13 @@ const guideAssetStorePromise = createGuideAssetStore();
 const routes = new Map([
   ["/api/champions", championsHandler],
   ["/api/champion-history", championHistoryHandler],
+  ["/api/champion-events", championEventsHandler],
   ["/api/cron-import-champions", cronImportChampionsHandler],
   ["/api/guides", guidesHandler],
   ["/api/guides/import", guidesImportHandler],
   ["/api/latest-stats-snapshot", latestStatsSnapshotHandler],
+  ["/api/news", newsHandler],
+  ["/api/news/import", newsImportHandler],
   ["/api/skins", skinsHandler],
   ["/api/tierlist-bulk", tierlistBulkHandler],
   ["/api/tierlist", tierlistHandler],
@@ -296,6 +303,36 @@ const server = http.createServer(async (req, res) => {
     try {
       req.body = await readJsonBody(req);
       await skinsDetailHandler(req, res);
+    } catch (error) {
+      const statusCode =
+        error?.statusCode && Number.isInteger(error.statusCode)
+          ? error.statusCode
+          : 500;
+
+      if (!res.headersSent) {
+        res.status(statusCode).json({
+          error: statusCode === 400 ? "Bad Request" : "Internal Server Error",
+        });
+      }
+
+      console.error("[wr-api] server error:", error);
+    }
+    return;
+  }
+
+  if (!handler && url.pathname.startsWith("/api/news/")) {
+    const id = decodeURIComponent(url.pathname.slice("/api/news/".length));
+
+    if (id === "import") {
+      res.status(404).json({ error: "Not Found" });
+      return;
+    }
+
+    req.params = { id };
+
+    try {
+      req.body = await readJsonBody(req);
+      await newsDetailHandler(req, res);
     } catch (error) {
       const statusCode =
         error?.statusCode && Number.isInteger(error.statusCode)
