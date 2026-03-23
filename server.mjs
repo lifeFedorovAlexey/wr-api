@@ -18,7 +18,7 @@ import tierlistHandler from "./api/tierlist.js";
 import updatedAtHandler from "./api/updated-at.js";
 import winratesSnapshotHandler from "./api/winrates-snapshot.js";
 import webappOpenHandler from "./api/webapp-open.js";
-import { createChampionIconStore } from "./lib/championIcons.mjs";
+import { createChampionIconStore, normalizeIconSize } from "./lib/championIcons.mjs";
 import { createGuideAssetStore, detectGuideAssetContentType } from "./lib/guideAssets.mjs";
 import { resolveGuideHeroMediaFilePath } from "./lib/guideHeroMedia.mjs";
 
@@ -122,6 +122,7 @@ async function tryServeIcon(req, res, url) {
     typeof url.searchParams.get("src") === "string"
       ? url.searchParams.get("src")
       : null;
+  const requestedSize = normalizeIconSize(url.searchParams.get("size"));
 
   const iconStore = await iconStorePromise;
 
@@ -129,21 +130,26 @@ async function tryServeIcon(req, res, url) {
     await iconStore.mirror(slug, sourceUrl);
   }
 
-  const filePath = iconStore.getCachedFilePath(slug);
+  const filePath = requestedSize
+    ? await iconStore.ensureVariant(slug, requestedSize)
+    : iconStore.getCachedFilePath(slug);
   if (!filePath) {
     res.status(404).json({ error: "Not Found" });
     return true;
   }
 
-  const ext = path.extname(filePath).toLowerCase();
-  const contentType =
-    ext === ".webp"
-      ? "image/webp"
-      : ext === ".jpg" || ext === ".jpeg"
-        ? "image/jpeg"
-        : ext === ".avif"
-          ? "image/avif"
-          : "image/png";
+  const contentType = requestedSize
+    ? "image/webp"
+    : (() => {
+        const ext = path.extname(filePath).toLowerCase();
+        return ext === ".webp"
+          ? "image/webp"
+          : ext === ".jpg" || ext === ".jpeg"
+            ? "image/jpeg"
+            : ext === ".avif"
+              ? "image/avif"
+              : "image/png";
+      })();
 
   res.setHeader("Content-Type", contentType);
   res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
@@ -334,3 +340,4 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, HOST, () => {
   console.log(`[wr-api] listening on http://${HOST}:${PORT}`);
 });
+
