@@ -6,11 +6,13 @@ import { URL } from "node:url";
 
 import championsHandler from "./api/champions.js";
 import championHistoryHandler from "./api/champion-history.js";
+import championEventsHandler from "./api/champion-events.js";
 import cronImportChampionsHandler from "./api/cron-import-champions.js";
 import guidesDetailHandler from "./api/guides-detail.js";
 import guidesImportHandler from "./api/guides-import.js";
 import guidesHandler from "./api/guides.js";
 import latestStatsSnapshotHandler from "./api/latest-stats-snapshot.js";
+import newsImportHandler from "./api/news-import.js";
 import tierlistBulkHandler from "./api/tierlist-bulk.js";
 import tierlistHandler from "./api/tierlist.js";
 import updatedAtHandler from "./api/updated-at.js";
@@ -27,10 +29,12 @@ const guideHeroMediaStorePromise = createGuideHeroMediaStore();
 const routes = new Map([
   ["/api/champions", championsHandler],
   ["/api/champion-history", championHistoryHandler],
+  ["/api/champion-events", championEventsHandler],
   ["/api/cron-import-champions", cronImportChampionsHandler],
   ["/api/guides", guidesHandler],
   ["/api/guides/import", guidesImportHandler],
   ["/api/latest-stats-snapshot", latestStatsSnapshotHandler],
+  ["/api/news/import", newsImportHandler],
   ["/api/tierlist-bulk", tierlistBulkHandler],
   ["/api/tierlist", tierlistHandler],
   ["/api/updated-at", updatedAtHandler],
