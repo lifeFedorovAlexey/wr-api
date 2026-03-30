@@ -7,6 +7,7 @@ import { desc, eq, inArray, sql } from "drizzle-orm";
 const EXCLUDED_RANK_KEYS = new Set(["overall"]);
 const LOW_ELO_RANKS = new Set(["diamondPlus", "masterPlus"]);
 const HIGH_ELO_RANKS = new Set(["king", "peak"]);
+let cachedSnapshot = null;
 
 function setPublicCache(res, { sMaxAge = 300, swr = 1800 } = {}) {
   res.setHeader(
@@ -170,9 +171,13 @@ export default async function handler(req, res) {
       .filter(Boolean)
       .sort();
 
-    if (!latestDate) {
+    if (cachedSnapshot && cachedSnapshot.latestDate === latestDate) {
       setPublicCache(res);
-      return res.status(200).json({
+      return res.status(200).json(cachedSnapshot.payload);
+    }
+
+    if (!latestDate) {
+      const emptyPayload = {
         filters: { date: null },
         count: 0,
         items: [],
@@ -180,7 +185,10 @@ export default async function handler(req, res) {
           dates: [],
           byRange: { low: {}, high: {}, all: {} },
         },
-      });
+      };
+      cachedSnapshot = { latestDate: null, payload: emptyPayload };
+      setPublicCache(res);
+      return res.status(200).json(emptyPayload);
     }
 
     const rowShape = {
@@ -220,14 +228,21 @@ export default async function handler(req, res) {
       dates: recentDates,
     });
 
-    setPublicCache(res);
-
-    return res.status(200).json({
+    const payload = {
       filters: { date: latestDate },
       count: items.length,
       items,
       picksBansMonthly,
-    });
+    };
+
+    cachedSnapshot = {
+      latestDate,
+      payload,
+    };
+
+    setPublicCache(res);
+
+    return res.status(200).json(payload);
   } catch (e) {
     console.error("[wr-api] /api/latest-stats-snapshot error:", e);
     setNoStore(res);
