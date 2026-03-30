@@ -5,6 +5,8 @@ import { setCors } from "./utils/cors.js";
 import { desc, inArray, sql } from "drizzle-orm";
 import { buildPublicIconPath } from "../lib/championIcons.mjs";
 
+let cachedSnapshot = null;
+
 function setPublicCache(res, { sMaxAge = 300, swr = 1800 } = {}) {
   res.setHeader(
     "Cache-Control",
@@ -203,16 +205,27 @@ export default async function handler(req, res) {
       .map((row) => toDateString(row.date))
       .filter(Boolean)
       .sort();
+    const latestDate = recentDates[recentDates.length - 1] ?? null;
+
+    if (cachedSnapshot && cachedSnapshot.latestDate === latestDate) {
+      setPublicCache(res);
+      return res.status(200).json(cachedSnapshot.payload);
+    }
 
     if (!recentDates.length) {
-      setPublicCache(res);
-      return res.status(200).json({
+      const emptyPayload = {
         count: 0,
         dates: [],
         items: [],
         rowsBySlice: {},
         maxRowCount: 0,
-      });
+      };
+      cachedSnapshot = {
+        latestDate: null,
+        payload: emptyPayload,
+      };
+      setPublicCache(res);
+      return res.status(200).json(emptyPayload);
     }
 
     const [rows, championRows] = await Promise.all([
@@ -255,15 +268,22 @@ export default async function handler(req, res) {
       historyItems: items,
     });
 
-    setPublicCache(res);
-
-    return res.status(200).json({
+    const payload = {
       count: items.length,
       dates: recentDates,
       items,
       rowsBySlice,
       maxRowCount,
-    });
+    };
+
+    cachedSnapshot = {
+      latestDate,
+      payload,
+    };
+
+    setPublicCache(res);
+
+    return res.status(200).json(payload);
   } catch (e) {
     console.error("[wr-api] /api/winrates-snapshot error:", e);
     setNoStore(res);
