@@ -37,7 +37,7 @@ test("parseRiftGgCnStatsHtml extracts stats from CNStatsTabs payload", () => {
 
 test("parseRiftGgCnStatsHtml prefers the stats candidate with valid rank and lane values", () => {
   const payload = JSON.stringify(
-    `1:{"stats":{"matchups":[{"rankLevel":"1","lane":"0","dataDate":"2026-03-31","counters":[{"heroSlug":"ahri","metrics":{"winRate":0.5,"appearRate":0,"winRateRank":1,"appearRateRank":1}}]}],"core_items":[],"runes":[],"spells":[]}}
+    `1:{"stats":{"matchups":[{"rankLevel":"255","lane":"255","dataDate":"2026-03-31","counters":[{"heroSlug":"ahri","metrics":{"winRate":0.5,"appearRate":0,"winRateRank":1,"appearRateRank":1}}]}],"core_items":[],"runes":[],"spells":[]}}
 2:{"stats":{"matchups":[{"rankLevel":"Challenger","lane":"Dragon","dataDate":"2026-03-31","counters":[{"heroSlug":"varus","metrics":{"winRate":51.6,"appearRate":2.6,"winRateRank":1,"appearRateRank":8}}]}],"core_items":[],"runes":[],"spells":[]},"itemsDict":{"blade-of-the-ruined-king":{"slug":"blade-of-the-ruined-king","name":"Blade of the Ruined King"}},"runesDict":{"lethal-tempo":{"slug":"lethal-tempo","name":"Lethal Tempo"}},"spellsDict":{"flash":{"slug":"flash","name":"Flash"}}}`,
   );
 
@@ -60,6 +60,22 @@ test("parseRiftGgCnStatsHtml keeps dictionaries from the same composite payload 
   assert.equal(parsed.stats.matchups[0].heroSlug, undefined);
   assert.equal(parsed.itemsDict["blade-of-the-ruined-king"].name, "Blade of the Ruined King");
   assert.equal(parsed.itemsDict["bad-item"], undefined);
+});
+
+test("parseRiftGgCnStatsHtml accepts numeric rank and lane enums from CNStatsTabs payload", () => {
+  const payload = JSON.stringify(
+    `23:I[123,["/_next/static/chunks/app.js"],"CNStatsTabs"]
+21:["$","$L23",null,{"stats":{"matchups":[{"rankLevel":1,"lane":4,"dataDate":"2026-03-31","counters":[{"heroSlug":"leesin","metrics":{"winRate":51.6,"appearRate":2.6,"winRateRank":1,"appearRateRank":8}}]},{"rankLevel":255,"lane":4,"dataDate":"2026-03-31","counters":[{"heroSlug":"khazix","metrics":{"winRate":49.1,"appearRate":1.1,"winRateRank":2,"appearRateRank":4}}]}],"core_items":[{"rankLevel":1,"lane":4,"dataDate":"2026-03-31","builds":[{"items":[{"slug":"sunfire-aegis"},{"slug":"thornmail"}],"metrics":{"winRate":52.4,"appearRate":9.1,"winRateRank":2,"appearRateRank":1}}]}],"runes":[{"rankLevel":1,"lane":4,"dataDate":"2026-03-31","builds":[{"runes":[{"slug":"aftershock"},{"slug":"bone-plating"}],"metrics":{"winRate":50.1,"appearRate":12.2,"winRateRank":3,"appearRateRank":2}}]}],"spells":[{"rankLevel":1,"lane":4,"dataDate":"2026-03-31","spells":[{"spells":[{"slug":"flash"},{"slug":"smite"}],"metrics":{"winRate":49.8,"appearRate":18.5,"winRateRank":4,"appearRateRank":1}}]}]},"lang":"en","itemsDict":{"sunfire-aegis":{"slug":"sunfire-aegis","name":"Sunfire Aegis"}},"runesDict":{"aftershock":{"slug":"aftershock","name":"Aftershock"}},"spellsDict":{"flash":{"slug":"flash","name":"Flash"},"smite":{"slug":"smite","name":"Smite"}}}]`,
+  );
+
+  const html = `<html><body><script>self.__next_f.push([1,${payload}])</script></body></html>`;
+  const parsed = parseRiftGgCnStatsHtml(html);
+  const normalized = normalizeRiftGgCnStats("amumu", parsed);
+
+  assert.equal(normalized.matchups.length, 1);
+  assert.equal(normalized.matchups[0].rank, "diamond_plus");
+  assert.equal(normalized.matchups[0].lane, "jungle");
+  assert.equal(normalized.builds.length, 3);
 });
 
 test("normalizeRiftGgCnStats builds matchup and build rows", () => {
