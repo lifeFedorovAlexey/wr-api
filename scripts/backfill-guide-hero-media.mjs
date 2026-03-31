@@ -8,7 +8,7 @@ import { guideOfficialMeta } from "../db/schema.js";
 import {
   buildGuideHeroMediaFileName,
   buildGuideHeroMediaStorageKey,
-  buildPublicGuideHeroMediaPath,
+  resolveGuideHeroMediaFilePath,
   resolveGuideHeroMediaDir,
 } from "../lib/guideHeroMedia.mjs";
 import { createObjectStorageClient, shouldUseS3PublicUrls } from "../lib/objectStorage.mjs";
@@ -86,20 +86,6 @@ async function fetchVideoBuffer(url, slug) {
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
-async function objectExists(publicUrl) {
-  if (!publicUrl) return false;
-
-  try {
-    const response = await fetch(publicUrl, {
-      method: "HEAD",
-      redirect: "follow",
-    });
-    return response.ok;
-  } catch {
-    return false;
-  }
-}
-
 async function main() {
   const options = parseCliArgs(process.argv);
   const objectStorage = createObjectStorageClient(process.env);
@@ -135,12 +121,22 @@ async function main() {
     const slug = String(row.guideSlug || "").trim().toLowerCase();
     const remoteUrl = String(row.heroRemoteVideoUrl || "").trim();
     const storageKey = buildGuideHeroMediaStorageKey(slug);
-    const publicUrl = buildPublicGuideHeroMediaPath(slug, process.env);
 
     try {
-      if (!options.force && shouldUseS3PublicUrls(process.env) && (await objectExists(publicUrl))) {
-        summary.skipped.push({ slug, reason: "already-exists", publicUrl });
-        continue;
+      if (!options.force) {
+        if (useS3 && (await objectStorage.objectExists(storageKey))) {
+          summary.skipped.push({ slug, reason: "already-exists", storageKey });
+          continue;
+        }
+
+        if (!useS3 && resolveGuideHeroMediaFilePath(slug, process.env)) {
+          summary.skipped.push({
+            slug,
+            reason: "already-exists",
+            localPath: resolveGuideHeroMediaFilePath(slug, process.env),
+          });
+          continue;
+        }
       }
 
       if (options.dryRun) {

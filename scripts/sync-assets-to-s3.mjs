@@ -57,57 +57,78 @@ async function main() {
   const iconManifest = await loadJson(path.join(iconsDir, "manifest.json"));
 
   let uploaded = 0;
+  let skipped = 0;
 
   for (const [slug, entry] of Object.entries(iconManifest)) {
     if (!entry?.fileName) continue;
 
     const originalPath = path.join(iconsDir, entry.fileName);
     if (await fileExists(originalPath)) {
-      await objectStorage.uploadFile(
-        originalPath,
-        buildIconStorageKey(slug, entry.sourceUrl, detectIconContentType(entry.fileName)),
-        detectIconContentType(entry.fileName),
-        "public, max-age=31536000, immutable",
-      );
-      uploaded += 1;
+      const key = buildIconStorageKey(slug, entry.sourceUrl, detectIconContentType(entry.fileName));
+      if (await objectStorage.objectExists(key)) {
+        skipped += 1;
+      } else {
+        await objectStorage.uploadFile(
+          originalPath,
+          key,
+          detectIconContentType(entry.fileName),
+          "public, max-age=31536000, immutable",
+        );
+        uploaded += 1;
+      }
     }
 
     for (const size of ICON_DERIVATIVE_SIZES) {
       const variantPath = await iconStore.ensureVariant(slug, size);
       if (!variantPath) continue;
 
+      const key = buildIconVariantStorageKey(slug, size);
+      if (await objectStorage.objectExists(key)) {
+        skipped += 1;
+      } else {
+        await objectStorage.uploadFile(
+          variantPath,
+          key,
+          "image/webp",
+          "public, max-age=31536000, immutable",
+        );
+        uploaded += 1;
+      }
+    }
+  }
+
+  for (const fileName of await listFiles(assetsDir)) {
+    if (fileName === "manifest.json") continue;
+    const key = buildStorageKey("assets", fileName);
+    if (await objectStorage.objectExists(key)) {
+      skipped += 1;
+    } else {
       await objectStorage.uploadFile(
-        variantPath,
-        buildIconVariantStorageKey(slug, size),
-        "image/webp",
+        path.join(assetsDir, fileName),
+        key,
+        detectGuideAssetContentType(fileName),
         "public, max-age=31536000, immutable",
       );
       uploaded += 1;
     }
   }
 
-  for (const fileName of await listFiles(assetsDir)) {
-    if (fileName === "manifest.json") continue;
-    await objectStorage.uploadFile(
-      path.join(assetsDir, fileName),
-      buildStorageKey("assets", fileName),
-      detectGuideAssetContentType(fileName),
-      "public, max-age=31536000, immutable",
-    );
-    uploaded += 1;
-  }
-
   for (const fileName of await listFiles(heroDir)) {
-    await objectStorage.uploadFile(
-      path.join(heroDir, fileName),
-      buildStorageKey("hero-media", fileName),
-      "video/mp4",
-      "public, max-age=31536000, immutable",
-    );
-    uploaded += 1;
+    const key = buildStorageKey("hero-media", fileName);
+    if (await objectStorage.objectExists(key)) {
+      skipped += 1;
+    } else {
+      await objectStorage.uploadFile(
+        path.join(heroDir, fileName),
+        key,
+        "video/mp4",
+        "public, max-age=31536000, immutable",
+      );
+      uploaded += 1;
+    }
   }
 
-  console.log(JSON.stringify({ uploaded }, null, 2));
+  console.log(JSON.stringify({ uploaded, skipped }, null, 2));
 }
 
 main().catch((error) => {

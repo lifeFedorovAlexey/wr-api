@@ -114,6 +114,33 @@ async function loadChampionsFromDb() {
   return rows.filter((c) => !!c.cnHeroId);
 }
 
+function summarizeCoverage(champs, statsByHeroId) {
+  const dbCnHeroIds = new Set(champs.map((champ) => String(champ.cnHeroId)));
+  const apiHeroIds = new Set(Object.keys(statsByHeroId));
+
+  const missingInApi = champs.filter((champ) => !apiHeroIds.has(String(champ.cnHeroId)));
+  const extraInApi = Array.from(apiHeroIds).filter((heroId) => !dbCnHeroIds.has(heroId));
+  const matchedCount = champs.length - missingInApi.length;
+
+  log(
+    `[coverage] champions in DB with cnHeroId=${champs.length}, hero_ids in CN stats=${apiHeroIds.size}, matched=${matchedCount}, missingInApi=${missingInApi.length}, extraInApi=${extraInApi.length}`,
+  );
+
+  if (missingInApi.length > 0) {
+    log(
+      `[coverage] отсутствуют в hero_rank_list_v2: ${missingInApi
+        .map((champ) => `${champ.slug}(${champ.cnHeroId})`)
+        .join(", ")}`,
+    );
+  }
+
+  if (extraInApi.length > 0) {
+    log(
+      `[coverage] есть в hero_rank_list_v2, но нет в БД: ${extraInApi.join(", ")}`,
+    );
+  }
+}
+
 async function main() {
   const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
   const runStartedAt = new Date();
@@ -124,6 +151,7 @@ async function main() {
 
   // 2) китайская стата по рангу и лайнам
   const statsByHeroId = await fetchHeroRank();
+  summarizeCoverage(champs, statsByHeroId);
 
   let inserted = 0;
   let updated = 0;
