@@ -14,7 +14,15 @@ import { normalizeRiftGgCnStats, parseRiftGgCnStatsHtml } from "../lib/riftggCnS
 const REQUEST_TIMEOUT_MS = 30_000;
 const IMPORT_CONCURRENCY = Math.max(1, Number(process.env.RIFTGG_IMPORT_CONCURRENCY || 6));
 const RIFTGG_SLUG_ALIASES = {
+  aurelionsol: "aurelion-sol",
+  drmundo: "dr-mundo",
+  jarvaniv: "jarvan-iv",
+  leesin: "lee-sin",
+  missfortune: "miss-fortune",
+  masteryi: "master-yi",
   nunu: "nunu-and-willump",
+  twistedfate: "twisted-fate",
+  xinzhao: "xin-zhao",
 };
 
 function getRequestedSlugs() {
