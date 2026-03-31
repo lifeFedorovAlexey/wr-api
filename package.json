@@ -17,7 +17,8 @@
     "setup:news": "node ./scripts/setup-news-tables.mjs",
     "export:news-mapper": "node ./scripts/export-news-entity-mapper.mjs",
     "test": "node --test ./test",
-    "sync:assets:s3": "node ./scripts/sync-assets-to-s3.mjs"
+    "sync:assets:s3": "node ./scripts/sync-assets-to-s3.mjs",
+    "backfill:guide-entity-assets": "node ./scripts/backfill-guide-entity-assets.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1014.0",
