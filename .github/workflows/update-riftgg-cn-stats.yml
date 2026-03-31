@@ -11,7 +11,9 @@ jobs:
     timeout-minutes: 120
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      RIFTGG_IMPORT_CONCURRENCY: 6
+      RIFTGG_IMPORT_CONCURRENCY: 1
+      RIFTGG_REQUEST_TIMEOUT_MS: 20000
+      RIFTGG_FETCH_RETRIES: 2
 
     steps:
       - name: Checkout repo

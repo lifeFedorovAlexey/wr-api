@@ -11,8 +11,9 @@ import {
 } from "../db/schema.js";
 import { normalizeRiftGgCnStats, parseRiftGgCnStatsHtml } from "../lib/riftggCnStats.mjs";
 
-const REQUEST_TIMEOUT_MS = 30_000;
+const REQUEST_TIMEOUT_MS = Math.max(1_000, Number(process.env.RIFTGG_REQUEST_TIMEOUT_MS || 20_000));
 const IMPORT_CONCURRENCY = Math.max(1, Number(process.env.RIFTGG_IMPORT_CONCURRENCY || 6));
+const MAX_FETCH_ATTEMPTS = Math.max(1, Number(process.env.RIFTGG_FETCH_RETRIES || 2));
 const RIFTGG_SLUG_ALIASES = {
   aurelionsol: "aurelion-sol",
   drmundo: "dr-mundo",
@@ -36,23 +37,46 @@ function toRiftGgSlug(slug) {
 
 async function fetchRiftGgChampionHtml(slug) {
   const riftGgSlug = toRiftGgSlug(slug);
-  const response = await fetch(`https://www.riftgg.app/en/champions/${riftGgSlug}/cn-stats`, {
-    headers: {
-      "user-agent": "wildriftallstats-bot/1.0 (+https://wildriftallstats.ru)",
-      accept: "text/html,application/xhtml+xml",
-    },
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-  });
+  let lastError = null;
 
-  if (response.status === 404) {
-    return null;
+  for (let attempt = 1; attempt <= MAX_FETCH_ATTEMPTS; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(new Error(`timeout after ${REQUEST_TIMEOUT_MS}ms`)), REQUEST_TIMEOUT_MS);
+
+    try {
+      const response = await fetch(`https://www.riftgg.app/en/champions/${riftGgSlug}/cn-stats`, {
+        headers: {
+          "user-agent": "wildriftallstats-bot/1.0 (+https://wildriftallstats.ru)",
+          accept: "text/html,application/xhtml+xml",
+        },
+        signal: controller.signal,
+      });
+
+      if (response.status === 404) {
+        clearTimeout(timeout);
+        return null;
+      }
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const html = await response.text();
+      clearTimeout(timeout);
+      return html;
+    } catch (error) {
+      clearTimeout(timeout);
+      lastError = error;
+
+      if (attempt < MAX_FETCH_ATTEMPTS) {
+        console.warn(
+          `[riftgg-cn-stats] ${slug} -> retry ${attempt}/${MAX_FETCH_ATTEMPTS - 1} after ${error?.message || String(error)}`,
+        );
+      }
+    }
   }
 
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`);
-  }
-
-  return response.text();
+  throw lastError;
 }
 
 async function ensureDictionariesSynced(entries, now = new Date()) {
