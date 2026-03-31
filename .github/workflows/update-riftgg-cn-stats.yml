@@ -1,0 +1,33 @@
+name: Update RiftGG CN stats
+
+on:
+  schedule:
+    - cron: "20 */6 * * *"
+  workflow_dispatch:
+
+jobs:
+  update-riftgg-cn-stats:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      RIFTGG_IMPORT_CONCURRENCY: 6
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Ensure RiftGG CN stats tables
+        run: npm run setup:riftgg-cn-stats
+
+      - name: Import RiftGG CN stats
+        timeout-minutes: 90
+        run: node scripts/import-riftgg-cn-stats.mjs

@@ -21,10 +21,10 @@ test("parseRiftGgCnStatsHtml extracts stats and dictionaries from next flight pa
   assert.equal(parsed.spellsDict.flash.effects[0], "blink");
 });
 
-test("parseRiftGgCnStatsHtml prefers the richest stats payload when multiple stats objects exist", () => {
+test("parseRiftGgCnStatsHtml extracts stats from CNStatsTabs payload", () => {
   const payload = JSON.stringify(
-    `1:{"stats":{"matchups":[],"core_items":[],"runes":[],"spells":[]}}
-2:["$","$L23",null,{"stats":{"matchups":[{"rankLevel":"Challenger","lane":"Dragon","dataDate":"2026-03-31","counters":[{"heroSlug":"varus","metrics":{"winRate":51.6,"appearRate":2.6,"winRateRank":1,"appearRateRank":8}}]}],"core_items":[{"rankLevel":"Challenger","lane":"Dragon","dataDate":"2026-03-31","builds":[{"items":[{"slug":"blade-of-the-ruined-king"},{"slug":"magnetic-blaster"}],"metrics":{"winRate":52.4,"appearRate":9.1,"winRateRank":2,"appearRateRank":1}}]}],"runes":[{"rankLevel":"Challenger","lane":"Dragon","dataDate":"2026-03-31","builds":[{"runes":[{"slug":"lethal-tempo"},{"slug":"giant-slayer"}],"metrics":{"winRate":50.1,"appearRate":12.2,"winRateRank":3,"appearRateRank":2}}]}],"spells":[{"rankLevel":"Challenger","lane":"Dragon","dataDate":"2026-03-31","spells":[{"spells":[{"slug":"flash"},{"slug":"heal"}],"metrics":{"winRate":49.8,"appearRate":18.5,"winRateRank":4,"appearRateRank":1}}]}]},"itemsDict":{"blade-of-the-ruined-king":{"slug":"blade-of-the-ruined-king","name":"Blade of the Ruined King"}},"runesDict":{"lethal-tempo":{"slug":"lethal-tempo","name":"Lethal Tempo"}},"spellsDict":{"flash":{"slug":"flash","name":"Flash"},"heal":{"slug":"heal","name":"Heal"}}}]`,
+    `23:I[123,["/_next/static/chunks/app.js"],"CNStatsTabs"]
+21:["$","$L23",null,{"stats":{"matchups":[{"rankLevel":"Challenger","lane":"Dragon","dataDate":"2026-03-31","counters":[{"heroSlug":"varus","metrics":{"winRate":51.6,"appearRate":2.6,"winRateRank":1,"appearRateRank":8}}]}],"core_items":[{"rankLevel":"Challenger","lane":"Dragon","dataDate":"2026-03-31","builds":[{"items":[{"slug":"blade-of-the-ruined-king"},{"slug":"magnetic-blaster"}],"metrics":{"winRate":52.4,"appearRate":9.1,"winRateRank":2,"appearRateRank":1}}]}],"runes":[{"rankLevel":"Challenger","lane":"Dragon","dataDate":"2026-03-31","builds":[{"runes":[{"slug":"lethal-tempo"},{"slug":"giant-slayer"}],"metrics":{"winRate":50.1,"appearRate":12.2,"winRateRank":3,"appearRateRank":2}}]}],"spells":[{"rankLevel":"Challenger","lane":"Dragon","dataDate":"2026-03-31","spells":[{"spells":[{"slug":"flash"},{"slug":"heal"}],"metrics":{"winRate":49.8,"appearRate":18.5,"winRateRank":4,"appearRateRank":1}}]}]},"lang":"en","itemsDict":{"blade-of-the-ruined-king":{"slug":"blade-of-the-ruined-king","name":"Blade of the Ruined King"}},"runesDict":{"lethal-tempo":{"slug":"lethal-tempo","name":"Lethal Tempo"}},"spellsDict":{"flash":{"slug":"flash","name":"Flash"},"heal":{"slug":"heal","name":"Heal"}}}]`,
   );
 
   const html = `<html><body><script>self.__next_f.push([1,${payload}])</script></body></html>`;
@@ -137,4 +137,17 @@ test("buildRiftGgGuidePayload groups rows by rank and lane and exposes top and b
   assert.deepEqual(payload.coreItems[0].entries[0].entrySlugs, ["infinity-orb"]);
   assert.equal(payload.dictionaries.items["infinity-orb"].price, "2900");
   assert.equal(payload.dictionaries.runes.electrocute.description[0], "zap");
+});
+
+test("buildRiftGgGuidePayload ignores invalid rank and lane rows", () => {
+  const payload = buildRiftGgGuidePayload({
+    matchupRows: [
+      { rank: "255", lane: "1", opponentSlug: "ahri", winRate: 0.5, pickRate: 0, winRateRank: 1, pickRateRank: 1 },
+    ],
+    buildRows: [
+      { rank: "255", lane: "1", buildType: "coreItems", entrySlugs: ["infinity-orb"], winRate: 0.5, pickRate: 0, winRateRank: 1, pickRateRank: 1 },
+    ],
+  });
+
+  assert.equal(payload, null);
 });

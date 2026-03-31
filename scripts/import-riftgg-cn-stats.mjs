@@ -12,6 +12,7 @@ import {
 import { normalizeRiftGgCnStats, parseRiftGgCnStatsHtml } from "../lib/riftggCnStats.mjs";
 
 const REQUEST_TIMEOUT_MS = 30_000;
+const IMPORT_CONCURRENCY = Math.max(1, Number(process.env.RIFTGG_IMPORT_CONCURRENCY || 6));
 const RIFTGG_SLUG_ALIASES = {
   nunu: "nunu-and-willump",
 };
@@ -45,6 +46,94 @@ async function fetchRiftGgChampionHtml(slug) {
   return response.text();
 }
 
+async function importChampionStats({ slug, index, total }) {
+  const html = await fetchRiftGgChampionHtml(slug);
+
+  if (!html) {
+    console.log(`[riftgg-cn-stats] ${index}/${total} ${slug} -> skip:page-not-found`);
+    return { type: "skipped", slug, reason: "page-not-found" };
+  }
+
+  const parsed = parseRiftGgCnStatsHtml(html);
+  const normalized = normalizeRiftGgCnStats(slug, parsed);
+  const now = new Date();
+
+  await db.transaction(async (tx) => {
+    await tx.delete(riftggCnMatchups).where(eq(riftggCnMatchups.championSlug, slug));
+    await tx.delete(riftggCnBuilds).where(eq(riftggCnBuilds.championSlug, slug));
+
+    if (normalized.matchups.length) {
+      await tx.insert(riftggCnMatchups).values(
+        normalized.matchups.map((row) => ({
+          championSlug: row.championSlug,
+          rank: row.rank,
+          lane: row.lane,
+          dataDate: row.dataDate,
+          opponentSlug: row.opponentSlug,
+          winRate: row.winRate,
+          pickRate: row.pickRate,
+          winRateRank: row.winRateRank,
+          pickRateRank: row.pickRateRank,
+          rawPayload: row.rawPayload,
+          updatedAt: now,
+        })),
+      );
+    }
+
+    if (normalized.builds.length) {
+      await tx.insert(riftggCnBuilds).values(
+        normalized.builds.map((row) => ({
+          championSlug: row.championSlug,
+          rank: row.rank,
+          lane: row.lane,
+          dataDate: row.dataDate,
+          buildType: row.buildType,
+          buildKey: row.buildKey,
+          entrySlugs: row.entrySlugs,
+          winRate: row.winRate,
+          pickRate: row.pickRate,
+          winRateRank: row.winRateRank,
+          pickRateRank: row.pickRateRank,
+          rawPayload: row.rawPayload,
+          updatedAt: now,
+        })),
+      );
+    }
+
+    for (const entry of normalized.dictionaries) {
+      await tx
+        .insert(riftggCnDictionaries)
+        .values({
+          kind: entry.kind,
+          slug: entry.slug,
+          name: entry.name,
+          rawPayload: entry.rawPayload,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: [riftggCnDictionaries.kind, riftggCnDictionaries.slug],
+          set: {
+            name: entry.name,
+            rawPayload: entry.rawPayload,
+            updatedAt: now,
+          },
+        });
+    }
+  });
+
+  console.log(
+    `[riftgg-cn-stats] ${index}/${total} ${slug} -> ok | matchups=${normalized.matchups.length} builds=${normalized.builds.length} dictionaries=${normalized.dictionaries.length}`,
+  );
+
+  return {
+    type: "uploaded",
+    slug,
+    matchups: normalized.matchups.length,
+    builds: normalized.builds.length,
+    dictionaries: normalized.dictionaries.length,
+  };
+}
+
 async function main() {
   const requestedSlugs = getRequestedSlugs();
   const championRows = requestedSlugs.length
@@ -60,105 +149,36 @@ async function main() {
   const failed = [];
 
   console.log(
-    `[riftgg-cn-stats] start: champions=${slugs.length}${requestedSlugs.length ? " (filtered)" : ""}`,
+    `[riftgg-cn-stats] start: champions=${slugs.length}${requestedSlugs.length ? " (filtered)" : ""} concurrency=${IMPORT_CONCURRENCY}`,
   );
 
-  for (let index = 0; index < slugs.length; index += 1) {
-    const slug = slugs[index];
+  let cursor = 0;
+  async function worker() {
+    while (cursor < slugs.length) {
+      const currentIndex = cursor;
+      cursor += 1;
 
-    try {
-      const html = await fetchRiftGgChampionHtml(slug);
+      const slug = slugs[currentIndex];
+      try {
+        const result = await importChampionStats({
+          slug,
+          index: currentIndex + 1,
+          total: slugs.length,
+        });
 
-      if (!html) {
-        skipped.push({ slug, reason: "page-not-found" });
-        console.log(
-          `[riftgg-cn-stats] ${index + 1}/${slugs.length} ${slug} -> skip:page-not-found`,
-        );
-        continue;
+        if (result.type === "uploaded") {
+          uploaded.push(result);
+        } else if (result.type === "skipped") {
+          skipped.push({ slug: result.slug, reason: result.reason });
+        }
+      } catch (error) {
+        failed.push({ slug, error: error?.message || String(error) });
+        console.error(`[riftgg-cn-stats] ${currentIndex + 1}/${slugs.length} ${slug} -> failed`, error);
       }
-
-      const parsed = parseRiftGgCnStatsHtml(html);
-      const normalized = normalizeRiftGgCnStats(slug, parsed);
-      const now = new Date();
-
-      await db.transaction(async (tx) => {
-        await tx.delete(riftggCnMatchups).where(eq(riftggCnMatchups.championSlug, slug));
-        await tx.delete(riftggCnBuilds).where(eq(riftggCnBuilds.championSlug, slug));
-
-        if (normalized.matchups.length) {
-          await tx.insert(riftggCnMatchups).values(
-            normalized.matchups.map((row) => ({
-              championSlug: row.championSlug,
-              rank: row.rank,
-              lane: row.lane,
-              dataDate: row.dataDate,
-              opponentSlug: row.opponentSlug,
-              winRate: row.winRate,
-              pickRate: row.pickRate,
-              winRateRank: row.winRateRank,
-              pickRateRank: row.pickRateRank,
-              rawPayload: row.rawPayload,
-              updatedAt: now,
-            })),
-          );
-        }
-
-        if (normalized.builds.length) {
-          await tx.insert(riftggCnBuilds).values(
-            normalized.builds.map((row) => ({
-              championSlug: row.championSlug,
-              rank: row.rank,
-              lane: row.lane,
-              dataDate: row.dataDate,
-              buildType: row.buildType,
-              buildKey: row.buildKey,
-              entrySlugs: row.entrySlugs,
-              winRate: row.winRate,
-              pickRate: row.pickRate,
-              winRateRank: row.winRateRank,
-              pickRateRank: row.pickRateRank,
-              rawPayload: row.rawPayload,
-              updatedAt: now,
-            })),
-          );
-        }
-
-        for (const entry of normalized.dictionaries) {
-          await tx
-            .insert(riftggCnDictionaries)
-            .values({
-              kind: entry.kind,
-              slug: entry.slug,
-              name: entry.name,
-              rawPayload: entry.rawPayload,
-              updatedAt: now,
-            })
-            .onConflictDoUpdate({
-              target: [riftggCnDictionaries.kind, riftggCnDictionaries.slug],
-              set: {
-                name: entry.name,
-                rawPayload: entry.rawPayload,
-                updatedAt: now,
-              },
-            });
-        }
-      });
-
-      uploaded.push({
-        slug,
-        matchups: normalized.matchups.length,
-        builds: normalized.builds.length,
-        dictionaries: normalized.dictionaries.length,
-      });
-
-      console.log(
-        `[riftgg-cn-stats] ${index + 1}/${slugs.length} ${slug} -> ok | matchups=${normalized.matchups.length} builds=${normalized.builds.length} dictionaries=${normalized.dictionaries.length}`,
-      );
-    } catch (error) {
-      failed.push({ slug, error: error?.message || String(error) });
-      console.error(`[riftgg-cn-stats] ${index + 1}/${slugs.length} ${slug} -> failed`, error);
     }
   }
+
+  await Promise.all(Array.from({ length: Math.min(IMPORT_CONCURRENCY, slugs.length) }, () => worker()));
 
   console.log(
     JSON.stringify(
