@@ -1,10 +1,15 @@
 import "dotenv/config";
 
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
+
 import { db } from "../db/client.js";
 import { guideOfficialMeta } from "../db/schema.js";
 import {
+  buildGuideHeroMediaFileName,
   buildGuideHeroMediaStorageKey,
   buildPublicGuideHeroMediaPath,
+  resolveGuideHeroMediaDir,
 } from "../lib/guideHeroMedia.mjs";
 import { createObjectStorageClient, shouldUseS3PublicUrls } from "../lib/objectStorage.mjs";
 
@@ -74,9 +79,11 @@ async function objectExists(publicUrl) {
 async function main() {
   const options = parseCliArgs(process.argv);
   const objectStorage = createObjectStorageClient(process.env);
+  const localHeroMediaDir = resolveGuideHeroMediaDir(process.env);
+  const useS3 = Boolean(objectStorage);
 
-  if (!objectStorage) {
-    throw new Error("S3 env is not configured");
+  if (!useS3 && !localHeroMediaDir) {
+    throw new Error("Neither S3 nor local hero media dir is configured");
   }
 
   const rows = await db.select().from(guideOfficialMeta);
@@ -93,6 +100,7 @@ async function main() {
     skipped: [],
     failed: [],
     s3PublicMode: shouldUseS3PublicUrls(process.env),
+    storageMode: useS3 ? "s3" : "local",
   };
 
   for (const row of filteredRows) {
@@ -113,17 +121,25 @@ async function main() {
       }
 
       const body = await fetchVideoBuffer(remoteUrl, slug);
-      await objectStorage.uploadBuffer(
-        body,
-        storageKey,
-        "video/mp4",
-        "public, max-age=31536000, immutable",
-      );
+      if (useS3) {
+        await objectStorage.uploadBuffer(
+          body,
+          storageKey,
+          "video/mp4",
+          "public, max-age=31536000, immutable",
+        );
+      } else {
+        await mkdir(localHeroMediaDir, { recursive: true });
+        await writeFile(path.join(localHeroMediaDir, buildGuideHeroMediaFileName(slug)), body);
+      }
 
       summary.uploaded.push({
         slug,
         bytes: body.length,
-        storageKey,
+        storageKey: useS3 ? storageKey : null,
+        localPath: useS3
+          ? null
+          : path.join(localHeroMediaDir, buildGuideHeroMediaFileName(slug)),
       });
     } catch (error) {
       summary.failed.push({
