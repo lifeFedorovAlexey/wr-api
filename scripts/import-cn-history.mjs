@@ -139,6 +139,12 @@ function summarizeCoverage(champs, statsByHeroId) {
       `[coverage] есть в hero_rank_list_v2, но нет в БД: ${extraInApi.join(", ")}`,
     );
   }
+
+  return {
+    missingInApi,
+    extraInApi,
+    matchedCount,
+  };
 }
 
 async function main() {
@@ -151,11 +157,12 @@ async function main() {
 
   // 2) китайская стата по рангу и лайнам
   const statsByHeroId = await fetchHeroRank();
-  summarizeCoverage(champs, statsByHeroId);
+  const coverage = summarizeCoverage(champs, statsByHeroId);
 
   let inserted = 0;
   let updated = 0;
   let skippedNoStats = 0;
+  const skippedNoStatsChampions = [];
 
   for (const champ of champs) {
     const cnHeroId = String(champ.cnHeroId);
@@ -164,6 +171,7 @@ async function main() {
     const heroStats = statsByHeroId[cnHeroId];
     if (!heroStats) {
       skippedNoStats++;
+      skippedNoStatsChampions.push(`${slug}(${cnHeroId})`);
       continue;
     }
 
@@ -212,6 +220,24 @@ async function main() {
   log(
     `💾 import-cn-history: updated=${updated}, skipped(noStats)=${skippedNoStats}`
   );
+
+  if (skippedNoStatsChampions.length > 0) {
+    log(
+      `[import-cn-history] skipped because CN stats are missing: ${skippedNoStatsChampions.join(", ")}`,
+    );
+  }
+
+  if (
+    coverage.missingInApi.length > 0 &&
+    skippedNoStatsChampions.length === coverage.missingInApi.length
+  ) {
+    log(
+      `[import-cn-history] CN API currently has no stats for: ${coverage.missingInApi
+        .map((champ) => `${champ.slug}(${champ.cnHeroId})`)
+        .join(", ")}`,
+    );
+  }
+
   log("✅ import-cn-history.mjs завершён");
 }
 
