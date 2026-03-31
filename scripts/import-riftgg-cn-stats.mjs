@@ -44,6 +44,7 @@ async function fetchRiftGgChampionHtml(slug) {
     const timeout = setTimeout(() => controller.abort(new Error(`timeout after ${REQUEST_TIMEOUT_MS}ms`)), REQUEST_TIMEOUT_MS);
 
     try {
+      console.log(`[riftgg-cn-stats] ${slug} -> fetch attempt ${attempt}/${MAX_FETCH_ATTEMPTS}`);
       const response = await fetch(`https://www.riftgg.app/en/champions/${riftGgSlug}/cn-stats`, {
         headers: {
           "user-agent": "wildriftallstats-bot/1.0 (+https://wildriftallstats.ru)",
@@ -51,6 +52,7 @@ async function fetchRiftGgChampionHtml(slug) {
         },
         signal: controller.signal,
       });
+      console.log(`[riftgg-cn-stats] ${slug} -> response ${response.status}`);
 
       if (response.status === 404) {
         clearTimeout(timeout);
@@ -61,8 +63,10 @@ async function fetchRiftGgChampionHtml(slug) {
         throw new Error(`HTTP ${response.status}`);
       }
 
+      console.log(`[riftgg-cn-stats] ${slug} -> reading body`);
       const html = await response.text();
       clearTimeout(timeout);
+      console.log(`[riftgg-cn-stats] ${slug} -> body bytes=${html.length}`);
       return html;
     } catch (error) {
       clearTimeout(timeout);
@@ -123,11 +127,15 @@ async function importChampionStats({ slug, index, total }) {
     return { type: "skipped", slug, reason: "page-not-found" };
   }
 
+  console.log(`[riftgg-cn-stats] ${index}/${total} ${slug} -> parse`);
   const parsed = parseRiftGgCnStatsHtml(html);
+  console.log(`[riftgg-cn-stats] ${index}/${total} ${slug} -> normalize`);
   const normalized = normalizeRiftGgCnStats(slug, parsed);
   const now = new Date();
+  console.log(`[riftgg-cn-stats] ${index}/${total} ${slug} -> sync dictionaries=${normalized.dictionaries.length}`);
   await ensureDictionariesSynced(normalized.dictionaries, now);
 
+  console.log(`[riftgg-cn-stats] ${index}/${total} ${slug} -> write matchups=${normalized.matchups.length} builds=${normalized.builds.length}`);
   await db.transaction(async (tx) => {
     await tx.delete(riftggCnMatchups).where(eq(riftggCnMatchups.championSlug, slug));
     await tx.delete(riftggCnBuilds).where(eq(riftggCnBuilds.championSlug, slug));
