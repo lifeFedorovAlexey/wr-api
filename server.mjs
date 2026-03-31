@@ -22,6 +22,7 @@ import tierlistHandler from "./api/tierlist.js";
 import updatedAtHandler from "./api/updated-at.js";
 import winratesSnapshotHandler from "./api/winrates-snapshot.js";
 import webappOpenHandler from "./api/webapp-open.js";
+import { readJsonBody } from "./api/utils/request-body.js";
 import { createChampionIconStore, normalizeIconSize } from "./lib/championIcons.mjs";
 import { createGuideAssetStore, detectGuideAssetContentType } from "./lib/guideAssets.mjs";
 import { resolveGuideHeroMediaFilePath } from "./lib/guideHeroMedia.mjs";
@@ -65,35 +66,6 @@ function patchResponse(res) {
   };
 
   return res;
-}
-
-async function readJsonBody(req) {
-  if (req.method === "GET" || req.method === "HEAD") {
-    return undefined;
-  }
-
-  const chunks = [];
-
-  for await (const chunk of req) {
-    chunks.push(chunk);
-  }
-
-  if (!chunks.length) {
-    return undefined;
-  }
-
-  const raw = Buffer.concat(chunks).toString("utf8").trim();
-  if (!raw) {
-    return undefined;
-  }
-
-  try {
-    return JSON.parse(raw);
-  } catch {
-    const error = new Error("Invalid JSON body");
-    error.statusCode = 400;
-    throw error;
-  }
 }
 
 function attachQuery(req, url) {

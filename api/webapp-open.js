@@ -2,6 +2,10 @@
 import { db } from "../db/client.js";
 import { webappOpens } from "../db/schema.js";
 import { setCors } from "./utils/cors.js";
+import {
+  extractTelegramUser,
+  verifyTelegramInitData,
+} from "./utils/telegram.js";
 
 function setNoStore(res) {
   // POST-эндпоинты не должны попадать в CDN-кеш.
@@ -26,18 +30,28 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { tgId, username, firstName, lastName } = req.body || {};
-
-    // tgId — обязателен и должен быть числом
-    const tgIdNum = Number(tgId);
-    if (!Number.isInteger(tgIdNum) || tgIdNum <= 0) {
-      return res.status(400).json({ error: "Invalid tgId" });
+    const initData = String(req.headers["x-telegram-init-data"] || "").trim();
+    if (!initData) {
+      return res.status(401).json({ error: "Missing Telegram init data" });
     }
 
-    // лёгкая санитария строк
-    const safeUsername = sanitizeName(username);
-    const safeFirstName = sanitizeName(firstName);
-    const safeLastName = sanitizeName(lastName);
+    const verified = verifyTelegramInitData(
+      initData,
+      process.env.TELEGRAM_BOT_TOKEN,
+    );
+    if (!verified.ok) {
+      return res.status(401).json({ error: "Invalid Telegram init data" });
+    }
+
+    const user = extractTelegramUser(initData);
+    const tgIdNum = Number(user?.id);
+    if (!Number.isInteger(tgIdNum) || tgIdNum <= 0) {
+      return res.status(400).json({ error: "Invalid Telegram user" });
+    }
+
+    const safeUsername = sanitizeName(user?.username);
+    const safeFirstName = sanitizeName(user?.first_name);
+    const safeLastName = sanitizeName(user?.last_name);
 
     await db.insert(webappOpens).values({
       tgId: tgIdNum,
