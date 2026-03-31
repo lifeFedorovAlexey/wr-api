@@ -63,7 +63,6 @@ jobs:
             upsert_env S3_FORCE_PATH_STYLE "${S3_FORCE_PATH_STYLE}" .env
             upsert_env ASSET_PUBLIC_MODE "${ASSET_PUBLIC_MODE}" .env
             npm ci
-            node ./scripts/backfill-guide-hero-media.mjs
             pm2 delete wr-api || true
             pm2 start npm --name wr-api --cwd /var/www/wr-api -- start
             pm2 save
