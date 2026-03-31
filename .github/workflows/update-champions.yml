@@ -37,4 +37,5 @@ jobs:
         run: node scripts/import-cn-history.mjs
 
       - name: Backfill guide hero media
-        run: node scripts/backfill-guide-hero-media.mjs
+        timeout-minutes: 30
+        run: node scripts/backfill-guide-hero-media.mjs --require-s3

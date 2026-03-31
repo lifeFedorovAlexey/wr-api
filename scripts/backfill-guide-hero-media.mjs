@@ -18,6 +18,7 @@ function parseCliArgs(argv) {
   const options = {
     dryRun: false,
     force: false,
+    requireS3: false,
     slugs: [],
   };
 
@@ -32,34 +33,57 @@ function parseCliArgs(argv) {
       continue;
     }
 
+    if (arg === "--require-s3") {
+      options.requireS3 = true;
+      continue;
+    }
+
     options.slugs.push(String(arg || "").trim().toLowerCase());
   }
 
   return options;
 }
 
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function fetchVideoBuffer(url, slug) {
-  const response = await fetch(url, {
-    redirect: "follow",
-    headers: {
-      "user-agent": "wr-api-hero-media-backfill/1.0",
-    },
-  });
+  let lastError = null;
 
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(
-      `download failed for ${slug}: HTTP ${response.status}${body ? ` - ${body.slice(0, 200)}` : ""}`,
-    );
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        redirect: "follow",
+        headers: {
+          "user-agent": "wr-api-hero-media-backfill/1.0",
+        },
+        signal: AbortSignal.timeout(120_000),
+      });
+
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        throw new Error(
+          `download failed for ${slug}: HTTP ${response.status}${body ? ` - ${body.slice(0, 200)}` : ""}`,
+        );
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      if (!buffer.length) {
+        throw new Error(`download failed for ${slug}: empty body`);
+      }
+
+      return buffer;
+    } catch (error) {
+      lastError = error;
+      if (attempt < 3) {
+        await wait(1000 * attempt);
+      }
+    }
   }
 
-  const arrayBuffer = await response.arrayBuffer();
-  const buffer = Buffer.from(arrayBuffer);
-  if (!buffer.length) {
-    throw new Error(`download failed for ${slug}: empty body`);
-  }
-
-  return buffer;
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
 async function objectExists(publicUrl) {
@@ -81,6 +105,10 @@ async function main() {
   const objectStorage = createObjectStorageClient(process.env);
   const localHeroMediaDir = resolveGuideHeroMediaDir(process.env);
   const useS3 = Boolean(objectStorage);
+
+  if (options.requireS3 && !useS3) {
+    throw new Error("S3 env is not configured");
+  }
 
   if (!useS3 && !localHeroMediaDir) {
     throw new Error("Neither S3 nor local hero media dir is configured");
