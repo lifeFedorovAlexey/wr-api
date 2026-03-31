@@ -1,4 +1,4 @@
-import { and, eq, or } from "drizzle-orm";
+import { and, eq, inArray, or } from "drizzle-orm";
 
 import { db } from "../db/client.js";
 import {
@@ -12,8 +12,13 @@ import {
   guideVariantSkillOrders,
   guideVariantSkillRows,
   guideVariants,
+  champions,
+  riftggCnBuilds,
+  riftggCnDictionaries,
+  riftggCnMatchups,
 } from "../db/schema.js";
 import { assembleGuideDetail, collectGuideEntityRefs } from "../lib/guides.mjs";
+import { buildRiftGgGuidePayload } from "../lib/riftggCnStats.mjs";
 import { setCors } from "./utils/cors.js";
 
 function setPublicCache(res, { sMaxAge = 3600, swr = 21600 } = {}) {
@@ -55,7 +60,7 @@ export default async function handler(req, res) {
       return res.status(404).json({ error: "Not Found" });
     }
 
-    const [officialMetaRows, abilityRows, buildBreakdownRows, variantRows, sectionRows, skillOrderRows, skillRowRows, matchupRows] =
+    const [officialMetaRows, abilityRows, buildBreakdownRows, variantRows, sectionRows, skillOrderRows, skillRowRows, matchupRows, riftggMatchupRows, riftggBuildRows] =
       await Promise.all([
         db.select().from(guideOfficialMeta).where(eq(guideOfficialMeta.guideSlug, slug)),
         db.select().from(guideAbilities).where(eq(guideAbilities.guideSlug, slug)),
@@ -71,6 +76,8 @@ export default async function handler(req, res) {
           .where(eq(guideVariantSkillOrders.guideSlug, slug)),
         db.select().from(guideVariantSkillRows).where(eq(guideVariantSkillRows.guideSlug, slug)),
         db.select().from(guideVariantMatchups).where(eq(guideVariantMatchups.guideSlug, slug)),
+        db.select().from(riftggCnMatchups).where(eq(riftggCnMatchups.championSlug, slug)),
+        db.select().from(riftggCnBuilds).where(eq(riftggCnBuilds.championSlug, slug)),
       ]);
 
     const entityRefs = collectGuideEntityRefs({
@@ -95,6 +102,75 @@ export default async function handler(req, res) {
           )
       : [];
 
+    const opponentSlugs = Array.from(
+      new Set(riftggMatchupRows.map((row) => row.opponentSlug).filter(Boolean)),
+    );
+    const dictionarySlugs = {
+      item: Array.from(
+        new Set(
+          riftggBuildRows
+            .filter((row) => row.buildType === "coreItems")
+            .flatMap((row) => row.entrySlugs || [])
+            .filter(Boolean),
+        ),
+      ),
+      rune: Array.from(
+        new Set(
+          riftggBuildRows
+            .filter((row) => row.buildType === "runes")
+            .flatMap((row) => row.entrySlugs || [])
+            .filter(Boolean),
+        ),
+      ),
+      spell: Array.from(
+        new Set(
+          riftggBuildRows
+            .filter((row) => row.buildType === "spells")
+            .flatMap((row) => row.entrySlugs || [])
+            .filter(Boolean),
+        ),
+      ),
+    };
+
+    const [opponentRows, itemRows, runeRows, spellRows] = await Promise.all([
+      opponentSlugs.length
+        ? db.select().from(champions).where(inArray(champions.slug, opponentSlugs))
+        : Promise.resolve([]),
+      dictionarySlugs.item.length
+        ? db
+            .select()
+            .from(riftggCnDictionaries)
+            .where(
+              and(
+                eq(riftggCnDictionaries.kind, "item"),
+                inArray(riftggCnDictionaries.slug, dictionarySlugs.item),
+              ),
+            )
+        : Promise.resolve([]),
+      dictionarySlugs.rune.length
+        ? db
+            .select()
+            .from(riftggCnDictionaries)
+            .where(
+              and(
+                eq(riftggCnDictionaries.kind, "rune"),
+                inArray(riftggCnDictionaries.slug, dictionarySlugs.rune),
+              ),
+            )
+        : Promise.resolve([]),
+      dictionarySlugs.spell.length
+        ? db
+            .select()
+            .from(riftggCnDictionaries)
+            .where(
+              and(
+                eq(riftggCnDictionaries.kind, "spell"),
+                inArray(riftggCnDictionaries.slug, dictionarySlugs.spell),
+              ),
+            )
+        : Promise.resolve([]),
+    ]);
+
     const detail = assembleGuideDetail({
       summary: summaryRows[0],
       officialMeta: officialMetaRows[0] || null,
@@ -106,6 +182,15 @@ export default async function handler(req, res) {
       skillRows: skillRowRows,
       matchups: matchupRows,
       entities: entityRows,
+    });
+
+    detail.riftgg = buildRiftGgGuidePayload({
+      matchupRows: riftggMatchupRows,
+      buildRows: riftggBuildRows,
+      opponentRows,
+      itemRows,
+      runeRows,
+      spellRows,
     });
 
     setPublicCache(res, { sMaxAge: 3600, swr: 21600 });

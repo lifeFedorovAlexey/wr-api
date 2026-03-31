@@ -274,6 +274,99 @@ export const guideVariantMatchups = pgTable(
   }),
 );
 
+export const riftggCnDictionaries = pgTable(
+  "riftgg_cn_dictionaries",
+  {
+    id: serial("id").primaryKey(),
+    kind: text("kind").notNull(),
+    slug: text("slug").notNull(),
+    name: text("name").notNull(),
+    rawPayload: jsonb("raw_payload").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    kindSlugUidx: uniqueIndex("riftgg_cn_dictionaries_kind_slug_uidx").on(
+      table.kind,
+      table.slug,
+    ),
+    kindIdx: index("riftgg_cn_dictionaries_kind_idx").on(table.kind),
+  }),
+);
+
+export const riftggCnMatchups = pgTable(
+  "riftgg_cn_matchups",
+  {
+    id: serial("id").primaryKey(),
+    championSlug: text("champion_slug").notNull(),
+    rank: text("rank").notNull(),
+    lane: text("lane").notNull(),
+    dataDate: pgDate("data_date"),
+    opponentSlug: text("opponent_slug").notNull(),
+    winRate: doublePrecision("win_rate"),
+    pickRate: doublePrecision("pick_rate"),
+    winRateRank: integer("win_rate_rank"),
+    pickRateRank: integer("pick_rate_rank"),
+    rawPayload: jsonb("raw_payload").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    championFilterIdx: index("riftgg_cn_matchups_champion_filter_idx").on(
+      table.championSlug,
+      table.rank,
+      table.lane,
+    ),
+    championOpponentUidx: uniqueIndex("riftgg_cn_matchups_champion_opponent_uidx").on(
+      table.championSlug,
+      table.rank,
+      table.lane,
+      table.dataDate,
+      table.opponentSlug,
+    ),
+  }),
+);
+
+export const riftggCnBuilds = pgTable(
+  "riftgg_cn_builds",
+  {
+    id: serial("id").primaryKey(),
+    championSlug: text("champion_slug").notNull(),
+    rank: text("rank").notNull(),
+    lane: text("lane").notNull(),
+    dataDate: pgDate("data_date"),
+    buildType: text("build_type").notNull(),
+    buildKey: text("build_key").notNull(),
+    entrySlugs: text("entry_slugs").array().notNull(),
+    winRate: doublePrecision("win_rate"),
+    pickRate: doublePrecision("pick_rate"),
+    winRateRank: integer("win_rate_rank"),
+    pickRateRank: integer("pick_rate_rank"),
+    rawPayload: jsonb("raw_payload").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    championTypeIdx: index("riftgg_cn_builds_champion_type_idx").on(
+      table.championSlug,
+      table.buildType,
+      table.rank,
+      table.lane,
+    ),
+    championBuildUidx: uniqueIndex("riftgg_cn_builds_champion_build_uidx").on(
+      table.championSlug,
+      table.rank,
+      table.lane,
+      table.dataDate,
+      table.buildType,
+      table.buildKey,
+    ),
+  }),
+);
+
 export const skinCollections = pgTable("skin_collections", {
   championSlug: text("champion_slug").primaryKey(),
   championName: text("champion_name").notNull(),
