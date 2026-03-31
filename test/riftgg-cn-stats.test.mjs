@@ -75,6 +75,8 @@ test("parseRiftGgCnStatsHtml accepts numeric rank and lane enums from CNStatsTab
   assert.equal(normalized.matchups.length, 1);
   assert.equal(normalized.matchups[0].rank, "diamond_plus");
   assert.equal(normalized.matchups[0].lane, "jungle");
+  assert.equal(normalized.matchups[0].winRate, 51.6);
+  assert.equal(normalized.matchups[0].pickRate, 2.6);
   assert.equal(normalized.builds.length, 3);
 });
 
@@ -193,4 +195,18 @@ test("buildRiftGgGuidePayload ignores invalid rank and lane rows", () => {
   });
 
   assert.equal(payload, null);
+});
+
+test("buildRiftGgGuidePayload keeps RiftGG rank and lane ordering", () => {
+  const payload = buildRiftGgGuidePayload({
+    matchupRows: [
+      { rank: "challenger", lane: "adc", dataDate: "2026-03-31", opponentSlug: "xayah", winRate: 50, pickRate: 1, winRateRank: 1, pickRateRank: 1 },
+      { rank: "diamond_plus", lane: "jungle", dataDate: "2026-03-31", opponentSlug: "ahri", winRate: 51, pickRate: 2, winRateRank: 1, pickRateRank: 1 },
+      { rank: "master_plus", lane: "top", dataDate: "2026-03-31", opponentSlug: "teemo", winRate: 52, pickRate: 3, winRateRank: 1, pickRateRank: 1 },
+    ],
+    buildRows: [],
+  });
+
+  assert.deepEqual(payload.availableRanks, ["diamond_plus", "master_plus", "challenger"]);
+  assert.deepEqual(payload.availableLanes, ["top", "jungle", "adc"]);
 });
