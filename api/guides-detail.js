@@ -49,6 +49,23 @@ export default async function handler(req, res) {
   }
 
   try {
+    const mergeRiftDictionaryAssets = (rows, assetRowsBySlug) =>
+      rows.map((row) => {
+        const assetRow = assetRowsBySlug.get(row.slug);
+        if (!assetRow) return row;
+
+        return {
+          ...row,
+          imageUrl: assetRow.imageUrl || null,
+          tooltipImageUrl: assetRow.tooltipImageUrl || null,
+          rawPayload: {
+            ...(row.rawPayload || {}),
+            imageUrl: assetRow.imageUrl || null,
+            tooltipImageUrl: assetRow.tooltipImageUrl || null,
+          },
+        };
+      });
+
     const summaryRows = await db
       .select()
       .from(guideSummaries)
@@ -131,8 +148,13 @@ export default async function handler(req, res) {
         ),
       ),
     };
+    const riftDictionaryEntityRefs = [
+      ...dictionarySlugs.item.map((value) => ({ kind: "item", slug: value })),
+      ...dictionarySlugs.rune.map((value) => ({ kind: "rune", slug: value })),
+      ...dictionarySlugs.spell.map((value) => ({ kind: "summonerSpell", slug: value })),
+    ];
 
-    const [opponentRows, itemRows, runeRows, spellRows] = await Promise.all([
+    const [opponentRows, itemRowsRaw, runeRowsRaw, spellRowsRaw, riftDictionaryAssetRows] = await Promise.all([
       opponentSlugs.length
         ? db.select().from(champions).where(inArray(champions.slug, opponentSlugs))
         : Promise.resolve([]),
@@ -169,7 +191,42 @@ export default async function handler(req, res) {
               ),
             )
         : Promise.resolve([]),
+      riftDictionaryEntityRefs.length
+        ? db
+            .select({
+              kind: guideEntities.kind,
+              slug: guideEntities.slug,
+              imageUrl: guideEntities.imageUrl,
+              tooltipImageUrl: guideEntities.tooltipImageUrl,
+            })
+            .from(guideEntities)
+            .where(
+              or(
+                ...riftDictionaryEntityRefs.map((ref) =>
+                  and(eq(guideEntities.kind, ref.kind), eq(guideEntities.slug, ref.slug)),
+                ),
+              ),
+            )
+        : Promise.resolve([]),
     ]);
+    const itemAssetRowsBySlug = new Map(
+      riftDictionaryAssetRows
+        .filter((row) => row.kind === "item")
+        .map((row) => [row.slug, row]),
+    );
+    const runeAssetRowsBySlug = new Map(
+      riftDictionaryAssetRows
+        .filter((row) => row.kind === "rune")
+        .map((row) => [row.slug, row]),
+    );
+    const spellAssetRowsBySlug = new Map(
+      riftDictionaryAssetRows
+        .filter((row) => row.kind === "summonerSpell")
+        .map((row) => [row.slug, row]),
+    );
+    const itemRows = mergeRiftDictionaryAssets(itemRowsRaw, itemAssetRowsBySlug);
+    const runeRows = mergeRiftDictionaryAssets(runeRowsRaw, runeAssetRowsBySlug);
+    const spellRows = mergeRiftDictionaryAssets(spellRowsRaw, spellAssetRowsBySlug);
 
     const detail = assembleGuideDetail({
       summary: summaryRows[0],
