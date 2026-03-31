@@ -24,6 +24,7 @@ const RIFTGG_SLUG_ALIASES = {
   twistedfate: "twisted-fate",
   xinzhao: "xin-zhao",
 };
+let dictionariesSyncPromise = null;
 
 function getRequestedSlugs() {
   return process.argv.slice(2).map((value) => String(value || "").trim()).filter(Boolean);
@@ -54,7 +55,43 @@ async function fetchRiftGgChampionHtml(slug) {
   return response.text();
 }
 
+async function ensureDictionariesSynced(entries, now = new Date()) {
+  if (!Array.isArray(entries) || !entries.length) {
+    return;
+  }
+
+  if (!dictionariesSyncPromise) {
+    dictionariesSyncPromise = (async () => {
+      for (const entry of entries) {
+        await db
+          .insert(riftggCnDictionaries)
+          .values({
+            kind: entry.kind,
+            slug: entry.slug,
+            name: entry.name,
+            rawPayload: entry.rawPayload,
+            updatedAt: now,
+          })
+          .onConflictDoUpdate({
+            target: [riftggCnDictionaries.kind, riftggCnDictionaries.slug],
+            set: {
+              name: entry.name,
+              rawPayload: entry.rawPayload,
+              updatedAt: now,
+            },
+          });
+      }
+    })().catch((error) => {
+      dictionariesSyncPromise = null;
+      throw error;
+    });
+  }
+
+  await dictionariesSyncPromise;
+}
+
 async function importChampionStats({ slug, index, total }) {
+  console.log(`[riftgg-cn-stats] ${index}/${total} ${slug} -> start`);
   const html = await fetchRiftGgChampionHtml(slug);
 
   if (!html) {
@@ -65,6 +102,7 @@ async function importChampionStats({ slug, index, total }) {
   const parsed = parseRiftGgCnStatsHtml(html);
   const normalized = normalizeRiftGgCnStats(slug, parsed);
   const now = new Date();
+  await ensureDictionariesSynced(normalized.dictionaries, now);
 
   await db.transaction(async (tx) => {
     await tx.delete(riftggCnMatchups).where(eq(riftggCnMatchups.championSlug, slug));
@@ -108,25 +146,6 @@ async function importChampionStats({ slug, index, total }) {
       );
     }
 
-    for (const entry of normalized.dictionaries) {
-      await tx
-        .insert(riftggCnDictionaries)
-        .values({
-          kind: entry.kind,
-          slug: entry.slug,
-          name: entry.name,
-          rawPayload: entry.rawPayload,
-          updatedAt: now,
-        })
-        .onConflictDoUpdate({
-          target: [riftggCnDictionaries.kind, riftggCnDictionaries.slug],
-          set: {
-            name: entry.name,
-            rawPayload: entry.rawPayload,
-            updatedAt: now,
-          },
-        });
-    }
   });
 
   console.log(
