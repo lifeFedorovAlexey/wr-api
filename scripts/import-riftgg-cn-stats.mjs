@@ -12,13 +12,21 @@ import {
 import { normalizeRiftGgCnStats, parseRiftGgCnStatsHtml } from "../lib/riftggCnStats.mjs";
 
 const REQUEST_TIMEOUT_MS = 30_000;
+const RIFTGG_SLUG_ALIASES = {
+  nunu: "nunu-and-willump",
+};
 
 function getRequestedSlugs() {
   return process.argv.slice(2).map((value) => String(value || "").trim()).filter(Boolean);
 }
 
+function toRiftGgSlug(slug) {
+  return RIFTGG_SLUG_ALIASES[slug] || slug;
+}
+
 async function fetchRiftGgChampionHtml(slug) {
-  const response = await fetch(`https://www.riftgg.app/en/champions/${slug}/cn-stats`, {
+  const riftGgSlug = toRiftGgSlug(slug);
+  const response = await fetch(`https://www.riftgg.app/en/champions/${riftGgSlug}/cn-stats`, {
     headers: {
       "user-agent": "wildriftallstats-bot/1.0 (+https://wildriftallstats.ru)",
       accept: "text/html,application/xhtml+xml",
