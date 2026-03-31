@@ -35,6 +35,19 @@ test("parseRiftGgCnStatsHtml extracts stats from CNStatsTabs payload", () => {
   assert.equal(parsed.spellsDict.heal.name, "Heal");
 });
 
+test("parseRiftGgCnStatsHtml prefers the stats candidate with valid rank and lane values", () => {
+  const payload = JSON.stringify(
+    `1:{"stats":{"matchups":[{"rankLevel":"1","lane":"0","dataDate":"2026-03-31","counters":[{"heroSlug":"ahri","metrics":{"winRate":0.5,"appearRate":0,"winRateRank":1,"appearRateRank":1}}]}],"core_items":[],"runes":[],"spells":[]}}
+2:{"stats":{"matchups":[{"rankLevel":"Challenger","lane":"Dragon","dataDate":"2026-03-31","counters":[{"heroSlug":"varus","metrics":{"winRate":51.6,"appearRate":2.6,"winRateRank":1,"appearRateRank":8}}]}],"core_items":[],"runes":[],"spells":[]},"itemsDict":{"blade-of-the-ruined-king":{"slug":"blade-of-the-ruined-king","name":"Blade of the Ruined King"}},"runesDict":{"lethal-tempo":{"slug":"lethal-tempo","name":"Lethal Tempo"}},"spellsDict":{"flash":{"slug":"flash","name":"Flash"}}}`,
+  );
+
+  const html = `<html><body><script>self.__next_f.push([1,${payload}])</script></body></html>`;
+  const parsed = parseRiftGgCnStatsHtml(html);
+
+  assert.equal(parsed.stats.matchups[0].rankLevel, "Challenger");
+  assert.equal(parsed.stats.matchups[0].lane, "Dragon");
+});
+
 test("normalizeRiftGgCnStats builds matchup and build rows", () => {
   const normalized = normalizeRiftGgCnStats("lux", {
     stats: {
