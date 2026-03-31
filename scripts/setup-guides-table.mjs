@@ -146,13 +146,33 @@ async function main() {
   `;
 
   await client`
+    create index if not exists guide_variants_slug_order_idx
+    on guide_variants (guide_slug, order_index);
+  `;
+
+  await client`
     create index if not exists guide_summaries_name_idx
     on guide_summaries (name);
   `;
 
   await client`
+    create index if not exists guide_entities_slug_idx
+    on guide_entities (slug);
+  `;
+
+  await client`
+    create index if not exists guide_abilities_guide_order_idx
+    on guide_abilities (guide_slug, order_index);
+  `;
+
+  await client`
     create index if not exists guide_sections_slug_variant_idx
     on guide_variant_sections (guide_slug, variant_key, section_type);
+  `;
+
+  await client`
+    create unique index if not exists guide_skill_orders_slug_variant_uidx
+    on guide_variant_skill_orders (guide_slug, variant_key);
   `;
 
   await client`

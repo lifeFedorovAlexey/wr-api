@@ -14,26 +14,11 @@ import {
   guideVariants,
 } from "../db/schema.js";
 import { buildGuideImportRecord } from "../lib/guides.mjs";
+import { ensureAuthorized } from "./utils/adminAuth.js";
 import { setCors } from "./utils/cors.js";
 
 function setNoStore(res) {
   res.setHeader("Cache-Control", "no-store");
-}
-
-function isImportAuthorized(req) {
-  const authHeader = req.headers.authorization || "";
-  const bearerToken = authHeader.startsWith("Bearer ")
-    ? authHeader.slice("Bearer ".length).trim()
-    : "";
-  const headerSecret = String(req.headers["x-guides-sync-secret"] || "").trim();
-
-  const expectedToken = String(process.env.GUIDES_SYNC_TOKEN || "").trim();
-  const expectedSecret = String(process.env.GUIDES_SYNC_SECRET || "").trim();
-
-  if (expectedToken && bearerToken === expectedToken) return true;
-  if (expectedSecret && headerSecret === expectedSecret) return true;
-
-  return false;
 }
 
 export default async function handler(req, res) {
@@ -45,9 +30,14 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method Not Allowed" });
   }
 
-  if (!isImportAuthorized(req)) {
-    setNoStore(res);
-    return res.status(401).json({ error: "Unauthorized" });
+  if (
+    !ensureAuthorized(req, res, {
+      tokenEnvNames: ["GUIDES_SYNC_TOKEN"],
+      secretHeader: "x-guides-sync-secret",
+      secretEnvNames: ["GUIDES_SYNC_SECRET"],
+    })
+  ) {
+    return;
   }
 
   const guide = req.body?.guide;

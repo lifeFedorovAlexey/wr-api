@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { localizeRole, summarizeGuide } from "../lib/guides.mjs";
+import { collectGuideEntityRefs, localizeRole, summarizeGuide } from "../lib/guides.mjs";
 import { buildGuideAssetKey, buildPublicGuideAssetPath } from "../lib/guideAssets.mjs";
 
 test("localizeRole normalizes common lane names", () => {
@@ -62,4 +62,30 @@ test("guide asset helpers build stable proxied paths", () => {
     buildPublicGuideAssetPath(assetKey, "https://example.com/lux-q.png"),
     "/wr-api/assets/guide-lux-q-ability?src=https%3A%2F%2Fexample.com%2Flux-q.png",
   );
+});
+
+test("collectGuideEntityRefs keeps entity kinds so equal slugs do not collide", () => {
+  const refs = collectGuideEntityRefs({
+    abilities: [{ abilitySlug: "ignite" }],
+    buildBreakdown: { featuredItemSlugs: ["ignite"] },
+    sections: [
+      { sectionType: "itemBuild", sectionKey: "core", entitySlugs: ["boots"] },
+      {
+        sectionType: "spellsAndRunes",
+        sectionKey: "summonerSpells",
+        entitySlugs: ["ignite"],
+      },
+    ],
+    skillOrders: [{ quickOrder: ["ignite"] }],
+    skillRows: [{ abilitySlug: "ignite" }],
+    matchups: [{ championSlug: "lux" }],
+  });
+
+  assert.deepEqual(refs, [
+    { kind: "item", slug: "boots" },
+    { kind: "summonerSpell", slug: "ignite" },
+    { kind: "ability", slug: "ignite" },
+    { kind: "item", slug: "ignite" },
+    { kind: "champion", slug: "lux" },
+  ]);
 });

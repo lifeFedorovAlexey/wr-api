@@ -26,22 +26,40 @@ export const champions = pgTable("champions", {
   icon: text("icon"),
 });
 
-export const championStatsHistory = pgTable("champion_stats_history", {
-  id: serial("id").primaryKey(),
-  date: pgDate("date").notNull(),
-  slug: text("slug").notNull(),
-  cnHeroId: text("cn_hero_id").notNull(),
-  rank: text("rank").notNull(), // overall / diamondPlus / masterPlus / king / peak
-  lane: text("lane").notNull(), // mid / top / adc / support / jungle
-  position: integer("position"),
-  winRate: doublePrecision("win_rate"),
-  pickRate: doublePrecision("pick_rate"),
-  banRate: doublePrecision("ban_rate"),
-  strengthLevel: integer("strength_level"),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
+export const championStatsHistory = pgTable(
+  "champion_stats_history",
+  {
+    id: serial("id").primaryKey(),
+    date: pgDate("date").notNull(),
+    slug: text("slug").notNull(),
+    cnHeroId: text("cn_hero_id").notNull(),
+    rank: text("rank").notNull(), // overall / diamondPlus / masterPlus / king / peak
+    lane: text("lane").notNull(), // mid / top / adc / support / jungle
+    position: integer("position"),
+    winRate: doublePrecision("win_rate"),
+    pickRate: doublePrecision("pick_rate"),
+    banRate: doublePrecision("ban_rate"),
+    strengthLevel: integer("strength_level"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    dateSlugRankLaneUidx: uniqueIndex("champion_stats_history_date_slug_rank_lane_uidx").on(
+      table.date,
+      table.slug,
+      table.rank,
+      table.lane,
+    ),
+    dateIdx: index("champion_stats_history_date_idx").on(table.date),
+    rankLaneDateIdx: index("champion_stats_history_rank_lane_date_idx").on(
+      table.rank,
+      table.lane,
+      table.date,
+    ),
+    slugDateIdx: index("champion_stats_history_slug_date_idx").on(table.slug, table.date),
+  }),
+);
 
 // 👇 новая таблица логов открытий WebApp
 export const webappOpens = pgTable("webapp_opens", {
@@ -102,25 +120,32 @@ export const guideSummaries = pgTable("guide_summaries", {
     .notNull(),
 });
 
-export const guideEntities = pgTable("guide_entities", {
-  id: serial("id").primaryKey(),
-  kind: text("kind").notNull(),
-  slug: text("slug").notNull(),
-  name: text("name").notNull(),
-  imageUrl: text("image_url"),
-  lane: text("lane"),
-  entityId: integer("entity_id"),
-  entityKind: text("entity_kind"),
-  videoUrl: text("video_url"),
-  tooltipTitle: text("tooltip_title"),
-  tooltipCost: text("tooltip_cost"),
-  tooltipImageUrl: text("tooltip_image_url"),
-  tooltipStats: text("tooltip_stats").array(),
-  tooltipLines: text("tooltip_lines").array(),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
+export const guideEntities = pgTable(
+  "guide_entities",
+  {
+    id: serial("id").primaryKey(),
+    kind: text("kind").notNull(),
+    slug: text("slug").notNull(),
+    name: text("name").notNull(),
+    imageUrl: text("image_url"),
+    lane: text("lane"),
+    entityId: integer("entity_id"),
+    entityKind: text("entity_kind"),
+    videoUrl: text("video_url"),
+    tooltipTitle: text("tooltip_title"),
+    tooltipCost: text("tooltip_cost"),
+    tooltipImageUrl: text("tooltip_image_url"),
+    tooltipStats: text("tooltip_stats").array(),
+    tooltipLines: text("tooltip_lines").array(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    kindSlugUidx: uniqueIndex("guide_entities_kind_slug_uidx").on(table.kind, table.slug),
+    slugIdx: index("guide_entities_slug_idx").on(table.slug),
+  }),
+);
 
 export const guideOfficialMeta = pgTable("guide_official_meta", {
   guideSlug: text("guide_slug").primaryKey(),
@@ -132,17 +157,23 @@ export const guideOfficialMeta = pgTable("guide_official_meta", {
   heroLocalVideoPath: text("hero_local_video_path"),
 });
 
-export const guideAbilities = pgTable("guide_abilities", {
-  id: serial("id").primaryKey(),
-  guideSlug: text("guide_slug").notNull(),
-  orderIndex: integer("order_index").notNull(),
-  abilitySlug: text("ability_slug").notNull(),
-  name: text("name").notNull(),
-  subtitle: text("subtitle"),
-  description: text("description"),
-  iconUrl: text("icon_url"),
-  videoUrl: text("video_url"),
-});
+export const guideAbilities = pgTable(
+  "guide_abilities",
+  {
+    id: serial("id").primaryKey(),
+    guideSlug: text("guide_slug").notNull(),
+    orderIndex: integer("order_index").notNull(),
+    abilitySlug: text("ability_slug").notNull(),
+    name: text("name").notNull(),
+    subtitle: text("subtitle"),
+    description: text("description"),
+    iconUrl: text("icon_url"),
+    videoUrl: text("video_url"),
+  },
+  (table) => ({
+    guideOrderIdx: index("guide_abilities_guide_order_idx").on(table.guideSlug, table.orderIndex),
+  }),
+);
 
 export const guideBuildBreakdowns = pgTable("guide_build_breakdowns", {
   guideSlug: text("guide_slug").primaryKey(),
@@ -150,53 +181,98 @@ export const guideBuildBreakdowns = pgTable("guide_build_breakdowns", {
   paragraphs: text("paragraphs").array(),
 });
 
-export const guideVariants = pgTable("guide_variants", {
-  id: serial("id").primaryKey(),
-  guideSlug: text("guide_slug").notNull(),
-  variantKey: text("variant_key").notNull(),
-  title: text("title").notNull(),
-  lane: text("lane"),
-  tier: text("tier"),
-  isDefault: boolean("is_default").default(false).notNull(),
-  orderIndex: integer("order_index").notNull(),
-});
+export const guideVariants = pgTable(
+  "guide_variants",
+  {
+    id: serial("id").primaryKey(),
+    guideSlug: text("guide_slug").notNull(),
+    variantKey: text("variant_key").notNull(),
+    title: text("title").notNull(),
+    lane: text("lane"),
+    tier: text("tier"),
+    isDefault: boolean("is_default").default(false).notNull(),
+    orderIndex: integer("order_index").notNull(),
+  },
+  (table) => ({
+    slugKeyUidx: uniqueIndex("guide_variants_slug_key_uidx").on(table.guideSlug, table.variantKey),
+    slugOrderIdx: index("guide_variants_slug_order_idx").on(table.guideSlug, table.orderIndex),
+  }),
+);
 
-export const guideVariantSections = pgTable("guide_variant_sections", {
-  id: serial("id").primaryKey(),
-  guideSlug: text("guide_slug").notNull(),
-  variantKey: text("variant_key").notNull(),
-  sectionType: text("section_type").notNull(),
-  sectionKey: text("section_key").notNull(),
-  label: text("label"),
-  orderIndex: integer("order_index").notNull(),
-  entitySlugs: text("entity_slugs").array(),
-});
+export const guideVariantSections = pgTable(
+  "guide_variant_sections",
+  {
+    id: serial("id").primaryKey(),
+    guideSlug: text("guide_slug").notNull(),
+    variantKey: text("variant_key").notNull(),
+    sectionType: text("section_type").notNull(),
+    sectionKey: text("section_key").notNull(),
+    label: text("label"),
+    orderIndex: integer("order_index").notNull(),
+    entitySlugs: text("entity_slugs").array(),
+  },
+  (table) => ({
+    slugVariantTypeIdx: index("guide_sections_slug_variant_idx").on(
+      table.guideSlug,
+      table.variantKey,
+      table.sectionType,
+    ),
+  }),
+);
 
-export const guideVariantSkillOrders = pgTable("guide_variant_skill_orders", {
-  id: serial("id").primaryKey(),
-  guideSlug: text("guide_slug").notNull(),
-  variantKey: text("variant_key").notNull(),
-  quickOrder: text("quick_order").array(),
-});
+export const guideVariantSkillOrders = pgTable(
+  "guide_variant_skill_orders",
+  {
+    id: serial("id").primaryKey(),
+    guideSlug: text("guide_slug").notNull(),
+    variantKey: text("variant_key").notNull(),
+    quickOrder: text("quick_order").array(),
+  },
+  (table) => ({
+    slugVariantUidx: uniqueIndex("guide_skill_orders_slug_variant_uidx").on(
+      table.guideSlug,
+      table.variantKey,
+    ),
+  }),
+);
 
-export const guideVariantSkillRows = pgTable("guide_variant_skill_rows", {
-  id: serial("id").primaryKey(),
-  guideSlug: text("guide_slug").notNull(),
-  variantKey: text("variant_key").notNull(),
-  abilitySlug: text("ability_slug").notNull(),
-  rowName: text("row_name").notNull(),
-  orderIndex: integer("order_index").notNull(),
-  levels: integer("levels").array(),
-});
+export const guideVariantSkillRows = pgTable(
+  "guide_variant_skill_rows",
+  {
+    id: serial("id").primaryKey(),
+    guideSlug: text("guide_slug").notNull(),
+    variantKey: text("variant_key").notNull(),
+    abilitySlug: text("ability_slug").notNull(),
+    rowName: text("row_name").notNull(),
+    orderIndex: integer("order_index").notNull(),
+    levels: integer("levels").array(),
+  },
+  (table) => ({
+    slugVariantIdx: index("guide_skill_rows_slug_variant_idx").on(
+      table.guideSlug,
+      table.variantKey,
+    ),
+  }),
+);
 
-export const guideVariantMatchups = pgTable("guide_variant_matchups", {
-  id: serial("id").primaryKey(),
-  guideSlug: text("guide_slug").notNull(),
-  variantKey: text("variant_key").notNull(),
-  matchupType: text("matchup_type").notNull(),
-  championSlug: text("champion_slug").notNull(),
-  orderIndex: integer("order_index").notNull(),
-});
+export const guideVariantMatchups = pgTable(
+  "guide_variant_matchups",
+  {
+    id: serial("id").primaryKey(),
+    guideSlug: text("guide_slug").notNull(),
+    variantKey: text("variant_key").notNull(),
+    matchupType: text("matchup_type").notNull(),
+    championSlug: text("champion_slug").notNull(),
+    orderIndex: integer("order_index").notNull(),
+  },
+  (table) => ({
+    slugVariantTypeIdx: index("guide_matchups_slug_variant_idx").on(
+      table.guideSlug,
+      table.variantKey,
+      table.matchupType,
+    ),
+  }),
+);
 
 export const skinCollections = pgTable("skin_collections", {
   championSlug: text("champion_slug").primaryKey(),
@@ -211,26 +287,40 @@ export const skinCollections = pgTable("skin_collections", {
     .notNull(),
 });
 
-export const skinEntries = pgTable("skin_entries", {
-  id: serial("id").primaryKey(),
-  championSlug: text("champion_slug").notNull(),
-  skinSlug: text("skin_slug").notNull(),
-  skinName: text("skin_name").notNull(),
-  sortOrder: integer("sort_order").notNull().default(0),
-  has3d: boolean("has_3d").notNull().default(false),
-  imageSourceUrl: text("image_source_url"),
-  imageAssetPath: text("image_asset_path"),
-  modelSourceUrl: text("model_source_url"),
-  modelAssetPath: text("model_asset_path"),
-  rawPayload: jsonb("raw_payload"),
-  sourceUpdatedAt: timestamp("source_updated_at", { withTimezone: true }),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
+export const skinEntries = pgTable(
+  "skin_entries",
+  {
+    id: serial("id").primaryKey(),
+    championSlug: text("champion_slug").notNull(),
+    skinSlug: text("skin_slug").notNull(),
+    skinName: text("skin_name").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    has3d: boolean("has_3d").notNull().default(false),
+    imageSourceUrl: text("image_source_url"),
+    imageAssetPath: text("image_asset_path"),
+    modelSourceUrl: text("model_source_url"),
+    modelAssetPath: text("model_asset_path"),
+    rawPayload: jsonb("raw_payload"),
+    sourceUpdatedAt: timestamp("source_updated_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    championSkinUidx: uniqueIndex("skin_entries_champion_skin_uidx").on(
+      table.championSlug,
+      table.skinSlug,
+    ),
+    championSortIdx: index("skin_entries_champion_sort_idx").on(
+      table.championSlug,
+      table.sortOrder,
+    ),
+    skinSlugIdx: index("skin_entries_skin_slug_idx").on(table.skinSlug),
+  }),
+);
 
 export const newsArticles = pgTable(
   "news_articles",

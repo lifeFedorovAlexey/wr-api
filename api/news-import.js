@@ -3,26 +3,11 @@ import { eq } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { championEvents, champions, newsArticles } from "../db/schema.js";
 import { normalizeNewsImportPayload } from "../lib/newsImport.mjs";
+import { ensureAuthorized } from "./utils/adminAuth.js";
 import { setCors } from "./utils/cors.js";
 
 function setNoStore(res) {
   res.setHeader("Cache-Control", "no-store");
-}
-
-function isImportAuthorized(req) {
-  const authHeader = req.headers.authorization || "";
-  const bearerToken = authHeader.startsWith("Bearer ")
-    ? authHeader.slice("Bearer ".length).trim()
-    : "";
-  const headerSecret = String(req.headers["x-news-sync-secret"] || "").trim();
-
-  const expectedToken = String(process.env.NEWS_SYNC_TOKEN || "").trim();
-  const expectedSecret = String(process.env.NEWS_SYNC_SECRET || "").trim();
-
-  if (expectedToken && bearerToken === expectedToken) return true;
-  if (expectedSecret && headerSecret === expectedSecret) return true;
-
-  return false;
 }
 
 export default async function handler(req, res) {
@@ -34,9 +19,14 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method Not Allowed" });
   }
 
-  if (!isImportAuthorized(req)) {
-    setNoStore(res);
-    return res.status(401).json({ error: "Unauthorized" });
+  if (
+    !ensureAuthorized(req, res, {
+      tokenEnvNames: ["NEWS_SYNC_TOKEN"],
+      secretHeader: "x-news-sync-secret",
+      secretEnvNames: ["NEWS_SYNC_SECRET"],
+    })
+  ) {
+    return;
   }
 
   try {

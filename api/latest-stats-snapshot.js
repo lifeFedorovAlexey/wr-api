@@ -1,8 +1,9 @@
 import { db } from "../db/client.js";
 import { championStatsHistory } from "../db/schema.js";
+import { buildDateInFilter } from "./utils/dateFilters.js";
 import { setCors } from "./utils/cors.js";
 
-import { desc, eq, inArray, sql } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 
 const EXCLUDED_RANK_KEYS = new Set(["overall"]);
 const LOW_ELO_RANKS = new Set(["diamondPlus", "masterPlus"]);
@@ -212,12 +213,7 @@ export default async function handler(req, res) {
         ? db
             .select(rowShape)
             .from(championStatsHistory)
-            .where(
-              inArray(
-                sql`to_char(${championStatsHistory.date}, 'YYYY-MM-DD')`,
-                recentDates,
-              ),
-            )
+            .where(buildDateInFilter(championStatsHistory.date, recentDates))
         : Promise.resolve([]),
     ]);
 

@@ -30,6 +30,9 @@ jobs:
       - name: Install deps
         run: npm ci
 
+      - name: Ensure stats indexes
+        run: npm run setup:stats
+
       - name: Import champions
         run: node scripts/import-champions.mjs
 

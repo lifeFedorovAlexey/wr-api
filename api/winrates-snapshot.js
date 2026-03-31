@@ -1,8 +1,9 @@
 import { db } from "../db/client.js";
 import { championStatsHistory, champions } from "../db/schema.js";
+import { buildDateInFilter } from "./utils/dateFilters.js";
 import { setCors } from "./utils/cors.js";
 
-import { desc, inArray, sql } from "drizzle-orm";
+import { desc } from "drizzle-orm";
 import { buildPublicIconPath } from "../lib/championIcons.mjs";
 
 let cachedSnapshot = null;
@@ -242,12 +243,7 @@ export default async function handler(req, res) {
           strengthLevel: championStatsHistory.strengthLevel,
         })
         .from(championStatsHistory)
-        .where(
-          inArray(
-            sql`to_char(${championStatsHistory.date}, 'YYYY-MM-DD')`,
-            recentDates,
-          ),
-        ),
+        .where(buildDateInFilter(championStatsHistory.date, recentDates)),
       db.select().from(champions),
     ]);
 

@@ -1,4 +1,4 @@
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, or } from "drizzle-orm";
 
 import { db } from "../db/client.js";
 import {
@@ -13,7 +13,7 @@ import {
   guideVariantSkillRows,
   guideVariants,
 } from "../db/schema.js";
-import { assembleGuideDetail } from "../lib/guides.mjs";
+import { assembleGuideDetail, collectGuideEntityRefs } from "../lib/guides.mjs";
 import { setCors } from "./utils/cors.js";
 
 function setPublicCache(res, { sMaxAge = 3600, swr = 21600 } = {}) {
@@ -73,32 +73,26 @@ export default async function handler(req, res) {
         db.select().from(guideVariantMatchups).where(eq(guideVariantMatchups.guideSlug, slug)),
       ]);
 
-    const entitySlugs = new Set();
+    const entityRefs = collectGuideEntityRefs({
+      abilities: abilityRows,
+      buildBreakdown: buildBreakdownRows[0] || null,
+      sections: sectionRows,
+      skillOrders: skillOrderRows,
+      skillRows: skillRowRows,
+      matchups: matchupRows,
+    });
 
-    for (const row of sectionRows) {
-      for (const entitySlug of row.entitySlugs || []) entitySlugs.add(entitySlug);
-    }
-    for (const row of skillOrderRows) {
-      for (const entitySlug of row.quickOrder || []) entitySlugs.add(entitySlug);
-    }
-    for (const row of skillRowRows) {
-      if (row.abilitySlug) entitySlugs.add(row.abilitySlug);
-    }
-    for (const row of matchupRows) {
-      if (row.championSlug) entitySlugs.add(row.championSlug);
-    }
-    for (const row of abilityRows) {
-      if (row.abilitySlug) entitySlugs.add(row.abilitySlug);
-    }
-    for (const entitySlug of buildBreakdownRows[0]?.featuredItemSlugs || []) {
-      entitySlugs.add(entitySlug);
-    }
-
-    const entityRows = entitySlugs.size
+    const entityRows = entityRefs.length
       ? await db
           .select()
           .from(guideEntities)
-          .where(inArray(guideEntities.slug, Array.from(entitySlugs)))
+          .where(
+            or(
+              ...entityRefs.map((ref) =>
+                and(eq(guideEntities.kind, ref.kind), eq(guideEntities.slug, ref.slug)),
+              ),
+            ),
+          )
       : [];
 
     const detail = assembleGuideDetail({
