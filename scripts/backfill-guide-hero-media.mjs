@@ -3,7 +3,7 @@ import "dotenv/config";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { db } from "../db/client.js";
+import { client, db } from "../db/client.js";
 import { guideOfficialMeta } from "../db/schema.js";
 import {
   buildGuideHeroMediaFileName,
@@ -46,6 +46,24 @@ function parseCliArgs(argv) {
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function uniqueSorted(values) {
+  return Array.from(new Set(values.filter(Boolean))).sort((a, b) => a.localeCompare(b));
+}
+
+function logProgress({
+  index,
+  total,
+  slug,
+  outcome,
+  uploaded,
+  skipped,
+  failed,
+}) {
+  console.log(
+    `[backfill-guide-hero-media] ${index}/${total} ${slug} -> ${outcome} | uploaded=${uploaded} skipped=${skipped} failed=${failed}`,
+  );
 }
 
 async function fetchVideoBuffer(url, slug) {
@@ -101,14 +119,25 @@ async function main() {
   }
 
   const rows = await db.select().from(guideOfficialMeta);
-  const filteredRows = rows.filter((row) => {
+  const rowsWithSlug = rows.filter((row) => String(row?.guideSlug || "").trim());
+  const rowsMissingRemoteVideo = rowsWithSlug.filter((row) => !String(row?.heroRemoteVideoUrl || "").trim());
+  const filteredRows = rowsWithSlug.filter((row) => {
     const slug = String(row?.guideSlug || "").trim().toLowerCase();
-    if (!slug || !row?.heroRemoteVideoUrl) return false;
+    if (!row?.heroRemoteVideoUrl) return false;
     if (!options.slugs.length) return true;
     return options.slugs.includes(slug);
   });
 
+  const missingRemoteVideoSlugs = uniqueSorted(
+    rowsMissingRemoteVideo.map((row) => String(row?.guideSlug || "").trim().toLowerCase()),
+  );
+
   const summary = {
+    totalGuideMetaRows: rows.length,
+    totalGuideMetaRowsWithSlug: rowsWithSlug.length,
+    totalEligible: filteredRows.length,
+    missingRemoteVideoCount: missingRemoteVideoSlugs.length,
+    missingRemoteVideoSlugs,
     total: filteredRows.length,
     uploaded: [],
     skipped: [],
@@ -117,7 +146,17 @@ async function main() {
     storageMode: useS3 ? "s3" : "local",
   };
 
-  for (const row of filteredRows) {
+  console.log(
+    `[backfill-guide-hero-media] start: totalRows=${rows.length}, withSlug=${rowsWithSlug.length}, eligible=${filteredRows.length}, missingRemoteVideo=${missingRemoteVideoSlugs.length}, storageMode=${summary.storageMode}, s3PublicMode=${summary.s3PublicMode}`,
+  );
+
+  if (missingRemoteVideoSlugs.length > 0) {
+    console.log(
+      `[backfill-guide-hero-media] missing remote hero video URL for: ${missingRemoteVideoSlugs.join(", ")}`,
+    );
+  }
+
+  for (const [index, row] of filteredRows.entries()) {
     const slug = String(row.guideSlug || "").trim().toLowerCase();
     const remoteUrl = String(row.heroRemoteVideoUrl || "").trim();
     const storageKey = buildGuideHeroMediaStorageKey(slug);
@@ -126,6 +165,15 @@ async function main() {
       if (!options.force) {
         if (useS3 && (await objectStorage.objectExists(storageKey))) {
           summary.skipped.push({ slug, reason: "already-exists", storageKey });
+          logProgress({
+            index: index + 1,
+            total: filteredRows.length,
+            slug,
+            outcome: "skip:already-exists",
+            uploaded: summary.uploaded.length,
+            skipped: summary.skipped.length,
+            failed: summary.failed.length,
+          });
           continue;
         }
 
@@ -135,12 +183,30 @@ async function main() {
             reason: "already-exists",
             localPath: resolveGuideHeroMediaFilePath(slug, process.env),
           });
+          logProgress({
+            index: index + 1,
+            total: filteredRows.length,
+            slug,
+            outcome: "skip:already-exists",
+            uploaded: summary.uploaded.length,
+            skipped: summary.skipped.length,
+            failed: summary.failed.length,
+          });
           continue;
         }
       }
 
       if (options.dryRun) {
         summary.skipped.push({ slug, reason: "dry-run", storageKey, remoteUrl });
+        logProgress({
+          index: index + 1,
+          total: filteredRows.length,
+          slug,
+          outcome: "skip:dry-run",
+          uploaded: summary.uploaded.length,
+          skipped: summary.skipped.length,
+          failed: summary.failed.length,
+        });
         continue;
       }
 
@@ -165,11 +231,29 @@ async function main() {
           ? null
           : path.join(localHeroMediaDir, buildGuideHeroMediaFileName(slug)),
       });
+      logProgress({
+        index: index + 1,
+        total: filteredRows.length,
+        slug,
+        outcome: "uploaded",
+        uploaded: summary.uploaded.length,
+        skipped: summary.skipped.length,
+        failed: summary.failed.length,
+      });
     } catch (error) {
       summary.failed.push({
         slug,
         remoteUrl,
         error: error instanceof Error ? error.message : String(error),
+      });
+      logProgress({
+        index: index + 1,
+        total: filteredRows.length,
+        slug,
+        outcome: "failed",
+        uploaded: summary.uploaded.length,
+        skipped: summary.skipped.length,
+        failed: summary.failed.length,
       });
     }
   }
@@ -177,7 +261,27 @@ async function main() {
   console.log(JSON.stringify(summary, null, 2));
 }
 
-main().catch((error) => {
-  console.error("[backfill-guide-hero-media] error:", error);
-  process.exit(1);
-});
+main()
+  .then(async () => {
+    try {
+      await client.end();
+    } catch (error) {
+      console.warn(
+        "[backfill-guide-hero-media] failed to close Postgres client:",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+    process.exit(0);
+  })
+  .catch(async (error) => {
+    console.error("[backfill-guide-hero-media] error:", error);
+    try {
+      await client.end();
+    } catch (closeError) {
+      console.warn(
+        "[backfill-guide-hero-media] failed to close Postgres client:",
+        closeError instanceof Error ? closeError.message : String(closeError),
+      );
+    }
+    process.exit(1);
+  });
