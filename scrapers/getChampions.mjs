@@ -20,6 +20,20 @@ const HERO_DETAIL_URL = (heroId) =>
 
 // Ограничение параллелизма при скачивании деталей
 const DETAIL_CONCURRENCY = 8;
+const CN_FETCH_TIMEOUT_MS = Math.max(
+  5_000,
+  Number(process.env.CN_FETCH_TIMEOUT_MS || 20_000)
+);
+const CN_FETCH_RETRIES = Math.max(
+  1,
+  Number(process.env.CN_FETCH_RETRIES || 3)
+);
+const CN_FETCH_HEADERS = {
+  "user-agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
+  accept: "application/json,text/javascript,text/plain,*/*",
+  referer: "https://lolm.qq.com/",
+};
 
 // ----- Riot Wild Rift -----
 
@@ -151,6 +165,49 @@ function safeNumber(v) {
   return Number.isFinite(n) ? n : null;
 }
 
+async function fetchTextWithRetry(url, label) {
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= CN_FETCH_RETRIES; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(
+      () => controller.abort(new Error(`timeout after ${CN_FETCH_TIMEOUT_MS}ms`)),
+      CN_FETCH_TIMEOUT_MS
+    );
+
+    try {
+      const res = await fetch(url, {
+        headers: CN_FETCH_HEADERS,
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        throw new Error(
+          `${label} HTTP ${res.status}${body ? `: ${body.slice(0, 160)}` : ""}`
+        );
+      }
+
+      return await res.text();
+    } catch (error) {
+      clearTimeout(timeout);
+      lastError = error;
+
+      if (attempt < CN_FETCH_RETRIES) {
+        console.warn(
+          `[getChampions] ${label} retry ${attempt}/${CN_FETCH_RETRIES - 1}: ${
+            error?.message || String(error)
+          }`
+        );
+        await sleep(500 * attempt);
+      }
+    }
+  }
+
+  throw lastError;
+}
+
 // Примитивный пул для ограничения параллелизма
 async function mapWithConcurrency(items, limit, fn) {
   const results = new Array(items.length);
@@ -177,14 +234,7 @@ async function mapWithConcurrency(items, limit, fn) {
 // ----- 1. hero_list.js: получить список героев (CN) -----
 
 async function fetchHeroList() {
-  const res = await fetch(HERO_LIST_URL);
-  if (!res.ok) {
-    throw new Error(
-      `Не удалось скачать hero_list.js: ${res.status} ${res.statusText}`
-    );
-  }
-
-  const text = await res.text();
+  const text = await fetchTextWithRetry(HERO_LIST_URL, "hero_list.js");
 
   // hero_list.js иногда бывает чистым JSON, иногда - обёрнутым
   let json;
@@ -206,14 +256,7 @@ async function fetchHeroList() {
 
 async function fetchHeroDetailRaw(heroId) {
   const url = HERO_DETAIL_URL(heroId);
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(
-      `Не удалось скачать hero detail для heroId=${heroId}: ${res.status} ${res.statusText}`
-    );
-  }
-
-  const text = await res.text();
+  const text = await fetchTextWithRetry(url, `hero detail heroId=${heroId}`);
   return parseMaybeWrappedJson(text);
 }
 
