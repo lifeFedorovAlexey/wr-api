@@ -1,10 +1,32 @@
 name: Deploy API To Timeweb
 
 on:
-  push:
-    branches:
-      - main
-  workflow_dispatch:
+  workflow_call:
+    secrets:
+      S3_ENDPOINT:
+        required: false
+      S3_BUCKET:
+        required: false
+      S3_ACCESS_KEY_ID:
+        required: false
+      S3_SECRET_ACCESS_KEY:
+        required: false
+      S3_PUBLIC_BASE_URL:
+        required: false
+      S3_FORCE_PATH_STYLE:
+        required: false
+      ASSET_PUBLIC_MODE:
+        required: false
+      DATABASE_URL:
+        required: false
+      GUIDES_SYNC_SECRET:
+        required: false
+      TIMEWEB_HOST:
+        required: true
+      TIMEWEB_USER:
+        required: true
+      TIMEWEB_PASSWORD:
+        required: true
 
 concurrency:
   group: deploy-api-timeweb

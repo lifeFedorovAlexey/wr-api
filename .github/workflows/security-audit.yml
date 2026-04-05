@@ -1,13 +1,7 @@
 name: API Security Audit
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-  schedule:
-    - cron: "45 4 * * 1"
-  workflow_dispatch:
+  workflow_call:
 
 jobs:
   audit-api:
@@ -15,10 +9,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 20
           cache: npm

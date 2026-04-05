@@ -1,13 +1,7 @@
 name: API CodeQL
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-  schedule:
-    - cron: "15 5 * * 1"
-  workflow_dispatch:
+  workflow_call:
 
 jobs:
   analyze:
@@ -25,7 +19,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
