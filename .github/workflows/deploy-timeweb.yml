@@ -67,7 +67,7 @@ jobs:
 
             wait_for_health() {
               port="$1"
-              attempts="${2:-30}"
+              attempts="${2:-60}"
               i=1
               while [ "$i" -le "$attempts" ]; do
                 if curl -fsS "http://127.0.0.1:${port}/api/health" >/dev/null 2>&1; then
@@ -111,10 +111,15 @@ jobs:
 
             cd "${RELEASE_DIR}"
             npm ci
+            npm run setup:stats
+            npm run setup:guides
+            npm run setup:riftgg-cn-stats
+            npm run setup:skins
+            npm run setup:news
 
             cleanup_canary
             PORT="${CANARY_PORT}" HOST="127.0.0.1" pm2 start npm --name "${CANARY_NAME}" --cwd "${RELEASE_DIR}" -- start
-            if ! wait_for_health "${CANARY_PORT}" 30; then
+            if ! wait_for_health "${CANARY_PORT}" 60; then
               pm2 logs "${CANARY_NAME}" --lines 120 --nostream || true
               cleanup_canary
               echo "canary failed health-check"
@@ -154,7 +159,7 @@ jobs:
               pm2 start "${SHARED_DIR}/ecosystem.config.cjs" --only "${PM2_APP_NAME}" --update-env
             fi
 
-            if ! wait_for_health "${APP_PORT}" 30; then
+            if ! wait_for_health "${APP_PORT}" 60; then
               pm2 logs "${PM2_APP_NAME}" --lines 120 --nostream || true
               if [ -n "${PREVIOUS_TARGET}" ] && [ -d "${PREVIOUS_TARGET}" ]; then
                 ln -sfn "${PREVIOUS_TARGET}" "${CURRENT_LINK}"
