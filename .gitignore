@@ -1,5 +1,6 @@
 .vercel
 /node_modules
+/coverage
 docker-data/
 .env
 debug-getChampions.mjs
