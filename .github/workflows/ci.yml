@@ -20,5 +20,14 @@ jobs:
       - name: Install API dependencies
         run: npm ci
 
+      - name: Run lint
+        run: npm run lint
+
       - name: Run tests
         run: npm run test
+
+      - name: Check coverage
+        run: npm run test:coverage
+
+      - name: Check duplicate code
+        run: npm run dup:check

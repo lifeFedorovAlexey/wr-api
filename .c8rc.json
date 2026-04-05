@@ -1,0 +1,29 @@
+{
+  "all": true,
+  "reporter": [
+    "text",
+    "lcov"
+  ],
+  "include": [
+    "api/utils/adminAuth.js",
+    "api/utils/authProfiles.js",
+    "lib/championIcons.mjs",
+    "lib/guideAssets.mjs",
+    "lib/guides.mjs",
+    "lib/remoteAssetPolicy.mjs",
+    "lib/requestBody.mjs",
+    "lib/riftggCnStats.mjs",
+    "lib/skins.mjs",
+    "lib/telegram.mjs"
+  ],
+  "exclude": [
+    "coverage/**",
+    "node_modules/**",
+    "test/**"
+  ],
+  "check-coverage": true,
+  "lines": 80,
+  "functions": 80,
+  "branches": 65,
+  "statements": 80
+}

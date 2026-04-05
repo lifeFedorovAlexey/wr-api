@@ -1,0 +1,19 @@
+{
+  "absolute": true,
+  "threshold": 3,
+  "minLines": 8,
+  "minTokens": 70,
+  "reporters": [
+    "consoleFull"
+  ],
+  "ignore": [
+    "**/node_modules/**",
+    "**/coverage/**",
+    "**/test/**"
+  ],
+  "path": [
+    "api",
+    "lib",
+    "scripts"
+  ]
+}

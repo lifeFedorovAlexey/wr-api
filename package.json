@@ -7,6 +7,8 @@
   "scripts": {
     "start": "node ./server.mjs",
     "dev": "node --watch ./server.mjs",
+    "lint": "eslint .",
+    "dup:check": "jscpd --config .jscpd.json",
     "audit:prod": "npm audit --omit=dev",
     "import:champions": "node ./scripts/import-champions.mjs",
     "import:skins": "node ./scripts/import-skins.mjs",
@@ -18,6 +20,7 @@
     "setup:news": "node ./scripts/setup-news-tables.mjs",
     "export:news-mapper": "node ./scripts/export-news-entity-mapper.mjs",
     "test": "node --test ./test",
+    "test:coverage": "c8 npm run test",
     "sync:assets:s3": "node ./scripts/sync-assets-to-s3.mjs",
     "backfill:guide-entity-assets": "node ./scripts/backfill-guide-entity-assets.mjs"
   },
@@ -34,6 +37,11 @@
     "sharp": "^0.34.5"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "c8": "^11.0.0",
+    "eslint": "^10.2.0",
+    "globals": "^17.4.0",
+    "jscpd": "^4.0.8",
     "tsx": "^4.21.0"
   }
 }
