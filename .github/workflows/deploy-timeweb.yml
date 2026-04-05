@@ -83,6 +83,11 @@ jobs:
               pm2 delete "${CANARY_NAME}" >/dev/null 2>&1 || true
             }
 
+            log_step() {
+              printf '\n[deploy-api] %s\n' "$1"
+            }
+
+            log_step "prepare directories"
             mkdir -p "${RELEASES_DIR}" "${SHARED_DIR}" "${REPO_DIR}"
             cd "${REPO_DIR}"
             if [ ! -d .git ]; then
@@ -92,11 +97,13 @@ jobs:
               git checkout -b main origin/main
             fi
 
+            log_step "update repo"
             git stash push --include-untracked -m "deploy-api-${RELEASE_ID}" || true
             git fetch origin
             git checkout main
             git pull --ff-only origin main
 
+            log_step "create release ${RELEASE_ID}"
             mkdir -p "${RELEASE_DIR}"
             git archive --format=tar HEAD | tar -xf - -C "${RELEASE_DIR}"
 
@@ -109,6 +116,7 @@ jobs:
             upsert_env ASSET_PUBLIC_MODE "${ASSET_PUBLIC_MODE}" "${RELEASE_DIR}/.env"
             upsert_env DATABASE_URL "${DATABASE_URL}" "${RELEASE_DIR}/.env"
 
+            log_step "install dependencies and setup schema"
             cd "${RELEASE_DIR}"
             npm ci
             npm run setup:stats
@@ -117,6 +125,7 @@ jobs:
             npm run setup:skins
             npm run setup:news
 
+            log_step "start canary on ${CANARY_PORT}"
             cleanup_canary
             PORT="${CANARY_PORT}" HOST="127.0.0.1" pm2 start npm --name "${CANARY_NAME}" --cwd "${RELEASE_DIR}" -- start
             if ! wait_for_health "${CANARY_PORT}" 60; then
@@ -151,23 +160,25 @@ jobs:
             if [ -L "${CURRENT_LINK}" ]; then
               PREVIOUS_TARGET="$(readlink -f "${CURRENT_LINK}")"
             fi
+            log_step "switch current symlink"
             ln -sfn "${RELEASE_DIR}" "${CURRENT_LINK}"
 
-            if pm2 describe "${PM2_APP_NAME}" >/dev/null 2>&1; then
-              pm2 reload "${SHARED_DIR}/ecosystem.config.cjs" --only "${PM2_APP_NAME}" --update-env
-            else
-              pm2 start "${SHARED_DIR}/ecosystem.config.cjs" --only "${PM2_APP_NAME}" --update-env
-            fi
+            log_step "apply pm2 ecosystem"
+            pm2 startOrReload "${SHARED_DIR}/ecosystem.config.cjs" --only "${PM2_APP_NAME}" --update-env
+            pm2 delete "${CANARY_NAME}" >/dev/null 2>&1 || true
 
+            log_step "wait for production health on ${APP_PORT}"
             if ! wait_for_health "${APP_PORT}" 60; then
               pm2 logs "${PM2_APP_NAME}" --lines 120 --nostream || true
               if [ -n "${PREVIOUS_TARGET}" ] && [ -d "${PREVIOUS_TARGET}" ]; then
+                log_step "rollback to previous release"
                 ln -sfn "${PREVIOUS_TARGET}" "${CURRENT_LINK}"
-                pm2 reload "${SHARED_DIR}/ecosystem.config.cjs" --only "${PM2_APP_NAME}" --update-env || true
+                pm2 startOrReload "${SHARED_DIR}/ecosystem.config.cjs" --only "${PM2_APP_NAME}" --update-env || true
               fi
               echo "production failed health-check after reload"
               exit 1
             fi
 
+            log_step "cleanup old releases"
             ls -1dt "${RELEASES_DIR}"/* 2>/dev/null | tail -n +6 | xargs -r rm -rf
             pm2 save
