@@ -25,7 +25,8 @@ const RIFTGG_SLUG_ALIASES = {
   twistedfate: "twisted-fate",
   xinzhao: "xin-zhao",
 };
-let dictionariesSyncPromise = null;
+let dictionariesSyncPromise = Promise.resolve();
+const reservedDictionaryKeys = new Set();
 
 function getRequestedSlugs() {
   return process.argv.slice(2).map((value) => String(value || "").trim()).filter(Boolean);
@@ -88,34 +89,62 @@ async function ensureDictionariesSynced(entries, now = new Date()) {
     return;
   }
 
-  if (!dictionariesSyncPromise) {
-    dictionariesSyncPromise = (async () => {
-      for (const entry of entries) {
-        await db
-          .insert(riftggCnDictionaries)
-          .values({
-            kind: entry.kind,
-            slug: entry.slug,
+  const pendingEntries = [];
+  const pendingKeys = [];
+
+  for (const entry of entries) {
+    const kind = String(entry?.kind || "").trim();
+    const slug = String(entry?.slug || "").trim();
+    if (!kind || !slug) {
+      continue;
+    }
+
+    const key = `${kind}:${slug}`;
+    if (reservedDictionaryKeys.has(key)) {
+      continue;
+    }
+
+    reservedDictionaryKeys.add(key);
+    pendingKeys.push(key);
+    pendingEntries.push(entry);
+  }
+
+  if (!pendingEntries.length) {
+    return;
+  }
+
+  const task = dictionariesSyncPromise.catch(() => {}).then(async () => {
+    for (const entry of pendingEntries) {
+      await db
+        .insert(riftggCnDictionaries)
+        .values({
+          kind: entry.kind,
+          slug: entry.slug,
+          name: entry.name,
+          rawPayload: entry.rawPayload,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: [riftggCnDictionaries.kind, riftggCnDictionaries.slug],
+          set: {
             name: entry.name,
             rawPayload: entry.rawPayload,
             updatedAt: now,
-          })
-          .onConflictDoUpdate({
-            target: [riftggCnDictionaries.kind, riftggCnDictionaries.slug],
-            set: {
-              name: entry.name,
-              rawPayload: entry.rawPayload,
-              updatedAt: now,
-            },
-          });
-      }
-    })().catch((error) => {
-      dictionariesSyncPromise = null;
-      throw error;
-    });
-  }
+          },
+        });
+    }
+  });
 
-  await dictionariesSyncPromise;
+  dictionariesSyncPromise = task;
+
+  try {
+    await task;
+  } catch (error) {
+    for (const key of pendingKeys) {
+      reservedDictionaryKeys.delete(key);
+    }
+    throw error;
+  }
 }
 
 async function importChampionStats({ slug, index, total }) {

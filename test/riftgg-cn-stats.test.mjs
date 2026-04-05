@@ -80,6 +80,22 @@ test("parseRiftGgCnStatsHtml accepts numeric rank and lane enums from CNStatsTab
   assert.equal(normalized.builds.length, 3);
 });
 
+test("parseRiftGgCnStatsHtml accepts support lane enum 5 from CNStatsTabs payload", () => {
+  const payload = JSON.stringify(
+    `23:I[123,["/_next/static/chunks/app.js"],"CNStatsTabs"]
+21:["$","$L23",null,{"stats":{"matchups":[{"rankLevel":1,"lane":"5","dataDate":"2026-03-31","counters":[{"heroSlug":"yuumi","metrics":{"winRate":0.523466,"appearRate":0.0357,"winRateRank":1,"appearRateRank":9}}]}],"core_items":[{"rankLevel":4,"lane":"5","dataDate":"2026-03-31","builds":[{"items":[{"slug":"bulwark-of-the-mountain"},{"slug":"warmogs-armor"}],"metrics":{"winRate":0.681818,"appearRate":0.017537,"winRateRank":1,"appearRateRank":8}}]}],"runes":[{"rankLevel":1,"lane":"5","dataDate":"2026-03-31","builds":[{"runes":[{"slug":"glacial-augment"},{"slug":"bone-plating"}],"metrics":{"winRate":0.532587,"appearRate":0.025312,"winRateRank":1,"appearRateRank":5}}]}],"spells":[{"rankLevel":1,"lane":"5","dataDate":"2026-03-31","spells":[{"spells":[{"slug":"flash"},{"slug":"ignite"}],"metrics":{"winRate":0.477259,"appearRate":0.855758,"winRateRank":2,"appearRateRank":1}}]}]},"lang":"en","itemsDict":{"bulwark-of-the-mountain":{"slug":"bulwark-of-the-mountain","name":"Bulwark of the Mountain"}},"runesDict":{"glacial-augment":{"slug":"glacial-augment","name":"Glacial Augment"}},"spellsDict":{"flash":{"slug":"flash","name":"Flash"},"ignite":{"slug":"ignite","name":"Ignite"}}}]`,
+  );
+
+  const html = `<html><body><script>self.__next_f.push([1,${payload}])</script></body></html>`;
+  const parsed = parseRiftGgCnStatsHtml(html);
+  const normalized = normalizeRiftGgCnStats("alistar", parsed);
+
+  assert.equal(normalized.matchups.length, 1);
+  assert.equal(normalized.matchups[0].lane, "support");
+  assert.equal(normalized.matchups[0].rank, "diamond_plus");
+  assert.equal(normalized.builds.length, 3);
+});
+
 test("normalizeRiftGgCnStats builds matchup and build rows", () => {
   const normalized = normalizeRiftGgCnStats("lux", {
     stats: {

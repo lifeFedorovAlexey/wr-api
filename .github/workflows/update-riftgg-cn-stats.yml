@@ -2,13 +2,13 @@ name: Update RiftGG CN stats
 
 on:
   schedule:
-    - cron: "20 */6 * * *"
+    - cron: "20 3 * * *"
   workflow_dispatch:
 
 jobs:
   update-riftgg-cn-stats:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 45
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       RIFTGG_IMPORT_CONCURRENCY: 4
@@ -31,5 +31,5 @@ jobs:
         run: npm run setup:riftgg-cn-stats
 
       - name: Import RiftGG CN stats
-        timeout-minutes: 115
+        timeout-minutes: 40
         run: node scripts/import-riftgg-cn-stats.mjs
