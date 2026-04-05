@@ -33,9 +33,6 @@ jobs:
       - name: Ensure stats indexes
         run: npm run setup:stats
 
-      - name: Ensure RiftGG CN stats tables
-        run: npm run setup:riftgg-cn-stats
-
       - name: Import champions
         run: node scripts/import-champions.mjs
 
