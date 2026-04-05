@@ -32,9 +32,9 @@ export default async function handler(req, res) {
 
   if (
     !ensureAuthorized(req, res, {
-      tokenEnvNames: ["GUIDES_SYNC_TOKEN"],
+      tokenEnvNames: ["GUIDES_SYNC_TOKEN", "CHAMPIONS_SYNC_TOKEN"],
       secretHeader: "x-guides-sync-secret",
-      secretEnvNames: ["GUIDES_SYNC_SECRET"],
+      secretEnvNames: ["GUIDES_SYNC_SECRET", "CHAMPIONS_SYNC_SECRET"],
     })
   ) {
     return;
