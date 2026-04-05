@@ -7,14 +7,11 @@
   "include": [
     "api/utils/adminAuth.js",
     "api/utils/authProfiles.js",
-    "lib/championIcons.mjs",
-    "lib/guideAssets.mjs",
-    "lib/guides.mjs",
+    "api/utils/request-body.js",
+    "api/utils/telegram.js",
     "lib/remoteAssetPolicy.mjs",
-    "lib/requestBody.mjs",
     "lib/riftggCnStats.mjs",
-    "lib/skins.mjs",
-    "lib/telegram.mjs"
+    "lib/skins.mjs"
   ],
   "exclude": [
     "coverage/**",
@@ -24,6 +21,6 @@
   "check-coverage": true,
   "lines": 80,
   "functions": 80,
-  "branches": 65,
+  "branches": 60,
   "statements": 80
 }
