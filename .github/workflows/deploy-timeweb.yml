@@ -20,6 +20,8 @@ jobs:
       S3_FORCE_PATH_STYLE: ${{ secrets.S3_FORCE_PATH_STYLE }}
       ASSET_PUBLIC_MODE: ${{ secrets.ASSET_PUBLIC_MODE }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      GUIDES_SYNC_TOKEN: ${{ secrets.GUIDES_SYNC_TOKEN }}
+      GUIDES_SYNC_SECRET: ${{ secrets.GUIDES_SYNC_SECRET }}
 
     steps:
       - name: Deploy over SSH
@@ -31,13 +33,15 @@ jobs:
           S3_FORCE_PATH_STYLE: ${{ secrets.S3_FORCE_PATH_STYLE }}
           ASSET_PUBLIC_MODE: ${{ secrets.ASSET_PUBLIC_MODE }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GUIDES_SYNC_TOKEN: ${{ secrets.GUIDES_SYNC_TOKEN }}
+          GUIDES_SYNC_SECRET: ${{ secrets.GUIDES_SYNC_SECRET }}
           S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
           S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
         with:
           host: ${{ secrets.TIMEWEB_HOST }}
           username: ${{ secrets.TIMEWEB_USER }}
           password: ${{ secrets.TIMEWEB_PASSWORD }}
-          envs: S3_ENDPOINT,S3_BUCKET,S3_PUBLIC_BASE_URL,S3_FORCE_PATH_STYLE,ASSET_PUBLIC_MODE,DATABASE_URL,S3_ACCESS_KEY_ID,S3_SECRET_ACCESS_KEY
+          envs: S3_ENDPOINT,S3_BUCKET,S3_PUBLIC_BASE_URL,S3_FORCE_PATH_STYLE,ASSET_PUBLIC_MODE,DATABASE_URL,GUIDES_SYNC_TOKEN,GUIDES_SYNC_SECRET,S3_ACCESS_KEY_ID,S3_SECRET_ACCESS_KEY
           script: |
             set -e
             APP_ROOT="/var/www/wr-api"
@@ -117,6 +121,8 @@ jobs:
             upsert_env S3_FORCE_PATH_STYLE "${S3_FORCE_PATH_STYLE}" "${RELEASE_DIR}/.env"
             upsert_env ASSET_PUBLIC_MODE "${ASSET_PUBLIC_MODE}" "${RELEASE_DIR}/.env"
             upsert_env DATABASE_URL "${DATABASE_URL}" "${RELEASE_DIR}/.env"
+            upsert_env GUIDES_SYNC_TOKEN "${GUIDES_SYNC_TOKEN}" "${RELEASE_DIR}/.env"
+            upsert_env GUIDES_SYNC_SECRET "${GUIDES_SYNC_SECRET}" "${RELEASE_DIR}/.env"
 
             log_step "install dependencies and setup schema"
             cd "${RELEASE_DIR}"
