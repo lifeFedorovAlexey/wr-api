@@ -226,3 +226,22 @@ test("buildRiftGgGuidePayload keeps RiftGG rank and lane ordering", () => {
   assert.deepEqual(payload.availableRanks, ["diamond_plus", "master_plus", "challenger"]);
   assert.deepEqual(payload.availableLanes, ["top", "jungle", "adc"]);
 });
+
+test("buildRiftGgGuidePayload resolves opponent aliases without breaking local icon slugs", () => {
+  const payload = buildRiftGgGuidePayload({
+    matchupRows: [
+      { rank: "diamond_plus", lane: "jungle", dataDate: "2026-03-31", opponentSlug: "wukong", winRate: 51, pickRate: 2, winRateRank: 1, pickRateRank: 1 },
+      { rank: "diamond_plus", lane: "jungle", dataDate: "2026-03-31", opponentSlug: "master-yi", winRate: 50, pickRate: 3, winRateRank: 2, pickRateRank: 2 },
+    ],
+    buildRows: [],
+    opponentRows: [
+      { slug: "monkeyking", slugAliases: ["wukong"], name: "Wukong", icon: "monkeyking.webp", roles: ["fighter"] },
+      { slug: "masteryi", slugAliases: ["master-yi"], name: "Master Yi", icon: "masteryi.webp", roles: ["fighter"] },
+    ],
+  });
+
+  assert.equal(payload.matchups[0].entries[0].opponent?.slug, "monkeyking");
+  assert.match(payload.matchups[0].entries[0].opponent?.iconUrl || "", /monkeyking/);
+  assert.equal(payload.matchups[0].entries[1].opponent?.slug, "masteryi");
+  assert.match(payload.matchups[0].entries[1].opponent?.iconUrl || "", /masteryi/);
+});

@@ -19,6 +19,7 @@ import {
 } from "../db/schema.js";
 import { assembleGuideDetail, collectGuideEntityRefs } from "../lib/guides.mjs";
 import { buildRiftGgGuidePayload } from "../lib/riftggCnStats.mjs";
+import { getSlugAliases } from "../utils/slugRemap.mjs";
 import { setCors } from "./utils/cors.js";
 
 function setPublicCache(res, { sMaxAge = 3600, swr = 21600 } = {}) {
@@ -154,9 +155,13 @@ export default async function handler(req, res) {
       ...dictionarySlugs.spell.map((value) => ({ kind: "summonerSpell", slug: value })),
     ];
 
-    const [opponentRows, itemRowsRaw, runeRowsRaw, spellRowsRaw, riftDictionaryAssetRows] = await Promise.all([
-      opponentSlugs.length
-        ? db.select().from(champions).where(inArray(champions.slug, opponentSlugs))
+    const opponentLookupSlugs = Array.from(
+      new Set(opponentSlugs.flatMap((value) => getSlugAliases(value)).filter(Boolean)),
+    );
+
+    const [opponentRowsRaw, itemRowsRaw, runeRowsRaw, spellRowsRaw, riftDictionaryAssetRows] = await Promise.all([
+      opponentLookupSlugs.length
+        ? db.select().from(champions).where(inArray(champions.slug, opponentLookupSlugs))
         : Promise.resolve([]),
       dictionarySlugs.item.length
         ? db
@@ -209,6 +214,26 @@ export default async function handler(req, res) {
             )
         : Promise.resolve([]),
     ]);
+    const opponentSlugAliasesByResolvedSlug = new Map();
+    for (const sourceSlug of opponentSlugs) {
+      for (const alias of getSlugAliases(sourceSlug)) {
+        if (!opponentSlugAliasesByResolvedSlug.has(alias)) {
+          opponentSlugAliasesByResolvedSlug.set(alias, new Set());
+        }
+        opponentSlugAliasesByResolvedSlug.get(alias).add(sourceSlug);
+      }
+    }
+    const opponentRows = opponentRowsRaw.map((row) => ({
+      ...row,
+      slugAliases: Array.from(
+        new Set([
+          row.slug,
+          ...(opponentSlugAliasesByResolvedSlug.get(row.slug)
+            ? Array.from(opponentSlugAliasesByResolvedSlug.get(row.slug))
+            : []),
+        ]),
+      ),
+    }));
     const itemAssetRowsBySlug = new Map(
       riftDictionaryAssetRows
         .filter((row) => row.kind === "item")

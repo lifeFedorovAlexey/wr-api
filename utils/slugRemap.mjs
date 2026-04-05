@@ -18,6 +18,27 @@ export function mapToRiotSlug(cnSlug) {
   return SLUG_RIOT_REMAP[cnSlug] ?? cnSlug;
 }
 
+const SLUG_LOCAL_REMAP = Object.fromEntries(
+  Object.entries(SLUG_RIOT_REMAP).map(([localSlug, riotSlug]) => [riotSlug, localSlug]),
+);
+
+export function mapToLocalSlug(riotSlug) {
+  return SLUG_LOCAL_REMAP[riotSlug] ?? riotSlug;
+}
+
+export function getSlugAliases(slug) {
+  const normalized = String(slug || "").trim();
+  if (!normalized) return [];
+
+  return Array.from(
+    new Set([
+      normalized,
+      mapToRiotSlug(normalized),
+      mapToLocalSlug(normalized),
+    ].filter(Boolean)),
+  );
+}
+
 // Ручные фиксы имён, если после скрапа что-то не нашлось.
 // Ключ — ТВОЙ slug (из CN), не riot-овский.
 export const NAME_PATCHES = {
