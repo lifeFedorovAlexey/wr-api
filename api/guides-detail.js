@@ -28,6 +28,7 @@ const RIFT_DICTIONARY_SLUG_ALIASES = {
   },
   spell: {
     hexflash: ["hextech-flashtraption", "hex-flash"],
+    cleanse: ["boost", "purify"],
   },
 };
 
