@@ -146,11 +146,11 @@ jobs:
               apps: [
                 {
                   name: "${PM2_APP_NAME}",
-                  script: "npm",
-                  args: "start",
+                  script: "./server.mjs",
                   cwd: "${CURRENT_LINK}",
-                  instances: 2,
-                  exec_mode: "cluster",
+                  interpreter: "node",
+                  instances: 1,
+                  exec_mode: "fork",
                   listen_timeout: 10000,
                   kill_timeout: 10000,
                   env: {
