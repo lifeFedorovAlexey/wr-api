@@ -4,6 +4,7 @@ import { db } from "../db/client.js";
 import { championEvents, champions, newsArticles } from "../db/schema.js";
 import { normalizeNewsImportPayload } from "../lib/newsImport.mjs";
 import { ensureAuthorized } from "./utils/adminAuth.js";
+import { AUTH_PROFILES } from "./utils/authProfiles.js";
 import { setCors } from "./utils/cors.js";
 
 function setNoStore(res) {
@@ -19,13 +20,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method Not Allowed" });
   }
 
-  if (
-    !ensureAuthorized(req, res, {
-      tokenEnvNames: ["NEWS_SYNC_TOKEN"],
-      secretHeader: "x-news-sync-secret",
-      secretEnvNames: ["NEWS_SYNC_SECRET"],
-    })
-  ) {
+  if (!ensureAuthorized(req, res, AUTH_PROFILES.newsSync)) {
     return;
   }
 

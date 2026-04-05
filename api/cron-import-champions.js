@@ -3,6 +3,7 @@
 
 import { updateChampions } from "../lib/updateChampions.mjs";
 import { ensureAuthorized } from "./utils/adminAuth.js";
+import { AUTH_PROFILES } from "./utils/authProfiles.js";
 import { setCors } from "./utils/cors.js";
 
 function setNoStore(res) {
@@ -18,13 +19,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method Not Allowed" });
   }
 
-  if (
-    !ensureAuthorized(req, res, {
-      tokenEnvNames: ["CHAMPIONS_SYNC_TOKEN", "GUIDES_SYNC_TOKEN"],
-      secretHeader: "x-champions-sync-secret",
-      secretEnvNames: ["CHAMPIONS_SYNC_SECRET", "GUIDES_SYNC_SECRET"],
-    })
-  ) {
+  if (!ensureAuthorized(req, res, AUTH_PROFILES.championsSync)) {
     return;
   }
 

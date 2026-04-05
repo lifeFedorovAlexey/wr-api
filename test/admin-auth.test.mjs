@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { isAuthorizedBySecrets } from "../api/utils/adminAuth.js";
+import { AUTH_PROFILES } from "../api/utils/authProfiles.js";
 
 test("isAuthorizedBySecrets accepts bearer token from configured env names", () => {
   const req = {
@@ -57,4 +58,11 @@ test("isAuthorizedBySecrets rejects empty and mismatched values", () => {
   });
 
   assert.equal(authorized, false);
+});
+
+test("guides auth profile only relies on the dedicated guides secret", () => {
+  assert.deepEqual(AUTH_PROFILES.guidesSync, {
+    secretHeader: "x-guides-sync-secret",
+    secretEnvNames: ["GUIDES_SYNC_SECRET"],
+  });
 });

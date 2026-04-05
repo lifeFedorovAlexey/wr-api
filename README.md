@@ -30,9 +30,8 @@ npm run setup:guides
 
 ## Guide import auth
 
-`POST /api/guides/import` accepts one of:
+`POST /api/guides/import` accepts:
 
-- `Authorization: Bearer <GUIDES_SYNC_TOKEN>`
 - `x-guides-sync-secret: <GUIDES_SYNC_SECRET>`
 
 ## Release checklist

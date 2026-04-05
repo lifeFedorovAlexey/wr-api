@@ -15,6 +15,7 @@ import {
 } from "../db/schema.js";
 import { buildGuideImportRecord } from "../lib/guides.mjs";
 import { ensureAuthorized } from "./utils/adminAuth.js";
+import { AUTH_PROFILES } from "./utils/authProfiles.js";
 import { setCors } from "./utils/cors.js";
 
 function setNoStore(res) {
@@ -30,13 +31,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method Not Allowed" });
   }
 
-  if (
-    !ensureAuthorized(req, res, {
-      tokenEnvNames: ["GUIDES_SYNC_TOKEN", "CHAMPIONS_SYNC_TOKEN"],
-      secretHeader: "x-guides-sync-secret",
-      secretEnvNames: ["GUIDES_SYNC_SECRET", "CHAMPIONS_SYNC_SECRET"],
-    })
-  ) {
+  if (!ensureAuthorized(req, res, AUTH_PROFILES.guidesSync)) {
     return;
   }
 
