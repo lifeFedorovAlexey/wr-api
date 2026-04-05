@@ -14,29 +14,30 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     env:
-      S3_ENDPOINT: ${{ vars.S3_ENDPOINT }}
-      S3_BUCKET: ${{ vars.S3_BUCKET }}
-      S3_PUBLIC_BASE_URL: ${{ vars.S3_PUBLIC_BASE_URL }}
-      S3_FORCE_PATH_STYLE: ${{ vars.S3_FORCE_PATH_STYLE }}
-      ASSET_PUBLIC_MODE: ${{ vars.ASSET_PUBLIC_MODE }}
+      S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
+      S3_BUCKET: ${{ secrets.S3_BUCKET }}
+      S3_PUBLIC_BASE_URL: ${{ secrets.S3_PUBLIC_BASE_URL }}
+      S3_FORCE_PATH_STYLE: ${{ secrets.S3_FORCE_PATH_STYLE }}
+      ASSET_PUBLIC_MODE: ${{ secrets.ASSET_PUBLIC_MODE }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
     steps:
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.2.2
         env:
-          S3_ENDPOINT: ${{ vars.S3_ENDPOINT }}
-          S3_BUCKET: ${{ vars.S3_BUCKET }}
-          S3_PUBLIC_BASE_URL: ${{ vars.S3_PUBLIC_BASE_URL }}
-          S3_FORCE_PATH_STYLE: ${{ vars.S3_FORCE_PATH_STYLE }}
-          ASSET_PUBLIC_MODE: ${{ vars.ASSET_PUBLIC_MODE }}
+          S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
+          S3_BUCKET: ${{ secrets.S3_BUCKET }}
+          S3_PUBLIC_BASE_URL: ${{ secrets.S3_PUBLIC_BASE_URL }}
+          S3_FORCE_PATH_STYLE: ${{ secrets.S3_FORCE_PATH_STYLE }}
+          ASSET_PUBLIC_MODE: ${{ secrets.ASSET_PUBLIC_MODE }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
           S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
           S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
         with:
           host: ${{ secrets.TIMEWEB_HOST }}
           username: ${{ secrets.TIMEWEB_USER }}
           password: ${{ secrets.TIMEWEB_PASSWORD }}
-          debug: true
-          envs: S3_ENDPOINT,S3_BUCKET,S3_PUBLIC_BASE_URL,S3_FORCE_PATH_STYLE,ASSET_PUBLIC_MODE,S3_ACCESS_KEY_ID,S3_SECRET_ACCESS_KEY
+          envs: S3_ENDPOINT,S3_BUCKET,S3_PUBLIC_BASE_URL,S3_FORCE_PATH_STYLE,ASSET_PUBLIC_MODE,DATABASE_URL,S3_ACCESS_KEY_ID,S3_SECRET_ACCESS_KEY
           script: |
             set -e
             upsert_env() {
@@ -62,6 +63,8 @@ jobs:
             upsert_env S3_PUBLIC_BASE_URL "${S3_PUBLIC_BASE_URL}" .env
             upsert_env S3_FORCE_PATH_STYLE "${S3_FORCE_PATH_STYLE}" .env
             upsert_env ASSET_PUBLIC_MODE "${ASSET_PUBLIC_MODE}" .env
+            upsert_env DATABASE_URL "${DATABASE_URL}" .env
+            rm -rf node_modules
             npm ci
             pm2 delete wr-api || true
             pm2 start npm --name wr-api --cwd /var/www/wr-api -- start
