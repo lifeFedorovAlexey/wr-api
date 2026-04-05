@@ -31,20 +31,34 @@ export default async function handler(req, res) {
   const fields = typeof req.query.fields === "string" ? req.query.fields.trim() : "";
 
   try {
-    if (fields === "names") {
+    if (fields === "names" || fields === "index") {
       const rows = await db
         .select({
           slug: champions.slug,
           name: champions.name,
           nameLocalizations: champions.nameLocalizations,
+          roles: champions.roles,
+          icon: champions.icon,
         })
         .from(champions);
 
       const data = rows.map((ch) => {
         const nameLocalizations = ch.nameLocalizations || {};
-        return {
+        const item = {
           slug: ch.slug,
           name: nameLocalizations[lang] ?? nameLocalizations.en_us ?? ch.name ?? null,
+        };
+
+        if (fields === "index") {
+          return {
+            ...item,
+            roles: Array.isArray(ch.roles) ? ch.roles : [],
+            iconUrl: ch.icon ? buildPublicIconPath(ch.slug, ch.icon) : null,
+          };
+        }
+
+        return {
+          ...item,
         };
       });
 
