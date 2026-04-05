@@ -40,6 +40,19 @@ jobs:
           envs: S3_ENDPOINT,S3_BUCKET,S3_PUBLIC_BASE_URL,S3_FORCE_PATH_STYLE,ASSET_PUBLIC_MODE,DATABASE_URL,S3_ACCESS_KEY_ID,S3_SECRET_ACCESS_KEY
           script: |
             set -e
+            APP_ROOT="/var/www/wr-api"
+            RELEASES_DIR="${APP_ROOT}/releases"
+            SHARED_DIR="${APP_ROOT}/shared"
+            CURRENT_LINK="${APP_ROOT}/current"
+            REPO_DIR="${APP_ROOT}/repo"
+            RELEASE_ID="$(date +%Y%m%d%H%M%S)"
+            RELEASE_DIR="${RELEASES_DIR}/${RELEASE_ID}"
+            CANARY_NAME="wr-api-canary-${RELEASE_ID}"
+            PM2_APP_NAME="wr-api"
+            APP_PORT="3001"
+            CANARY_PORT="3101"
+            PREVIOUS_TARGET=""
+
             upsert_env() {
               key="$1"
               value="$2"
@@ -51,21 +64,105 @@ jobs:
                 printf '%s\n' "${key}=${value}" >> "$file"
               fi
             }
-            cd /var/www/wr-api
-            git stash push --include-untracked -m "deploy-api-$(date +%s)" || true
+
+            wait_for_health() {
+              port="$1"
+              attempts="${2:-30}"
+              i=1
+              while [ "$i" -le "$attempts" ]; do
+                if curl -fsS "http://127.0.0.1:${port}/api/health" >/dev/null 2>&1; then
+                  return 0
+                fi
+                sleep 2
+                i=$((i + 1))
+              done
+              return 1
+            }
+
+            cleanup_canary() {
+              pm2 delete "${CANARY_NAME}" >/dev/null 2>&1 || true
+            }
+
+            mkdir -p "${RELEASES_DIR}" "${SHARED_DIR}" "${REPO_DIR}"
+            cd "${REPO_DIR}"
+            if [ ! -d .git ]; then
+              git init
+              git remote add origin https://github.com/lifeFedorovAlexey/wr-api.git
+              git fetch origin
+              git checkout -b main origin/main
+            fi
+
+            git stash push --include-untracked -m "deploy-api-${RELEASE_ID}" || true
             git fetch origin
             git checkout main
             git pull --ff-only origin main
-            upsert_env S3_ENDPOINT "${S3_ENDPOINT}" .env
-            upsert_env S3_BUCKET "${S3_BUCKET}" .env
-            upsert_env S3_ACCESS_KEY_ID "${S3_ACCESS_KEY_ID}" .env
-            upsert_env S3_SECRET_ACCESS_KEY "${S3_SECRET_ACCESS_KEY}" .env
-            upsert_env S3_PUBLIC_BASE_URL "${S3_PUBLIC_BASE_URL}" .env
-            upsert_env S3_FORCE_PATH_STYLE "${S3_FORCE_PATH_STYLE}" .env
-            upsert_env ASSET_PUBLIC_MODE "${ASSET_PUBLIC_MODE}" .env
-            upsert_env DATABASE_URL "${DATABASE_URL}" .env
-            rm -rf node_modules
+
+            mkdir -p "${RELEASE_DIR}"
+            git archive --format=tar HEAD | tar -xf - -C "${RELEASE_DIR}"
+
+            upsert_env S3_ENDPOINT "${S3_ENDPOINT}" "${RELEASE_DIR}/.env"
+            upsert_env S3_BUCKET "${S3_BUCKET}" "${RELEASE_DIR}/.env"
+            upsert_env S3_ACCESS_KEY_ID "${S3_ACCESS_KEY_ID}" "${RELEASE_DIR}/.env"
+            upsert_env S3_SECRET_ACCESS_KEY "${S3_SECRET_ACCESS_KEY}" "${RELEASE_DIR}/.env"
+            upsert_env S3_PUBLIC_BASE_URL "${S3_PUBLIC_BASE_URL}" "${RELEASE_DIR}/.env"
+            upsert_env S3_FORCE_PATH_STYLE "${S3_FORCE_PATH_STYLE}" "${RELEASE_DIR}/.env"
+            upsert_env ASSET_PUBLIC_MODE "${ASSET_PUBLIC_MODE}" "${RELEASE_DIR}/.env"
+            upsert_env DATABASE_URL "${DATABASE_URL}" "${RELEASE_DIR}/.env"
+
+            cd "${RELEASE_DIR}"
             npm ci
-            pm2 delete wr-api || true
-            pm2 start npm --name wr-api --cwd /var/www/wr-api -- start
+
+            cleanup_canary
+            PORT="${CANARY_PORT}" HOST="127.0.0.1" pm2 start npm --name "${CANARY_NAME}" --cwd "${RELEASE_DIR}" -- start
+            if ! wait_for_health "${CANARY_PORT}" 30; then
+              pm2 logs "${CANARY_NAME}" --lines 120 --nostream || true
+              cleanup_canary
+              echo "canary failed health-check"
+              exit 1
+            fi
+            cleanup_canary
+
+            cat > "${SHARED_DIR}/ecosystem.config.cjs" <<EOF
+            module.exports = {
+              apps: [
+                {
+                  name: "${PM2_APP_NAME}",
+                  script: "npm",
+                  args: "start",
+                  cwd: "${CURRENT_LINK}",
+                  instances: 2,
+                  exec_mode: "cluster",
+                  listen_timeout: 10000,
+                  kill_timeout: 10000,
+                  env: {
+                    PORT: "${APP_PORT}",
+                    HOST: "127.0.0.1"
+                  }
+                }
+              ]
+            };
+            EOF
+
+            if [ -L "${CURRENT_LINK}" ]; then
+              PREVIOUS_TARGET="$(readlink -f "${CURRENT_LINK}")"
+            fi
+            ln -sfn "${RELEASE_DIR}" "${CURRENT_LINK}"
+
+            if pm2 describe "${PM2_APP_NAME}" >/dev/null 2>&1; then
+              pm2 reload "${SHARED_DIR}/ecosystem.config.cjs" --only "${PM2_APP_NAME}" --update-env
+            else
+              pm2 start "${SHARED_DIR}/ecosystem.config.cjs" --only "${PM2_APP_NAME}" --update-env
+            fi
+
+            if ! wait_for_health "${APP_PORT}" 30; then
+              pm2 logs "${PM2_APP_NAME}" --lines 120 --nostream || true
+              if [ -n "${PREVIOUS_TARGET}" ] && [ -d "${PREVIOUS_TARGET}" ]; then
+                ln -sfn "${PREVIOUS_TARGET}" "${CURRENT_LINK}"
+                pm2 reload "${SHARED_DIR}/ecosystem.config.cjs" --only "${PM2_APP_NAME}" --update-env || true
+              fi
+              echo "production failed health-check after reload"
+              exit 1
+            fi
+
+            ls -1dt "${RELEASES_DIR}"/* 2>/dev/null | tail -n +6 | xargs -r rm -rf
             pm2 save

@@ -11,6 +11,7 @@ import cronImportChampionsHandler from "./api/cron-import-champions.js";
 import guidesDetailHandler from "./api/guides-detail.js";
 import guidesImportHandler from "./api/guides-import.js";
 import guidesHandler from "./api/guides.js";
+import healthHandler from "./api/health.js";
 import latestStatsSnapshotHandler from "./api/latest-stats-snapshot.js";
 import newsDetailHandler from "./api/news-detail.js";
 import newsHandler from "./api/news.js";
@@ -39,6 +40,7 @@ const routes = new Map([
   ["/api/cron-import-champions", cronImportChampionsHandler],
   ["/api/guides", guidesHandler],
   ["/api/guides/import", guidesImportHandler],
+  ["/api/health", healthHandler],
   ["/api/latest-stats-snapshot", latestStatsSnapshotHandler],
   ["/api/news", newsHandler],
   ["/api/news/import", newsImportHandler],
