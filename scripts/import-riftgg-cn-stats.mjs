@@ -1,6 +1,6 @@
 import "dotenv/config";
 
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull, or } from "drizzle-orm";
 
 import { db, client } from "../db/client.js";
 import {
@@ -147,6 +147,49 @@ async function ensureDictionariesSynced(entries, now = new Date()) {
   }
 }
 
+function collectRowDataDates(rows = []) {
+  const dates = [];
+  let includesNull = false;
+
+  for (const row of Array.isArray(rows) ? rows : []) {
+    if (row?.dataDate == null) {
+      includesNull = true;
+      continue;
+    }
+
+    const value = String(row.dataDate).trim();
+    if (!value || dates.includes(value)) {
+      continue;
+    }
+
+    dates.push(value);
+  }
+
+  return {
+    dates,
+    includesNull,
+  };
+}
+
+function buildDataDateFilter(column, rows) {
+  const { dates, includesNull } = collectRowDataDates(rows);
+  const filters = [];
+
+  if (dates.length) {
+    filters.push(inArray(column, dates));
+  }
+
+  if (includesNull) {
+    filters.push(isNull(column));
+  }
+
+  if (!filters.length) {
+    return null;
+  }
+
+  return filters.length === 1 ? filters[0] : or(...filters);
+}
+
 async function importChampionStats({ slug, index, total }) {
   console.log(`[riftgg-cn-stats] ${index}/${total} ${slug} -> start`);
   const html = await fetchRiftGgChampionHtml(slug);
@@ -166,8 +209,20 @@ async function importChampionStats({ slug, index, total }) {
 
   console.log(`[riftgg-cn-stats] ${index}/${total} ${slug} -> write matchups=${normalized.matchups.length} builds=${normalized.builds.length}`);
   await db.transaction(async (tx) => {
-    await tx.delete(riftggCnMatchups).where(eq(riftggCnMatchups.championSlug, slug));
-    await tx.delete(riftggCnBuilds).where(eq(riftggCnBuilds.championSlug, slug));
+    const matchupDateFilter = buildDataDateFilter(riftggCnMatchups.dataDate, normalized.matchups);
+    const buildDateFilter = buildDataDateFilter(riftggCnBuilds.dataDate, normalized.builds);
+
+    if (matchupDateFilter) {
+      await tx
+        .delete(riftggCnMatchups)
+        .where(and(eq(riftggCnMatchups.championSlug, slug), matchupDateFilter));
+    }
+
+    if (buildDateFilter) {
+      await tx
+        .delete(riftggCnBuilds)
+        .where(and(eq(riftggCnBuilds.championSlug, slug), buildDateFilter));
+    }
 
     if (normalized.matchups.length) {
       await tx.insert(riftggCnMatchups).values(
