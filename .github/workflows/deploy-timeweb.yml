@@ -71,8 +71,10 @@ jobs:
               i=1
               while [ "$i" -le "$attempts" ]; do
                 if curl -fsS "http://127.0.0.1:${port}/api/health" >/dev/null 2>&1; then
+                  printf '[deploy-api] health ok on %s (attempt %s/%s)\n' "${port}" "${i}" "${attempts}"
                   return 0
                 fi
+                printf '[deploy-api] waiting for health on %s (attempt %s/%s)\n' "${port}" "${i}" "${attempts}"
                 sleep 2
                 i=$((i + 1))
               done
@@ -163,8 +165,9 @@ jobs:
             log_step "switch current symlink"
             ln -sfn "${RELEASE_DIR}" "${CURRENT_LINK}"
 
-            log_step "apply pm2 ecosystem"
-            pm2 startOrReload "${SHARED_DIR}/ecosystem.config.cjs" --only "${PM2_APP_NAME}" --update-env
+            log_step "replace live pm2 process"
+            pm2 delete "${PM2_APP_NAME}" >/dev/null 2>&1 || true
+            pm2 start "${SHARED_DIR}/ecosystem.config.cjs" --only "${PM2_APP_NAME}" --update-env
             pm2 delete "${CANARY_NAME}" >/dev/null 2>&1 || true
 
             log_step "wait for production health on ${APP_PORT}"
@@ -173,7 +176,8 @@ jobs:
               if [ -n "${PREVIOUS_TARGET}" ] && [ -d "${PREVIOUS_TARGET}" ]; then
                 log_step "rollback to previous release"
                 ln -sfn "${PREVIOUS_TARGET}" "${CURRENT_LINK}"
-                pm2 startOrReload "${SHARED_DIR}/ecosystem.config.cjs" --only "${PM2_APP_NAME}" --update-env || true
+                pm2 delete "${PM2_APP_NAME}" >/dev/null 2>&1 || true
+                pm2 start "${SHARED_DIR}/ecosystem.config.cjs" --only "${PM2_APP_NAME}" --update-env || true
               fi
               echo "production failed health-check after reload"
               exit 1
