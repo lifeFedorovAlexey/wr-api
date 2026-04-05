@@ -96,6 +96,56 @@ test("parseRiftGgCnStatsHtml accepts support lane enum 5 from CNStatsTabs payloa
   assert.equal(normalized.builds.length, 3);
 });
 
+test("normalizeRiftGgCnStats maps numeric lane enums to mid, top, adc, jungle and support", () => {
+  const normalized = normalizeRiftGgCnStats("aatrox", {
+    stats: {
+      matchups: [
+        {
+          rankLevel: 1,
+          lane: 1,
+          dataDate: "2026-03-31",
+          counters: [{ heroSlug: "ahri", metrics: { winRate: 0.5, appearRate: 0.1, winRateRank: 1, appearRateRank: 1 } }],
+        },
+        {
+          rankLevel: 1,
+          lane: 2,
+          dataDate: "2026-03-31",
+          counters: [{ heroSlug: "darius", metrics: { winRate: 0.5, appearRate: 0.1, winRateRank: 1, appearRateRank: 1 } }],
+        },
+        {
+          rankLevel: 1,
+          lane: 3,
+          dataDate: "2026-03-31",
+          counters: [{ heroSlug: "kaisa", metrics: { winRate: 0.5, appearRate: 0.1, winRateRank: 1, appearRateRank: 1 } }],
+        },
+        {
+          rankLevel: 1,
+          lane: 4,
+          dataDate: "2026-03-31",
+          counters: [{ heroSlug: "leesin", metrics: { winRate: 0.5, appearRate: 0.1, winRateRank: 1, appearRateRank: 1 } }],
+        },
+        {
+          rankLevel: 1,
+          lane: 5,
+          dataDate: "2026-03-31",
+          counters: [{ heroSlug: "alistar", metrics: { winRate: 0.5, appearRate: 0.1, winRateRank: 1, appearRateRank: 1 } }],
+        },
+      ],
+      core_items: [],
+      runes: [],
+      spells: [],
+    },
+    itemsDict: {},
+    runesDict: {},
+    spellsDict: {},
+  });
+
+  assert.deepEqual(
+    normalized.matchups.map((row) => row.lane),
+    ["mid", "top", "adc", "jungle", "support"],
+  );
+});
+
 test("normalizeRiftGgCnStats builds matchup and build rows", () => {
   const normalized = normalizeRiftGgCnStats("lux", {
     stats: {
