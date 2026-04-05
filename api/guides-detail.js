@@ -26,6 +26,9 @@ const RIFT_DICTIONARY_SLUG_ALIASES = {
   rune: {
     "eyeball-collection": ["eyeball-collector"],
   },
+  spell: {
+    hexflash: ["hextech-flashtraption", "hex-flash"],
+  },
 };
 
 function setPublicCache(res, { sMaxAge = 3600, swr = 21600 } = {}) {
