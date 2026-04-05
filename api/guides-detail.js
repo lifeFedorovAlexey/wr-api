@@ -22,6 +22,12 @@ import { buildRiftGgGuidePayload } from "../lib/riftggCnStats.mjs";
 import { getSlugAliases } from "../utils/slugRemap.mjs";
 import { setCors } from "./utils/cors.js";
 
+const RIFT_DICTIONARY_SLUG_ALIASES = {
+  rune: {
+    "eyeball-collection": ["eyeball-collector"],
+  },
+};
+
 function setPublicCache(res, { sMaxAge = 3600, swr = 21600 } = {}) {
   res.setHeader(
     "Cache-Control",
@@ -31,6 +37,19 @@ function setPublicCache(res, { sMaxAge = 3600, swr = 21600 } = {}) {
 
 function setNoStore(res) {
   res.setHeader("Cache-Control", "no-store");
+}
+
+function getRiftDictionarySlugAliases(kind, slug) {
+  const normalizedKind = String(kind || "").trim().toLowerCase();
+  const normalizedSlug = String(slug || "").trim();
+  if (!normalizedSlug) return [];
+
+  return Array.from(
+    new Set([
+      normalizedSlug,
+      ...((RIFT_DICTIONARY_SLUG_ALIASES[normalizedKind] || {})[normalizedSlug] || []),
+    ]),
+  );
 }
 
 export default async function handler(req, res) {
@@ -150,9 +169,15 @@ export default async function handler(req, res) {
       ),
     };
     const riftDictionaryEntityRefs = [
-      ...dictionarySlugs.item.map((value) => ({ kind: "item", slug: value })),
-      ...dictionarySlugs.rune.map((value) => ({ kind: "rune", slug: value })),
-      ...dictionarySlugs.spell.map((value) => ({ kind: "summonerSpell", slug: value })),
+      ...dictionarySlugs.item.flatMap((value) =>
+        getRiftDictionarySlugAliases("item", value).map((slug) => ({ kind: "item", slug })),
+      ),
+      ...dictionarySlugs.rune.flatMap((value) =>
+        getRiftDictionarySlugAliases("rune", value).map((slug) => ({ kind: "rune", slug })),
+      ),
+      ...dictionarySlugs.spell.flatMap((value) =>
+        getRiftDictionarySlugAliases("spell", value).map((slug) => ({ kind: "summonerSpell", slug })),
+      ),
     ];
 
     const opponentLookupSlugs = Array.from(
@@ -234,20 +259,38 @@ export default async function handler(req, res) {
         ]),
       ),
     }));
-    const itemAssetRowsBySlug = new Map(
-      riftDictionaryAssetRows
-        .filter((row) => row.kind === "item")
-        .map((row) => [row.slug, row]),
+    const buildAssetMapByRequestedSlug = (kind, requestedSlugs, rows, rowKind) => {
+      const sourceRows = rows.filter((row) => row.kind === rowKind);
+      const map = new Map();
+
+      for (const requestedSlug of requestedSlugs) {
+        const aliases = getRiftDictionarySlugAliases(kind, requestedSlug);
+        const matchedRow = sourceRows.find((row) => aliases.includes(row.slug));
+        if (matchedRow) {
+          map.set(requestedSlug, matchedRow);
+        }
+      }
+
+      return map;
+    };
+
+    const itemAssetRowsBySlug = buildAssetMapByRequestedSlug(
+      "item",
+      dictionarySlugs.item,
+      riftDictionaryAssetRows,
+      "item",
     );
-    const runeAssetRowsBySlug = new Map(
-      riftDictionaryAssetRows
-        .filter((row) => row.kind === "rune")
-        .map((row) => [row.slug, row]),
+    const runeAssetRowsBySlug = buildAssetMapByRequestedSlug(
+      "rune",
+      dictionarySlugs.rune,
+      riftDictionaryAssetRows,
+      "rune",
     );
-    const spellAssetRowsBySlug = new Map(
-      riftDictionaryAssetRows
-        .filter((row) => row.kind === "summonerSpell")
-        .map((row) => [row.slug, row]),
+    const spellAssetRowsBySlug = buildAssetMapByRequestedSlug(
+      "spell",
+      dictionarySlugs.spell,
+      riftDictionaryAssetRows,
+      "summonerSpell",
     );
     const itemRows = mergeRiftDictionaryAssets(itemRowsRaw, itemAssetRowsBySlug);
     const runeRows = mergeRiftDictionaryAssets(runeRowsRaw, runeAssetRowsBySlug);
