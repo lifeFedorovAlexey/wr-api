@@ -27,6 +27,7 @@ import { readJsonBody } from "./api/utils/request-body.js";
 import { createChampionIconStore, normalizeIconSize } from "./lib/championIcons.mjs";
 import { createGuideAssetStore, detectGuideAssetContentType } from "./lib/guideAssets.mjs";
 import { resolveGuideHeroMediaFilePath } from "./lib/guideHeroMedia.mjs";
+import { isAllowedRemoteAssetUrl } from "./lib/remoteAssetPolicy.mjs";
 
 const PORT = Number(process.env.PORT || 3001);
 const HOST = process.env.HOST || "127.0.0.1";
@@ -105,6 +106,11 @@ async function tryServeIcon(req, res, url) {
       : null;
   const requestedSize = normalizeIconSize(url.searchParams.get("size"));
 
+  if (sourceUrl && !isAllowedRemoteAssetUrl(sourceUrl)) {
+    res.status(400).json({ error: "Invalid asset source" });
+    return true;
+  }
+
   const iconStore = await iconStorePromise;
 
   if (sourceUrl) {
@@ -164,6 +170,11 @@ async function tryServeGuideAsset(req, res, url) {
     typeof url.searchParams.get("src") === "string"
       ? url.searchParams.get("src")
       : null;
+
+  if (sourceUrl && !isAllowedRemoteAssetUrl(sourceUrl)) {
+    res.status(400).json({ error: "Invalid asset source" });
+    return true;
+  }
 
   const guideAssetStore = await guideAssetStorePromise;
 

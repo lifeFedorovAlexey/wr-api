@@ -7,6 +7,7 @@
   "scripts": {
     "start": "node ./server.mjs",
     "dev": "node --watch ./server.mjs",
+    "audit:prod": "npm audit --omit=dev",
     "import:champions": "node ./scripts/import-champions.mjs",
     "import:skins": "node ./scripts/import-skins.mjs",
     "import:riftgg-cn-stats": "node ./scripts/import-riftgg-cn-stats.mjs",
@@ -20,8 +21,12 @@
     "sync:assets:s3": "node ./scripts/sync-assets-to-s3.mjs",
     "backfill:guide-entity-assets": "node ./scripts/backfill-guide-entity-assets.mjs"
   },
+  "overrides": {
+    "basic-ftp": "5.2.0"
+  },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1014.0",
+    "basic-ftp": "5.2.0",
     "dotenv": "^16.4.5",
     "drizzle-orm": "^0.38.0",
     "postgres": "^3.4.4",
