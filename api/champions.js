@@ -28,9 +28,43 @@ export default async function handler(req, res) {
   }
 
   const lang = req.query.lang || "ru_ru";
+  const fields = typeof req.query.fields === "string" ? req.query.fields.trim() : "";
 
   try {
-    const rows = await db.select().from(champions);
+    if (fields === "names") {
+      const rows = await db
+        .select({
+          slug: champions.slug,
+          name: champions.name,
+          nameLocalizations: champions.nameLocalizations,
+        })
+        .from(champions);
+
+      const data = rows.map((ch) => {
+        const nameLocalizations = ch.nameLocalizations || {};
+        return {
+          slug: ch.slug,
+          name: nameLocalizations[lang] ?? nameLocalizations.en_us ?? ch.name ?? null,
+        };
+      });
+
+      setPublicCache(res, { sMaxAge: 3600, swr: 21600 });
+      return res.status(200).json(data);
+    }
+
+    const rows = await db
+      .select({
+        slug: champions.slug,
+        cnHeroId: champions.cnHeroId,
+        name: champions.name,
+        nameLocalizations: champions.nameLocalizations,
+        roles: champions.roles,
+        rolesLocalizations: champions.rolesLocalizations,
+        difficulty: champions.difficulty,
+        difficultyLocalizations: champions.difficultyLocalizations,
+        icon: champions.icon,
+      })
+      .from(champions);
 
     const data = rows.map((ch) => {
       const nameLocalizations = ch.nameLocalizations || {};

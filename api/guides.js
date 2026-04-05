@@ -28,10 +28,29 @@ export default async function handler(req, res) {
   try {
     const fields = typeof req.query.fields === "string" ? req.query.fields.trim() : "";
 
-    const rows = await db
-      .select()
-      .from(guideSummaries)
-      .orderBy(asc(guideSummaries.name));
+    const rows =
+      fields === "slug"
+        ? await db
+            .select({
+              slug: guideSummaries.slug,
+            })
+            .from(guideSummaries)
+            .orderBy(asc(guideSummaries.name))
+        : await db
+            .select({
+              slug: guideSummaries.slug,
+              name: guideSummaries.name,
+              title: guideSummaries.title,
+              icon: guideSummaries.icon,
+              patch: guideSummaries.patch,
+              tier: guideSummaries.tier,
+              recommendedRole: guideSummaries.recommendedRole,
+              roles: guideSummaries.roles,
+              buildCount: guideSummaries.buildCount,
+              updatedAt: guideSummaries.updatedAt,
+            })
+            .from(guideSummaries)
+            .orderBy(asc(guideSummaries.name));
 
     if (fields === "slug") {
       setPublicCache(res, { sMaxAge: 3600, swr: 21600 });
