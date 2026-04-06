@@ -80,11 +80,17 @@ test("normalizeIconSize snaps requested values to the supported buckets", () => 
 
 test("icon storage keys stay stable and do not include source urls", () => {
   const sourceUrl = "https://cdn.example.com/path/to/icon.png?foo=bar";
+  const storageKey = buildIconStorageKey("ahri", sourceUrl);
+  const variantKey = buildIconVariantStorageKey("ahri", 48);
 
-  assert.equal(buildIconStorageKey("ahri", sourceUrl), "icons/ahri.png");
-  assert.equal(buildIconVariantStorageKey("ahri", 48), "icons/ahri-48.webp");
-  assert.equal(buildIconStorageKey("ahri", sourceUrl).includes("cdn.example.com"), false);
-  assert.equal(buildIconVariantStorageKey("ahri", 48).includes("http"), false);
+  assert.equal(storageKey, "icons/ahri.png");
+  assert.equal(variantKey, "icons/ahri-48.webp");
+  assert.equal(storageKey.startsWith("icons/"), true);
+  assert.equal(storageKey.includes("://"), false);
+  assert.equal(storageKey.includes("?"), false);
+  assert.equal(variantKey.startsWith("icons/"), true);
+  assert.equal(variantKey.includes("://"), false);
+  assert.equal(variantKey.includes("?"), false);
 });
 
 test("buildPublicIconPath returns direct S3 urls in public asset mode", () => {
