@@ -38,6 +38,14 @@ test("buildPublicIconPath returns proxied api icon path", () => {
     buildPublicIconPath("ahri", "https://example.com/ahri.png"),
     "/wr-api/icons/ahri?src=https%3A%2F%2Fexample.com%2Fahri.png",
   );
+  assert.equal(
+    buildPublicIconPath("ahri", "http://game.gtimg.cn/images/ahri.png"),
+    "/wr-api/icons/ahri?src=https%3A%2F%2Fgame.gtimg.cn%2Fimages%2Fahri.png",
+  );
+  assert.equal(
+    buildPublicIconPath("ahri", "//game.gtimg.cn/images/ahri.png"),
+    "/wr-api/icons/ahri?src=https%3A%2F%2Fgame.gtimg.cn%2Fimages%2Fahri.png",
+  );
 });
 
 test("normalizeIconSize snaps requested values to the supported buckets", () => {
