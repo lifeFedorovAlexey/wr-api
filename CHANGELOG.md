@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.1 - 2026-04-06
+
+- fixed public asset mode so direct S3 URLs no longer depend on upload credentials being present at runtime
+- normalized guide and champion icon delivery around the production `ASSET_PUBLIC_MODE=s3` contract
+- refined tests and release docs to enforce that client-visible champion icon URLs are S3-first in production
+
 ## 1.2.0 - 2026-04-06
 
 - added zero-downtime API deploys with release directories, canary health checks, rollback support, and schema setup during deploy

@@ -4,9 +4,9 @@ Public Wild Rift API used by `wildriftallstats.ru`.
 
 ## Version
 
-- Current version: `1.2.0`
+- Current version: `1.2.1`
 - Release branch format: `release/x.y.z`
-- Stable tag format: `v1.2.0`
+- Stable tag format: `v1.2.1`
 
 ## Commands
 
@@ -48,6 +48,13 @@ Static asset endpoints served by the API:
 - `GET /assets/:key`
 - `GET /hero-media/:slug.mp4`
 
+## Asset delivery contract
+
+- Production champion icons are expected to resolve to public S3 URLs when `ASSET_PUBLIC_MODE=s3` and `S3_PUBLIC_BASE_URL` is configured
+- Client-facing champion icon payloads should not rely on donor-host URLs or `/wr-api/icons/:slug?src=...` in production
+- `/icons/:slug` remains as a runtime mirror/local-cache fallback and for non-S3 environments
+- Remaining legacy fallback cleanup work is tracked in [../TECHDEBT.md](/d:/wildRiftChampions/TECHDEBT.md)
+
 ## Guide import auth
 
 `POST /api/guides/import` accepts:
@@ -59,7 +66,7 @@ Static asset endpoints served by the API:
 1. Bump `version` in `package.json` and `package-lock.json`
 2. Add release notes to `CHANGELOG.md`
 3. Run `npm run test`
-4. Confirm `.env` still contains the expected `DATABASE_URL`, S3 settings, and `GUIDES_SYNC_SECRET`
+4. Confirm `.env` still contains the expected `DATABASE_URL`, S3 settings, `ASSET_PUBLIC_MODE=s3`, and `GUIDES_SYNC_SECRET`
 5. Verify the service responds on `http://127.0.0.1:3001/api/health`
 6. Check `GET /api/guides`, `GET /api/news`, and `GET /api/skins`
 7. Push the release branch as `release/x.y.z`
