@@ -3,6 +3,14 @@ name: Deploy API To Timeweb
 on:
   workflow_call:
     secrets:
+      ADMIN_SESSION_SECRET:
+        required: false
+      ADMIN_BOOTSTRAP_EMAILS:
+        required: false
+      ADMIN_BOOTSTRAP_TELEGRAM_IDS:
+        required: false
+      ADMIN_BOOTSTRAP_TELEGRAM_USERNAMES:
+        required: false
       S3_ENDPOINT:
         required: false
       S3_BUCKET:
@@ -36,6 +44,10 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     env:
+      ADMIN_SESSION_SECRET: ${{ secrets.ADMIN_SESSION_SECRET }}
+      ADMIN_BOOTSTRAP_EMAILS: ${{ secrets.ADMIN_BOOTSTRAP_EMAILS }}
+      ADMIN_BOOTSTRAP_TELEGRAM_IDS: ${{ secrets.ADMIN_BOOTSTRAP_TELEGRAM_IDS }}
+      ADMIN_BOOTSTRAP_TELEGRAM_USERNAMES: ${{ secrets.ADMIN_BOOTSTRAP_TELEGRAM_USERNAMES }}
       S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
       S3_BUCKET: ${{ secrets.S3_BUCKET }}
       S3_PUBLIC_BASE_URL: ${{ secrets.S3_PUBLIC_BASE_URL }}
@@ -48,6 +60,10 @@ jobs:
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.2.5
         env:
+          ADMIN_SESSION_SECRET: ${{ secrets.ADMIN_SESSION_SECRET }}
+          ADMIN_BOOTSTRAP_EMAILS: ${{ secrets.ADMIN_BOOTSTRAP_EMAILS }}
+          ADMIN_BOOTSTRAP_TELEGRAM_IDS: ${{ secrets.ADMIN_BOOTSTRAP_TELEGRAM_IDS }}
+          ADMIN_BOOTSTRAP_TELEGRAM_USERNAMES: ${{ secrets.ADMIN_BOOTSTRAP_TELEGRAM_USERNAMES }}
           S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
           S3_BUCKET: ${{ secrets.S3_BUCKET }}
           S3_PUBLIC_BASE_URL: ${{ secrets.S3_PUBLIC_BASE_URL }}
@@ -61,7 +77,7 @@ jobs:
           host: ${{ secrets.TIMEWEB_HOST }}
           username: ${{ secrets.TIMEWEB_USER }}
           password: ${{ secrets.TIMEWEB_PASSWORD }}
-          envs: S3_ENDPOINT,S3_BUCKET,S3_PUBLIC_BASE_URL,S3_FORCE_PATH_STYLE,ASSET_PUBLIC_MODE,DATABASE_URL,GUIDES_SYNC_SECRET,S3_ACCESS_KEY_ID,S3_SECRET_ACCESS_KEY
+          envs: ADMIN_SESSION_SECRET,ADMIN_BOOTSTRAP_EMAILS,ADMIN_BOOTSTRAP_TELEGRAM_IDS,ADMIN_BOOTSTRAP_TELEGRAM_USERNAMES,S3_ENDPOINT,S3_BUCKET,S3_PUBLIC_BASE_URL,S3_FORCE_PATH_STYLE,ASSET_PUBLIC_MODE,DATABASE_URL,GUIDES_SYNC_SECRET,S3_ACCESS_KEY_ID,S3_SECRET_ACCESS_KEY
           script: |
             set -e
             APP_ROOT="/var/www/wr-api"
@@ -133,6 +149,10 @@ jobs:
             mkdir -p "${RELEASE_DIR}"
             git archive --format=tar HEAD | tar -xf - -C "${RELEASE_DIR}"
 
+            upsert_env ADMIN_SESSION_SECRET "${ADMIN_SESSION_SECRET}" "${RELEASE_DIR}/.env"
+            upsert_env ADMIN_BOOTSTRAP_EMAILS "${ADMIN_BOOTSTRAP_EMAILS}" "${RELEASE_DIR}/.env"
+            upsert_env ADMIN_BOOTSTRAP_TELEGRAM_IDS "${ADMIN_BOOTSTRAP_TELEGRAM_IDS}" "${RELEASE_DIR}/.env"
+            upsert_env ADMIN_BOOTSTRAP_TELEGRAM_USERNAMES "${ADMIN_BOOTSTRAP_TELEGRAM_USERNAMES}" "${RELEASE_DIR}/.env"
             upsert_env S3_ENDPOINT "${S3_ENDPOINT}" "${RELEASE_DIR}/.env"
             upsert_env S3_BUCKET "${S3_BUCKET}" "${RELEASE_DIR}/.env"
             upsert_env S3_ACCESS_KEY_ID "${S3_ACCESS_KEY_ID}" "${RELEASE_DIR}/.env"
@@ -148,6 +168,7 @@ jobs:
             npm ci
             npm run setup:stats
             npm run setup:guides
+            npm run setup:admin
             npm run setup:riftgg-cn-stats
             npm run setup:skins
             npm run setup:news
