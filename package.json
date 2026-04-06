@@ -31,7 +31,7 @@
     "@aws-sdk/client-s3": "^3.1024.0",
     "basic-ftp": "5.2.0",
     "dotenv": "^16.4.5",
-    "drizzle-orm": "^0.38.0",
+    "drizzle-orm": "^0.45.2",
     "postgres": "^3.4.9",
     "puppeteer": "^24.40.0",
     "sharp": "^0.34.5"
