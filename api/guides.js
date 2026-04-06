@@ -1,7 +1,7 @@
 import { asc } from "drizzle-orm";
 
 import { db } from "../db/client.js";
-import { guideSummaries } from "../db/schema.js";
+import { guideSummaries, riftggCnBuilds, riftggCnMatchups } from "../db/schema.js";
 import { buildPublicIconPath } from "../lib/championIcons.mjs";
 import { setCors } from "./utils/cors.js";
 
@@ -14,6 +14,37 @@ function setPublicCache(res, { sMaxAge = 3600, swr = 21600 } = {}) {
 
 function setNoStore(res) {
   res.setHeader("Cache-Control", "no-store");
+}
+
+async function buildGuideLaneMap() {
+  const [matchupRows, buildRows] = await Promise.all([
+    db
+      .select({
+        slug: riftggCnMatchups.championSlug,
+        lane: riftggCnMatchups.lane,
+      })
+      .from(riftggCnMatchups),
+    db
+      .select({
+        slug: riftggCnBuilds.championSlug,
+        lane: riftggCnBuilds.lane,
+      })
+      .from(riftggCnBuilds),
+  ]);
+
+  const laneMap = new Map();
+
+  for (const row of [...matchupRows, ...buildRows]) {
+    const slug = String(row?.slug || "").trim();
+    const lane = String(row?.lane || "").trim();
+    if (!slug || !lane) continue;
+
+    const current = laneMap.get(slug) || new Set();
+    current.add(lane);
+    laneMap.set(slug, current);
+  }
+
+  return laneMap;
 }
 
 export default async function handler(req, res) {
@@ -51,6 +82,7 @@ export default async function handler(req, res) {
             })
             .from(guideSummaries)
             .orderBy(asc(guideSummaries.name));
+    const guideLaneMap = fields === "slug" ? new Map() : await buildGuideLaneMap();
 
     if (fields === "slug") {
       setPublicCache(res, { sMaxAge: 3600, swr: 21600 });
@@ -66,6 +98,7 @@ export default async function handler(req, res) {
       tier: row.tier,
       recommendedRole: row.recommendedRole,
       roles: Array.isArray(row.roles) ? row.roles : [],
+      availableLanes: Array.from(guideLaneMap.get(row.slug) || []),
       buildCount: row.buildCount || 1,
       updatedAt: row.updatedAt,
     }));

@@ -7,6 +7,28 @@ import {
   parseRiftGgCnStatsHtml,
 } from "../lib/riftggCnStats.mjs";
 
+function withEnv(env, fn) {
+  const previous = {
+    S3_ENDPOINT: process.env.S3_ENDPOINT,
+    S3_BUCKET: process.env.S3_BUCKET,
+    S3_ACCESS_KEY_ID: process.env.S3_ACCESS_KEY_ID,
+    S3_SECRET_ACCESS_KEY: process.env.S3_SECRET_ACCESS_KEY,
+    S3_PUBLIC_BASE_URL: process.env.S3_PUBLIC_BASE_URL,
+    ASSET_PUBLIC_MODE: process.env.ASSET_PUBLIC_MODE,
+  };
+
+  Object.assign(process.env, env);
+
+  try {
+    return fn();
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value == null) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
 test("parseRiftGgCnStatsHtml extracts stats and dictionaries from next flight payload", () => {
   const payload = JSON.stringify(
     `1:{"stats":{"matchups":[{"rankLevel":"Diamond+","lane":"Mid","dataDate":"2026-03-31","counters":[{"heroSlug":"ahri","metrics":{"winRate":54.6,"appearRate":2.1,"winRateRank":1,"appearRateRank":9}}]}],"core_items":[{"rankLevel":"Diamond+","lane":"Mid","dataDate":"2026-03-31","builds":[{"items":[{"slug":"infinity-orb"},{"slug":"ludens-echo"}],"metrics":{"winRate":53.1,"appearRate":14.8,"winRateRank":2,"appearRateRank":1}}]}],"runes":[{"rankLevel":"Diamond+","lane":"Mid","dataDate":"2026-03-31","builds":[{"runes":[{"slug":"electrocute"},{"slug":"scorch"}],"metrics":{"winRate":52.2,"appearRate":30.4,"winRateRank":3,"appearRateRank":2}}]}],"spells":[{"rankLevel":"Diamond+","lane":"Mid","dataDate":"2026-03-31","spells":[{"spells":[{"slug":"flash"},{"slug":"ignite"}],"metrics":{"winRate":51.8,"appearRate":22.5,"winRateRank":4,"appearRateRank":3}}]}]},"itemsDict":{"infinity-orb":{"slug":"infinity-orb","name":"Infinity Orb","price":"2900"}},"runesDict":{"electrocute":{"slug":"electrocute","name":"Electrocute","description":["zap"]}},"spellsDict":{"ignite":{"slug":"ignite","name":"Ignite","effects":["burn"]},"flash":{"slug":"flash","name":"Flash","effects":["blink"]}}}`,
@@ -294,4 +316,51 @@ test("buildRiftGgGuidePayload resolves opponent aliases without breaking local i
   assert.match(payload.matchups[0].entries[0].opponent?.iconUrl || "", /monkeyking/);
   assert.equal(payload.matchups[0].entries[1].opponent?.slug, "masteryi");
   assert.match(payload.matchups[0].entries[1].opponent?.iconUrl || "", /masteryi/);
+});
+
+test("buildRiftGgGuidePayload emits S3 icon urls for matchup opponents in public asset mode", () => {
+  withEnv(
+    {
+      S3_ENDPOINT: "https://s3.twcstorage.ru",
+      S3_BUCKET: "bucket-name",
+      S3_ACCESS_KEY_ID: "key",
+      S3_SECRET_ACCESS_KEY: "secret",
+      S3_PUBLIC_BASE_URL: "https://s3.twcstorage.ru/bucket-name",
+      ASSET_PUBLIC_MODE: "s3",
+    },
+    () => {
+      const payload = buildRiftGgGuidePayload({
+        matchupRows: [
+          {
+            rank: "diamond_plus",
+            lane: "jungle",
+            dataDate: "2026-03-31",
+            opponentSlug: "rammus",
+            winRate: 48.2,
+            pickRate: 2.4,
+            winRateRank: 24,
+            pickRateRank: 7,
+          },
+        ],
+        buildRows: [],
+        opponentRows: [
+          {
+            slug: "rammus",
+            name: "Rammus",
+            icon: "https://game.gtimg.cn/images/lgamem/act/lrlib/img/HeadIcon/H_S_10064.png",
+            roles: ["tank"],
+          },
+        ],
+      });
+
+      assert.equal(
+        payload.matchups[0].entries[0].opponent?.iconUrl,
+        "https://s3.twcstorage.ru/bucket-name/icons/rammus.png",
+      );
+      assert.equal(
+        payload.matchups[0].entries[0].opponent?.iconUrl?.includes("src="),
+        false,
+      );
+    },
+  );
 });
