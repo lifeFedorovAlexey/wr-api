@@ -14,6 +14,7 @@ Public Wild Rift API used by `wildriftallstats.ru`.
 npm run dev
 npm run start
 npm run test
+npm run setup:admin
 npm run import:champions
 npm run import:skins
 npm run import:riftgg-cn-stats
@@ -60,6 +61,41 @@ Static asset endpoints served by the API:
 `POST /api/guides/import` accepts:
 
 - `x-guides-sync-secret: <GUIDES_SYNC_SECRET>`
+
+## Admin Auth
+
+Admin access now uses a DB-backed role model:
+
+- `admin_users`
+- `admin_identities`
+- `admin_roles`
+- `admin_user_roles`
+- `admin_sessions`
+
+Required env:
+
+- `DATABASE_URL`
+- `ADMIN_SESSION_SECRET`
+
+Bootstrap env for the very first owner only:
+
+- `ADMIN_BOOTSTRAP_EMAILS`
+- or `ADMIN_BOOTSTRAP_TELEGRAM_IDS`
+- or `ADMIN_BOOTSTRAP_TELEGRAM_USERNAMES`
+
+Setup:
+
+1. Copy [wr-api/.env.example](/d:/wildRiftChampions/wr-api/.env.example) to your local `.env`
+2. Fill `DATABASE_URL` and `ADMIN_SESSION_SECRET`
+3. Add one bootstrap account for the first owner
+4. Run `npm run setup:admin`
+
+Where to get values:
+
+- `DATABASE_URL`: your local Postgres connection string
+- `ADMIN_SESSION_SECRET`: generate a long random string, for example `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
+- `ADMIN_BOOTSTRAP_EMAILS`: the Google or Yandex email you will use for the first login
+- `ADMIN_BOOTSTRAP_TELEGRAM_IDS`: your Telegram numeric user id if you want bootstrap through Telegram
 
 ## Release checklist
 

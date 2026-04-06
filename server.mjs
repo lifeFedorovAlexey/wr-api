@@ -8,6 +8,10 @@ import championsHandler from "./api/champions.js";
 import championHistoryHandler from "./api/champion-history.js";
 import championEventsHandler from "./api/champion-events.js";
 import cronImportChampionsHandler from "./api/cron-import-champions.js";
+import adminLogoutHandler from "./api/admin-logout.js";
+import adminSessionExchangeHandler from "./api/admin-session-exchange.js";
+import adminSessionHandler from "./api/admin-session.js";
+import adminUsersHandler from "./api/admin-users.js";
 import guidesDetailHandler from "./api/guides-detail.js";
 import guidesImportHandler from "./api/guides-import.js";
 import guidesHandler from "./api/guides.js";
@@ -35,6 +39,10 @@ const iconStorePromise = createChampionIconStore();
 const guideAssetStorePromise = createGuideAssetStore();
 
 const routes = new Map([
+  ["/api/admin/logout", adminLogoutHandler],
+  ["/api/admin/session", adminSessionHandler],
+  ["/api/admin/session/exchange", adminSessionExchangeHandler],
+  ["/api/admin/users", adminUsersHandler],
   ["/api/champions", championsHandler],
   ["/api/champion-history", championHistoryHandler],
   ["/api/champion-events", championEventsHandler],

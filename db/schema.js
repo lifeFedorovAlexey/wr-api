@@ -12,6 +12,7 @@ import {
   bigint,
   uniqueIndex,
   index,
+  primaryKey,
 } from "drizzle-orm/pg-core";
 
 export const champions = pgTable("champions", {
@@ -475,5 +476,103 @@ export const championEvents = pgTable(
       table.eventDate,
     ),
     typeIdx: index("champion_events_event_type_idx").on(table.eventType),
+  }),
+);
+
+export const adminUsers = pgTable(
+  "admin_users",
+  {
+    id: serial("id").primaryKey(),
+    displayName: text("display_name"),
+    primaryEmail: text("primary_email"),
+    status: text("status").notNull().default("active"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+  },
+  (table) => ({
+    primaryEmailIdx: uniqueIndex("admin_users_primary_email_uidx").on(table.primaryEmail),
+    statusIdx: index("admin_users_status_idx").on(table.status),
+  }),
+);
+
+export const adminIdentities = pgTable(
+  "admin_identities",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull(),
+    provider: text("provider").notNull(),
+    providerSubject: text("provider_subject").notNull(),
+    providerEmail: text("provider_email"),
+    providerUsername: text("provider_username"),
+    profile: jsonb("profile").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+  },
+  (table) => ({
+    providerSubjectUidx: uniqueIndex("admin_identities_provider_subject_uidx").on(
+      table.provider,
+      table.providerSubject,
+    ),
+    userIdx: index("admin_identities_user_idx").on(table.userId),
+    providerEmailIdx: index("admin_identities_provider_email_idx").on(table.providerEmail),
+  }),
+);
+
+export const adminRoles = pgTable("admin_roles", {
+  key: text("key").primaryKey(),
+  label: text("label").notNull(),
+  description: text("description"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+export const adminUserRoles = pgTable(
+  "admin_user_roles",
+  {
+    userId: integer("user_id").notNull(),
+    roleKey: text("role_key").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.userId, table.roleKey], name: "admin_user_roles_pk" }),
+    userIdx: index("admin_user_roles_user_idx").on(table.userId),
+    roleIdx: index("admin_user_roles_role_idx").on(table.roleKey),
+  }),
+);
+
+export const adminSessions = pgTable(
+  "admin_sessions",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull(),
+    sessionHash: text("session_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    userAgent: text("user_agent"),
+    ipHash: text("ip_hash"),
+  },
+  (table) => ({
+    sessionHashUidx: uniqueIndex("admin_sessions_session_hash_uidx").on(table.sessionHash),
+    userIdx: index("admin_sessions_user_idx").on(table.userId),
+    expiresIdx: index("admin_sessions_expires_idx").on(table.expiresAt),
   }),
 );

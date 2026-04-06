@@ -15,6 +15,7 @@
     "import:riftgg-cn-stats": "node ./scripts/import-riftgg-cn-stats.mjs",
     "setup:stats": "node ./scripts/setup-stats-table.mjs",
     "setup:guides": "node ./scripts/setup-guides-table.mjs",
+    "setup:admin": "node ./scripts/setup-admin-tables.mjs",
     "setup:riftgg-cn-stats": "node ./scripts/setup-riftgg-cn-stats-table.mjs",
     "setup:skins": "node ./scripts/setup-skins-table.mjs",
     "setup:news": "node ./scripts/setup-news-tables.mjs",
