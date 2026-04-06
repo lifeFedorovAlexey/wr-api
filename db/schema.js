@@ -576,3 +576,75 @@ export const adminSessions = pgTable(
     expiresIdx: index("admin_sessions_expires_idx").on(table.expiresAt),
   }),
 );
+
+export const siteUsers = pgTable(
+  "site_users",
+  {
+    id: serial("id").primaryKey(),
+    displayName: text("display_name"),
+    avatarUrl: text("avatar_url"),
+    status: text("status").notNull().default("active"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+  },
+  (table) => ({
+    statusIdx: index("site_users_status_idx").on(table.status),
+  }),
+);
+
+export const siteIdentities = pgTable(
+  "site_identities",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull(),
+    provider: text("provider").notNull(),
+    providerSubject: text("provider_subject").notNull(),
+    providerEmail: text("provider_email"),
+    providerUsername: text("provider_username"),
+    profile: jsonb("profile").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+  },
+  (table) => ({
+    providerSubjectUidx: uniqueIndex("site_identities_provider_subject_uidx").on(
+      table.provider,
+      table.providerSubject,
+    ),
+    userIdx: index("site_identities_user_idx").on(table.userId),
+    providerEmailIdx: index("site_identities_provider_email_idx").on(table.providerEmail),
+  }),
+);
+
+export const siteSessions = pgTable(
+  "site_sessions",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull(),
+    sessionHash: text("session_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    userAgent: text("user_agent"),
+    ipHash: text("ip_hash"),
+  },
+  (table) => ({
+    sessionHashUidx: uniqueIndex("site_sessions_session_hash_uidx").on(table.sessionHash),
+    userIdx: index("site_sessions_user_idx").on(table.userId),
+    expiresIdx: index("site_sessions_expires_idx").on(table.expiresAt),
+  }),
+);

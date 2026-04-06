@@ -25,6 +25,10 @@ import skinsHandler from "./api/skins.js";
 import tierlistBulkHandler from "./api/tierlist-bulk.js";
 import tierlistHandler from "./api/tierlist.js";
 import updatedAtHandler from "./api/updated-at.js";
+import userLogoutHandler from "./api/user-logout.js";
+import userProfileHandler from "./api/user-profile.js";
+import userSessionExchangeHandler from "./api/user-session-exchange.js";
+import userSessionHandler from "./api/user-session.js";
 import winratesSnapshotHandler from "./api/winrates-snapshot.js";
 import webappOpenHandler from "./api/webapp-open.js";
 import { readJsonBody } from "./api/utils/request-body.js";
@@ -57,6 +61,10 @@ const routes = new Map([
   ["/api/tierlist-bulk", tierlistBulkHandler],
   ["/api/tierlist", tierlistHandler],
   ["/api/updated-at", updatedAtHandler],
+  ["/api/user/logout", userLogoutHandler],
+  ["/api/user/profile", userProfileHandler],
+  ["/api/user/session", userSessionHandler],
+  ["/api/user/session/exchange", userSessionExchangeHandler],
   ["/api/winrates-snapshot", winratesSnapshotHandler],
   ["/api/webapp-open", webappOpenHandler],
 ]);

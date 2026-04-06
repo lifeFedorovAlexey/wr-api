@@ -113,6 +113,82 @@ async function main() {
   `;
 
   await client`
+    create table if not exists site_users (
+      id serial primary key,
+      display_name text,
+      avatar_url text,
+      status text not null default 'active',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      last_login_at timestamptz
+    );
+  `;
+
+  await client`
+    create table if not exists site_identities (
+      id serial primary key,
+      user_id integer not null,
+      provider text not null,
+      provider_subject text not null,
+      provider_email text,
+      provider_username text,
+      profile jsonb not null,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      last_login_at timestamptz
+    );
+  `;
+
+  await client`
+    create table if not exists site_sessions (
+      id serial primary key,
+      user_id integer not null,
+      session_hash text not null,
+      expires_at timestamptz not null,
+      revoked_at timestamptz,
+      created_at timestamptz not null default now(),
+      last_seen_at timestamptz not null default now(),
+      user_agent text,
+      ip_hash text
+    );
+  `;
+
+  await client`
+    create index if not exists site_users_status_idx
+    on site_users (status);
+  `;
+
+  await client`
+    create unique index if not exists site_identities_provider_subject_uidx
+    on site_identities (provider, provider_subject);
+  `;
+
+  await client`
+    create index if not exists site_identities_user_idx
+    on site_identities (user_id);
+  `;
+
+  await client`
+    create index if not exists site_identities_provider_email_idx
+    on site_identities (provider_email);
+  `;
+
+  await client`
+    create unique index if not exists site_sessions_session_hash_uidx
+    on site_sessions (session_hash);
+  `;
+
+  await client`
+    create index if not exists site_sessions_user_idx
+    on site_sessions (user_id);
+  `;
+
+  await client`
+    create index if not exists site_sessions_expires_idx
+    on site_sessions (expires_at);
+  `;
+
+  await client`
     insert into admin_roles (key, label, description)
     values
       ('owner', 'Owner', 'Full access, can manage roles and admin users'),
@@ -122,7 +198,7 @@ async function main() {
     on conflict (key) do nothing;
   `;
 
-  console.log("admin tables are ready");
+  console.log("auth tables are ready");
 }
 
 main()
