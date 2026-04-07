@@ -16,7 +16,6 @@ npm run start
 npm run test
 npm run setup:admin
 npm run import:champions
-npm run import:skins
 npm run import:riftgg-cn-stats
 npm run setup:guides
 npm run setup:riftgg-cn-stats
@@ -39,8 +38,6 @@ npm run setup:news
 - `GET /api/news`
 - `GET /api/news/:id`
 - `POST /api/news/import`
-- `GET /api/skins`
-- `GET /api/skins/:slug`
 - `GET /api/health`
 
 Static asset endpoints served by the API:
@@ -130,7 +127,7 @@ Where to get values:
 3. Run `npm run test`
 4. Confirm `.env` still contains the expected `DATABASE_URL`, S3 settings, `ASSET_PUBLIC_MODE=s3`, and `GUIDES_SYNC_SECRET`
 5. Verify the service responds on `http://127.0.0.1:3001/api/health`
-6. Check `GET /api/guides`, `GET /api/news`, and `GET /api/skins`
+6. Check `GET /api/guides` and `GET /api/news`
 7. Push the release branch as `release/x.y.z`
 8. Push the stable tag as `vx.y.z`
 

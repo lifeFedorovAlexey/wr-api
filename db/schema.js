@@ -368,54 +368,6 @@ export const riftggCnBuilds = pgTable(
   }),
 );
 
-export const skinCollections = pgTable("skin_collections", {
-  championSlug: text("champion_slug").primaryKey(),
-  championName: text("champion_name").notNull(),
-  source: text("source").notNull().default("merged-json"),
-  sourceUpdatedAt: timestamp("source_updated_at", { withTimezone: true }),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
-
-export const skinEntries = pgTable(
-  "skin_entries",
-  {
-    id: serial("id").primaryKey(),
-    championSlug: text("champion_slug").notNull(),
-    skinSlug: text("skin_slug").notNull(),
-    skinName: text("skin_name").notNull(),
-    sortOrder: integer("sort_order").notNull().default(0),
-    has3d: boolean("has_3d").notNull().default(false),
-    imageSourceUrl: text("image_source_url"),
-    imageAssetPath: text("image_asset_path"),
-    modelSourceUrl: text("model_source_url"),
-    modelAssetPath: text("model_asset_path"),
-    rawPayload: jsonb("raw_payload"),
-    sourceUpdatedAt: timestamp("source_updated_at", { withTimezone: true }),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-  },
-  (table) => ({
-    championSkinUidx: uniqueIndex("skin_entries_champion_skin_uidx").on(
-      table.championSlug,
-      table.skinSlug,
-    ),
-    championSortIdx: index("skin_entries_champion_sort_idx").on(
-      table.championSlug,
-      table.sortOrder,
-    ),
-    skinSlugIdx: index("skin_entries_skin_slug_idx").on(table.skinSlug),
-  }),
-);
-
 export const newsArticles = pgTable(
   "news_articles",
   {

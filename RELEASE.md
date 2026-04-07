@@ -13,7 +13,7 @@
 1. Run `npm run test`
 2. Verify local health on `GET /api/health`
 3. Confirm `GUIDES_SYNC_SECRET` matches the value used by the frontend workflow
-4. Check `GET /api/guides`, `GET /api/news`, and `GET /api/skins`
+4. Check `GET /api/guides` and `GET /api/news`
 5. If schema or import logic changed, run the relevant `setup:*` scripts locally or in staging
 
 ## Deploy flow
