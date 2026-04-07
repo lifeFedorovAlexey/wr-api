@@ -32,6 +32,26 @@ const RIFT_DICTIONARY_SLUG_ALIASES = {
   },
 };
 
+function warnSlugLookup({ service, requestedSlug, candidateSlug = "", source = "", status = "" }) {
+  const parts = [
+    "[slug-warn]",
+    `service=${service}`,
+    `requested=${String(requestedSlug || "").trim() || "-"}`,
+  ];
+
+  if (candidateSlug) {
+    parts.push(`candidate=${String(candidateSlug).trim()}`);
+  }
+  if (source) {
+    parts.push(`source=${source}`);
+  }
+  if (status) {
+    parts.push(`status=${status}`);
+  }
+
+  console.warn(parts.join(" "));
+}
+
 function setPublicCache(res, { sMaxAge = 3600, swr = 21600 } = {}) {
   res.setHeader(
     "Cache-Control",
@@ -97,6 +117,12 @@ export default async function handler(req, res) {
       .limit(1);
 
     if (!summaryRows.length) {
+      warnSlugLookup({
+        service: "wr-api/guides-detail",
+        requestedSlug: slug,
+        source: "guide-summary",
+        status: "404",
+      });
       setNoStore(res);
       return res.status(404).json({ error: "Not Found" });
     }

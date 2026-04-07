@@ -28,6 +28,26 @@ const RIFTGG_SLUG_ALIASES = {
 let dictionariesSyncPromise = Promise.resolve();
 const reservedDictionaryKeys = new Set();
 
+function warnSlugLookup({ service, requestedSlug, candidateSlug = "", source = "", status = "" }) {
+  const parts = [
+    "[slug-warn]",
+    `service=${service}`,
+    `requested=${String(requestedSlug || "").trim() || "-"}`,
+  ];
+
+  if (candidateSlug) {
+    parts.push(`candidate=${String(candidateSlug).trim()}`);
+  }
+  if (source) {
+    parts.push(`source=${source}`);
+  }
+  if (status) {
+    parts.push(`status=${status}`);
+  }
+
+  console.warn(parts.join(" "));
+}
+
 function getRequestedSlugs() {
   return process.argv.slice(2).map((value) => String(value || "").trim()).filter(Boolean);
 }
@@ -56,6 +76,13 @@ async function fetchRiftGgChampionHtml(slug) {
       console.log(`[riftgg-cn-stats] ${slug} -> response ${response.status}`);
 
       if (response.status === 404) {
+        warnSlugLookup({
+          service: "wr-api/import-riftgg-cn-stats",
+          requestedSlug: slug,
+          candidateSlug: riftGgSlug,
+          source: "riftgg",
+          status: "404",
+        });
         clearTimeout(timeout);
         return null;
       }
