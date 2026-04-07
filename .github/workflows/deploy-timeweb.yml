@@ -170,7 +170,6 @@ jobs:
             npm run setup:guides
             npm run setup:admin
             npm run setup:riftgg-cn-stats
-            npm run setup:skins
             npm run setup:news
 
             log_step "start canary on ${CANARY_PORT}"
