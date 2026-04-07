@@ -10,7 +10,12 @@ import {
   riftggCnDictionaries,
   riftggCnMatchups,
 } from "../db/schema.js";
-import { buildGuideAssetKey, createGuideAssetStore } from "../lib/guideAssets.mjs";
+import {
+  buildGuideAssetKey,
+  buildGuideAssetStorageKey,
+  createGuideAssetStore,
+} from "../lib/guideAssets.mjs";
+import { createObjectStorageClient } from "../lib/objectStorage.mjs";
 import { normalizeRiftGgCnStats, parseRiftGgCnStatsHtml } from "../lib/riftggCnStats.mjs";
 
 const REQUEST_TIMEOUT_MS = Math.max(1_000, Number(process.env.RIFTGG_REQUEST_TIMEOUT_MS || 20_000));
@@ -209,6 +214,25 @@ function queueRiftItemAssets(entries) {
   }
 }
 
+async function hasMirroredGuideAsset({
+  guideAssetStore,
+  objectStorage,
+  assetKey,
+  sourceUrl,
+}) {
+  if (!assetKey || !sourceUrl) {
+    return false;
+  }
+
+  if (objectStorage) {
+    return await objectStorage.objectExists(
+      buildGuideAssetStorageKey(assetKey, sourceUrl),
+    );
+  }
+
+  return Boolean(guideAssetStore.getCachedFilePath(assetKey));
+}
+
 async function reconcileQueuedRiftItemAssets(now = new Date()) {
   const pendingEntries = Array.from(queuedRiftItemEntries.values());
   if (!pendingEntries.length) {
@@ -227,14 +251,35 @@ async function reconcileQueuedRiftItemAssets(now = new Date()) {
     .where(and(eq(guideEntities.kind, "item"), inArray(guideEntities.slug, itemSlugs)));
   const existingBySlug = new Map(existingRows.map((row) => [row.slug, row]));
   const guideAssetStore = await getGuideAssetStore();
+  const objectStorage = createObjectStorageClient(process.env);
   const summary = { total: pendingEntries.length, mirrored: 0, skipped: 0, failed: 0, updatedRows: 0 };
 
   for (const entry of pendingEntries) {
     const slug = entry.slug;
     const sourceUrl = buildWildRiftFireItemImageUrl(slug);
     const existing = existingBySlug.get(slug);
-    const needsImage = !existing?.imageUrl;
-    const needsTooltip = !existing?.tooltipImageUrl;
+    const imageSourceUrl = existing?.imageUrl || sourceUrl;
+    const tooltipSourceUrl = existing?.tooltipImageUrl || sourceUrl;
+    const imageAssetKey = buildGuideAssetKey("guide", "item", slug, "image");
+    const tooltipAssetKey = buildGuideAssetKey("guide", "item", slug, "tooltip");
+    const hasImageAsset = existing?.imageUrl
+      ? await hasMirroredGuideAsset({
+          guideAssetStore,
+          objectStorage,
+          assetKey: imageAssetKey,
+          sourceUrl: imageSourceUrl,
+        })
+      : false;
+    const hasTooltipAsset = existing?.tooltipImageUrl
+      ? await hasMirroredGuideAsset({
+          guideAssetStore,
+          objectStorage,
+          assetKey: tooltipAssetKey,
+          sourceUrl: tooltipSourceUrl,
+        })
+      : false;
+    const needsImage = !existing?.imageUrl || !hasImageAsset;
+    const needsTooltip = !existing?.tooltipImageUrl || !hasTooltipAsset;
 
     if (!needsImage && !needsTooltip) {
       summary.skipped += 1;
@@ -270,12 +315,12 @@ async function reconcileQueuedRiftItemAssets(now = new Date()) {
       summary.updatedRows += 1;
 
       if (needsImage) {
-        await guideAssetStore.mirror(buildGuideAssetKey("guide", "item", slug, "image"), sourceUrl);
+        await guideAssetStore.mirror(imageAssetKey, imageSourceUrl);
         summary.mirrored += 1;
       }
 
       if (needsTooltip) {
-        await guideAssetStore.mirror(buildGuideAssetKey("guide", "item", slug, "tooltip"), sourceUrl);
+        await guideAssetStore.mirror(tooltipAssetKey, tooltipSourceUrl);
         summary.mirrored += 1;
       }
     } catch (error) {
