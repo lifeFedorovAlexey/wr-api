@@ -12,37 +12,7 @@ import {
   resolveGuideHeroMediaDir,
 } from "../lib/guideHeroMedia.mjs";
 import { createObjectStorageClient, shouldUseS3PublicUrls } from "../lib/objectStorage.mjs";
-
-function parseCliArgs(argv) {
-  const args = argv.slice(2);
-  const options = {
-    dryRun: false,
-    force: false,
-    requireS3: false,
-    slugs: [],
-  };
-
-  for (const arg of args) {
-    if (arg === "--dry-run") {
-      options.dryRun = true;
-      continue;
-    }
-
-    if (arg === "--force") {
-      options.force = true;
-      continue;
-    }
-
-    if (arg === "--require-s3") {
-      options.requireS3 = true;
-      continue;
-    }
-
-    options.slugs.push(String(arg || "").trim().toLowerCase());
-  }
-
-  return options;
-}
+import { attachBackfillShutdown, parseBackfillCliArgs } from "./backfillShared.mjs";
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -105,7 +75,7 @@ async function fetchVideoBuffer(url, slug) {
 }
 
 async function main() {
-  const options = parseCliArgs(process.argv);
+  const options = parseBackfillCliArgs(process.argv);
   const objectStorage = createObjectStorageClient(process.env);
   const localHeroMediaDir = resolveGuideHeroMediaDir(process.env);
   const useS3 = Boolean(objectStorage);
@@ -261,27 +231,4 @@ async function main() {
   console.log(JSON.stringify(summary, null, 2));
 }
 
-main()
-  .then(async () => {
-    try {
-      await client.end();
-    } catch (error) {
-      console.warn(
-        "[backfill-guide-hero-media] failed to close Postgres client:",
-        error instanceof Error ? error.message : String(error),
-      );
-    }
-    process.exit(0);
-  })
-  .catch(async (error) => {
-    console.error("[backfill-guide-hero-media] error:", error);
-    try {
-      await client.end();
-    } catch (closeError) {
-      console.warn(
-        "[backfill-guide-hero-media] failed to close Postgres client:",
-        closeError instanceof Error ? closeError.message : String(closeError),
-      );
-    }
-    process.exit(1);
-  });
+attachBackfillShutdown(main(), client, "backfill-guide-hero-media");
