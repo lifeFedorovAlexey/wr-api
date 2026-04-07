@@ -37,6 +37,7 @@ let dictionariesSyncPromise = Promise.resolve();
 const reservedDictionaryKeys = new Set();
 const queuedRiftItemEntries = new Map();
 let guideAssetStorePromise = null;
+let guideAssetLogSummary = null;
 
 function warnSlugLookup({ service, requestedSlug, candidateSlug = "", source = "", status = "" }) {
   const parts = [
@@ -64,7 +65,33 @@ function getRequestedSlugs() {
 
 function getGuideAssetStore() {
   if (!guideAssetStorePromise) {
-    guideAssetStorePromise = createGuideAssetStore(process.env);
+    guideAssetStorePromise = createGuideAssetStore(process.env, {
+      onFallbackDir({ fallbackDir, assetsDir, error }) {
+        console.warn(
+          `[riftgg-cn-stats] item assets -> fallbackDir=${fallbackDir} originalDir=${assetsDir} reason=${error?.message || error}`,
+        );
+      },
+      onMirrorError({ assetKey, error }) {
+        if (!guideAssetLogSummary) {
+          guideAssetLogSummary = {
+            totalErrors: 0,
+            byReason: new Map(),
+          };
+        }
+
+        const message = String(error?.message || error || "unknown-error").trim();
+        const reason = /^HTTP 404$/i.test(message) ? "http-404" : message;
+        const bucket = guideAssetLogSummary.byReason.get(reason) || { count: 0, samples: [] };
+
+        guideAssetLogSummary.totalErrors += 1;
+        bucket.count += 1;
+        if (bucket.samples.length < 5 && !bucket.samples.includes(assetKey)) {
+          bucket.samples.push(assetKey);
+        }
+
+        guideAssetLogSummary.byReason.set(reason, bucket);
+      },
+    });
   }
 
   return guideAssetStorePromise;
@@ -87,7 +114,6 @@ async function fetchRiftGgChampionHtml(slug) {
     const timeout = setTimeout(() => controller.abort(new Error(`timeout after ${REQUEST_TIMEOUT_MS}ms`)), REQUEST_TIMEOUT_MS);
 
     try {
-      console.log(`[riftgg-cn-stats] ${slug} -> fetch attempt ${attempt}/${MAX_FETCH_ATTEMPTS}`);
       const response = await fetch(`https://www.riftgg.app/en/champions/${riftGgSlug}/cn-stats`, {
         headers: {
           "user-agent": "wildriftallstats-bot/1.0 (+https://wildriftallstats.ru)",
@@ -95,8 +121,6 @@ async function fetchRiftGgChampionHtml(slug) {
         },
         signal: controller.signal,
       });
-      console.log(`[riftgg-cn-stats] ${slug} -> response ${response.status}`);
-
       if (response.status === 404) {
         warnSlugLookup({
           service: "wr-api/import-riftgg-cn-stats",
@@ -113,10 +137,8 @@ async function fetchRiftGgChampionHtml(slug) {
         throw new Error(`HTTP ${response.status}`);
       }
 
-      console.log(`[riftgg-cn-stats] ${slug} -> reading body`);
       const html = await response.text();
       clearTimeout(timeout);
-      console.log(`[riftgg-cn-stats] ${slug} -> body bytes=${html.length}`);
       return html;
     } catch (error) {
       clearTimeout(timeout);
@@ -333,6 +355,20 @@ async function reconcileQueuedRiftItemAssets(now = new Date()) {
     `[riftgg-cn-stats] item asset reconcile -> total=${summary.total} updatedRows=${summary.updatedRows} mirrored=${summary.mirrored} skipped=${summary.skipped} failed=${summary.failed}`,
   );
 
+  if (guideAssetLogSummary?.totalErrors) {
+    const details = Array.from(guideAssetLogSummary.byReason.entries())
+      .sort((left, right) => right[1].count - left[1].count)
+      .map(([reason, data]) => {
+        const sampleSuffix = data.samples.length ? ` samples=${data.samples.join(",")}` : "";
+        return `${reason}:${data.count}${sampleSuffix}`;
+      })
+      .join(" | ");
+
+    console.warn(
+      `[riftgg-cn-stats] item asset mirror issues -> total=${guideAssetLogSummary.totalErrors} ${details}`,
+    );
+  }
+
   return summary;
 }
 
@@ -380,7 +416,6 @@ function buildDataDateFilter(column, rows) {
 }
 
 async function importChampionStats({ slug, index, total }) {
-  console.log(`[riftgg-cn-stats] ${index}/${total} ${slug} -> start`);
   const html = await fetchRiftGgChampionHtml(slug);
 
   if (!html) {
@@ -388,16 +423,12 @@ async function importChampionStats({ slug, index, total }) {
     return { type: "skipped", slug, reason: "page-not-found" };
   }
 
-  console.log(`[riftgg-cn-stats] ${index}/${total} ${slug} -> parse`);
   const parsed = parseRiftGgCnStatsHtml(html);
-  console.log(`[riftgg-cn-stats] ${index}/${total} ${slug} -> normalize`);
   const normalized = normalizeRiftGgCnStats(slug, parsed);
   const now = new Date();
-  console.log(`[riftgg-cn-stats] ${index}/${total} ${slug} -> sync dictionaries=${normalized.dictionaries.length}`);
   await ensureDictionariesSynced(normalized.dictionaries, now);
   queueRiftItemAssets(normalized.dictionaries);
 
-  console.log(`[riftgg-cn-stats] ${index}/${total} ${slug} -> write matchups=${normalized.matchups.length} builds=${normalized.builds.length}`);
   await db.transaction(async (tx) => {
     const matchupDateFilter = buildDataDateFilter(riftggCnMatchups.dataDate, normalized.matchups);
     const buildDateFilter = buildDataDateFilter(riftggCnBuilds.dataDate, normalized.builds);
@@ -468,6 +499,7 @@ async function importChampionStats({ slug, index, total }) {
 }
 
 async function main() {
+  guideAssetLogSummary = null;
   const requestedSlugs = getRequestedSlugs();
   const championRows = requestedSlugs.length
     ? await db
@@ -515,18 +547,20 @@ async function main() {
   const itemAssetSummary = await reconcileQueuedRiftItemAssets();
 
   console.log(
-    JSON.stringify(
-      {
-        total: slugs.length,
-        uploaded,
-        skipped,
-        failed,
-        itemAssets: itemAssetSummary,
-      },
-      null,
-      2,
-    ),
+    `[riftgg-cn-stats] done -> total=${slugs.length} uploaded=${uploaded.length} skipped=${skipped.length} failed=${failed.length} itemAssetsMirrored=${itemAssetSummary.mirrored} itemAssetsFailed=${itemAssetSummary.failed}`,
   );
+
+  if (skipped.length) {
+    console.warn(
+      `[riftgg-cn-stats] skipped -> ${skipped.map((entry) => `${entry.slug}:${entry.reason}`).join(" | ")}`,
+    );
+  }
+
+  if (failed.length) {
+    console.error(
+      `[riftgg-cn-stats] failed -> ${failed.map((entry) => `${entry.slug}:${entry.error}`).join(" | ")}`,
+    );
+  }
 
   if (failed.length) {
     process.exitCode = 1;
