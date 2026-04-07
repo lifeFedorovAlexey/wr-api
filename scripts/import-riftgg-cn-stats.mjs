@@ -29,8 +29,7 @@ const RIFTGG_SLUG_ALIASES = {
 };
 let dictionariesSyncPromise = Promise.resolve();
 const reservedDictionaryKeys = new Set();
-const ensuredItemAssetSlugs = new Set();
-const reservingItemAssetSlugs = new Set();
+const queuedRiftItemEntries = new Map();
 let guideAssetStorePromise = null;
 
 function warnSlugLookup({ service, requestedSlug, candidateSlug = "", source = "", status = "" }) {
@@ -191,32 +190,31 @@ async function ensureDictionariesSynced(entries, now = new Date()) {
   }
 }
 
-async function ensureRiftItemAssets(entries, now = new Date()) {
-  const itemEntries = Array.from(
-    new Map(
-      (Array.isArray(entries) ? entries : [])
-        .filter((entry) => entry?.kind === "item" && entry?.slug)
-        .map((entry) => [String(entry.slug).trim(), entry]),
-    ).values(),
-  );
+function queueRiftItemAssets(entries) {
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    if (entry?.kind !== "item" || !entry?.slug) {
+      continue;
+    }
 
-  const pendingEntries = itemEntries.filter(
-    (entry) => {
-      const slug = String(entry.slug).trim();
-      if (ensuredItemAssetSlugs.has(slug) || reservingItemAssetSlugs.has(slug)) {
-        return false;
-      }
+    const slug = String(entry.slug).trim();
+    if (!slug || queuedRiftItemEntries.has(slug)) {
+      continue;
+    }
 
-      reservingItemAssetSlugs.add(slug);
-      return true;
-    },
-  );
+    queuedRiftItemEntries.set(slug, {
+      slug,
+      name: String(entry.name || slug).trim(),
+    });
+  }
+}
 
+async function reconcileQueuedRiftItemAssets(now = new Date()) {
+  const pendingEntries = Array.from(queuedRiftItemEntries.values());
   if (!pendingEntries.length) {
-    return;
+    return { total: 0, mirrored: 0, skipped: 0, failed: 0, updatedRows: 0 };
   }
 
-  const itemSlugs = pendingEntries.map((entry) => String(entry.slug).trim());
+  const itemSlugs = pendingEntries.map((entry) => entry.slug);
   const existingRows = await db
     .select({
       slug: guideEntities.slug,
@@ -228,55 +226,68 @@ async function ensureRiftItemAssets(entries, now = new Date()) {
     .where(and(eq(guideEntities.kind, "item"), inArray(guideEntities.slug, itemSlugs)));
   const existingBySlug = new Map(existingRows.map((row) => [row.slug, row]));
   const guideAssetStore = await getGuideAssetStore();
+  const summary = { total: pendingEntries.length, mirrored: 0, skipped: 0, failed: 0, updatedRows: 0 };
 
   for (const entry of pendingEntries) {
-    const slug = String(entry.slug).trim();
+    const slug = entry.slug;
+    const sourceUrl = buildWildRiftFireItemImageUrl(slug);
+    const existing = existingBySlug.get(slug);
+    const needsImage = !existing?.imageUrl;
+    const needsTooltip = !existing?.tooltipImageUrl;
+
+    if (!needsImage && !needsTooltip) {
+      summary.skipped += 1;
+      continue;
+    }
 
     try {
-      const name = String(entry.name || slug).trim();
-      const sourceUrl = buildWildRiftFireItemImageUrl(slug);
-      const existing = existingBySlug.get(slug);
-      const needsImage = !existing?.imageUrl;
-      const needsTooltip = !existing?.tooltipImageUrl;
-
       if (!existing) {
         await db
           .insert(guideEntities)
           .values({
             kind: "item",
             slug,
-            name,
+            name: entry.name,
             imageUrl: sourceUrl,
-            tooltipTitle: name,
+            tooltipTitle: entry.name,
             tooltipImageUrl: sourceUrl,
             updatedAt: now,
           })
           .onConflictDoNothing();
-      } else if (needsImage || needsTooltip) {
+      } else {
         await db
           .update(guideEntities)
           .set({
             imageUrl: existing.imageUrl || sourceUrl,
             tooltipImageUrl: existing.tooltipImageUrl || sourceUrl,
-            tooltipTitle: existing.name || name,
+            tooltipTitle: existing.name || entry.name,
             updatedAt: now,
           })
           .where(and(eq(guideEntities.kind, "item"), eq(guideEntities.slug, slug)));
       }
 
+      summary.updatedRows += 1;
+
       if (needsImage) {
         await guideAssetStore.mirror(buildGuideAssetKey("guide", "item", slug, "image"), sourceUrl);
+        summary.mirrored += 1;
       }
 
       if (needsTooltip) {
         await guideAssetStore.mirror(buildGuideAssetKey("guide", "item", slug, "tooltip"), sourceUrl);
+        summary.mirrored += 1;
       }
-
-      ensuredItemAssetSlugs.add(slug);
-    } finally {
-      reservingItemAssetSlugs.delete(slug);
+    } catch (error) {
+      summary.failed += 1;
+      console.warn(`[riftgg-cn-stats] item asset reconcile failed for ${slug}:`, error?.message || error);
     }
   }
+
+  console.log(
+    `[riftgg-cn-stats] item asset reconcile -> total=${summary.total} updatedRows=${summary.updatedRows} mirrored=${summary.mirrored} skipped=${summary.skipped} failed=${summary.failed}`,
+  );
+
+  return summary;
 }
 
 function collectRowDataDates(rows = []) {
@@ -338,7 +349,7 @@ async function importChampionStats({ slug, index, total }) {
   const now = new Date();
   console.log(`[riftgg-cn-stats] ${index}/${total} ${slug} -> sync dictionaries=${normalized.dictionaries.length}`);
   await ensureDictionariesSynced(normalized.dictionaries, now);
-  await ensureRiftItemAssets(normalized.dictionaries, now);
+  queueRiftItemAssets(normalized.dictionaries);
 
   console.log(`[riftgg-cn-stats] ${index}/${total} ${slug} -> write matchups=${normalized.matchups.length} builds=${normalized.builds.length}`);
   await db.transaction(async (tx) => {
@@ -455,6 +466,7 @@ async function main() {
   }
 
   await Promise.all(Array.from({ length: Math.min(IMPORT_CONCURRENCY, slugs.length) }, () => worker()));
+  const itemAssetSummary = await reconcileQueuedRiftItemAssets();
 
   console.log(
     JSON.stringify(
@@ -463,6 +475,7 @@ async function main() {
         uploaded,
         skipped,
         failed,
+        itemAssets: itemAssetSummary,
       },
       null,
       2,
