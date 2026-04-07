@@ -272,6 +272,36 @@ test("buildRiftGgGuidePayload groups rows by rank and lane and exposes top and b
   assert.equal(payload.dictionaries.runes.electrocute.description[0], "zap");
 });
 
+test("buildRiftGgGuidePayload keeps only the latest dataDate per rank and lane", () => {
+  const payload = buildRiftGgGuidePayload({
+    matchupRows: [
+      { rank: "diamond_plus", lane: "jungle", dataDate: "2026-03-31", opponentSlug: "jax", winRate: 52.9, pickRate: 1.37, winRateRank: 1, pickRateRank: 1 },
+      { rank: "diamond_plus", lane: "jungle", dataDate: "2026-04-05", opponentSlug: "jax", winRate: 52.5, pickRate: 1.35, winRateRank: 2, pickRateRank: 2 },
+      { rank: "diamond_plus", lane: "jungle", dataDate: "2026-03-31", opponentSlug: "talon", winRate: 52.3, pickRate: 1.19, winRateRank: 3, pickRateRank: 3 },
+      { rank: "diamond_plus", lane: "jungle", dataDate: "2026-04-05", opponentSlug: "talon", winRate: 53.2, pickRate: 1.14, winRateRank: 1, pickRateRank: 4 },
+    ],
+    buildRows: [
+      { rank: "diamond_plus", lane: "jungle", dataDate: "2026-03-31", buildType: "coreItems", entrySlugs: ["black-cleaver"], winRate: 52.1, pickRate: 10.2, winRateRank: 2, pickRateRank: 1 },
+      { rank: "diamond_plus", lane: "jungle", dataDate: "2026-04-05", buildType: "coreItems", entrySlugs: ["trinity-force"], winRate: 53.4, pickRate: 9.8, winRateRank: 1, pickRateRank: 2 },
+    ],
+    opponentRows: [
+      { slug: "jax", name: "Jax", icon: "jax.webp", roles: ["fighter"] },
+      { slug: "talon", name: "Talon", icon: "talon.webp", roles: ["assassin"] },
+    ],
+  });
+
+  assert.equal(payload.matchups.length, 1);
+  assert.equal(payload.matchups[0].dataDate, "2026-04-05");
+  assert.deepEqual(
+    payload.matchups[0].entries.map((entry) => entry.opponentSlug),
+    ["talon", "jax"],
+  );
+  assert.equal(payload.matchups[0].entries[0].winRate, 53.2);
+  assert.equal(payload.matchups[0].entries[1].winRate, 52.5);
+  assert.equal(payload.coreItems[0].dataDate, "2026-04-05");
+  assert.deepEqual(payload.coreItems[0].entries[0].entrySlugs, ["trinity-force"]);
+});
+
 test("buildRiftGgGuidePayload ignores invalid rank and lane rows", () => {
   const payload = buildRiftGgGuidePayload({
     matchupRows: [
