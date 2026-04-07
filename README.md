@@ -77,11 +77,38 @@ Required env:
 - `DATABASE_URL`
 - `ADMIN_SESSION_SECRET`
 
+Current wr-api repo secret inventory:
+
+- `ADMIN_BOOTSTRAP_EMAILS`
+- `ADMIN_SESSION_SECRET`
+- `ASSET_PUBLIC_MODE`
+- `DATABASE_URL`
+- `GUIDES_SYNC_SECRET`
+- `S3_ACCESS_KEY_ID`
+- `S3_BUCKET`
+- `S3_ENDPOINT`
+- `S3_FORCE_PATH_STYLE`
+- `S3_PUBLIC_BASE_URL`
+- `S3_SECRET_ACCESS_KEY`
+- `TIMEWEB_HOST`
+- `TIMEWEB_PASSWORD`
+- `TIMEWEB_USER`
+
 Bootstrap env for the very first owner only:
 
 - `ADMIN_BOOTSTRAP_EMAILS`
-- or `ADMIN_BOOTSTRAP_TELEGRAM_IDS`
-- or `ADMIN_BOOTSTRAP_TELEGRAM_USERNAMES`
+
+The following env keys exist in code as optional/internal knobs or unfinished work,
+but they are not part of the current approved production secret inventory:
+
+- `ADMIN_BOOTSTRAP_TELEGRAM_IDS`
+- `ADMIN_BOOTSTRAP_TELEGRAM_USERNAMES`
+- `ADMIN_BOOTSTRAP_VK_IDS`
+- `CHAMPIONS_SYNC_SECRET`
+- `CHAMPIONS_SYNC_TOKEN`
+- `NEWS_SYNC_SECRET`
+- `NEWS_SYNC_TOKEN`
+- `TELEGRAM_BOT_TOKEN`
 
 Setup:
 
@@ -95,7 +122,6 @@ Where to get values:
 - `DATABASE_URL`: your local Postgres connection string
 - `ADMIN_SESSION_SECRET`: generate a long random string, for example `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
 - `ADMIN_BOOTSTRAP_EMAILS`: the Google or Yandex email you will use for the first login
-- `ADMIN_BOOTSTRAP_TELEGRAM_IDS`: your Telegram numeric user id if you want bootstrap through Telegram
 
 ## Release checklist
 
