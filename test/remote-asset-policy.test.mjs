@@ -20,6 +20,10 @@ test("allows known remote asset hosts over https", () => {
     true,
   );
   assert.equal(
+    isAllowedRemoteAssetUrl("https://assets.riftgg.app/items/control-ward.webp"),
+    true,
+  );
+  assert.equal(
     isAllowedRemoteAssetUrl("http://wildrift.leagueoflegends.com/file.png"),
     true,
   );

@@ -38,6 +38,23 @@ const reservedDictionaryKeys = new Set();
 const queuedRiftItemEntries = new Map();
 let guideAssetStorePromise = null;
 let guideAssetLogSummary = null;
+const itemSourceProbeCache = new Map();
+let itemSourceResolutionSummary = null;
+
+const ITEM_IMAGE_SOURCE_RESOLVERS = [
+  {
+    key: "wildriftfire",
+    build(slug) {
+      return `https://www.wildriftfire.com/images/items/${encodeURIComponent(String(slug || "").trim())}.png`;
+    },
+  },
+  {
+    key: "riftgg-assets",
+    build(slug) {
+      return `https://assets.riftgg.app/items/${encodeURIComponent(String(slug || "").trim())}.webp`;
+    },
+  },
+];
 
 function warnSlugLookup({ service, requestedSlug, candidateSlug = "", source = "", status = "" }) {
   const parts = [
@@ -101,8 +118,141 @@ function toRiftGgSlug(slug) {
   return RIFTGG_SLUG_ALIASES[slug] || slug;
 }
 
-function buildWildRiftFireItemImageUrl(slug) {
-  return `https://www.wildriftfire.com/images/items/${encodeURIComponent(String(slug || "").trim())}.png`;
+async function probeItemSourceUrl(url) {
+  const normalized = String(url || "").trim();
+  if (!normalized) {
+    return false;
+  }
+
+  if (itemSourceProbeCache.has(normalized)) {
+    return itemSourceProbeCache.get(normalized);
+  }
+
+  const probePromise = (async () => {
+    try {
+      const response = await fetch(normalized, {
+        method: "HEAD",
+        headers: {
+          "user-agent": "wildriftallstats-bot/1.0 (+https://wildriftallstats.ru)",
+          accept: "image/avif,image/webp,image/png,image/*;q=0.8,*/*;q=0.5",
+        },
+      });
+
+      if (response.ok) {
+        return true;
+      }
+
+      if (response.status === 405) {
+        const fallbackResponse = await fetch(normalized, {
+          method: "GET",
+          headers: {
+            "user-agent": "wildriftallstats-bot/1.0 (+https://wildriftallstats.ru)",
+            accept: "image/avif,image/webp,image/png,image/*;q=0.8,*/*;q=0.5",
+            range: "bytes=0-0",
+          },
+        });
+        return fallbackResponse.ok;
+      }
+
+      return false;
+    } catch {
+      return false;
+    }
+  })();
+
+  itemSourceProbeCache.set(normalized, probePromise);
+  return probePromise;
+}
+
+function detectItemSourceKeyFromUrl(url = "") {
+  const normalized = String(url || "").trim().toLowerCase();
+  if (!normalized) return "unknown";
+  if (normalized.includes("wildriftfire.com/images/items/")) return "wildriftfire";
+  if (normalized.includes("assets.riftgg.app/items/")) return "riftgg-assets";
+  return "existing";
+}
+
+function trackItemSourceResolution({ slug, sourceKey, usedFallback = false, unresolved = false }) {
+  if (!itemSourceResolutionSummary) {
+    itemSourceResolutionSummary = {
+      total: 0,
+      unresolved: 0,
+      fallbackUsed: 0,
+      bySource: new Map(),
+      fallbackSamples: [],
+      unresolvedSamples: [],
+    };
+  }
+
+  itemSourceResolutionSummary.total += 1;
+
+  if (unresolved) {
+    itemSourceResolutionSummary.unresolved += 1;
+    if (
+      itemSourceResolutionSummary.unresolvedSamples.length < 5 &&
+      !itemSourceResolutionSummary.unresolvedSamples.includes(slug)
+    ) {
+      itemSourceResolutionSummary.unresolvedSamples.push(slug);
+    }
+    return;
+  }
+
+  const sourceCount = itemSourceResolutionSummary.bySource.get(sourceKey) || 0;
+  itemSourceResolutionSummary.bySource.set(sourceKey, sourceCount + 1);
+
+  if (usedFallback) {
+    itemSourceResolutionSummary.fallbackUsed += 1;
+    const sample = `${slug}:${sourceKey}`;
+    if (
+      itemSourceResolutionSummary.fallbackSamples.length < 5 &&
+      !itemSourceResolutionSummary.fallbackSamples.includes(sample)
+    ) {
+      itemSourceResolutionSummary.fallbackSamples.push(sample);
+    }
+  }
+}
+
+async function resolveItemImageSourceUrl(slug, existingSourceUrl = "") {
+  const normalizedSlug = String(slug || "").trim();
+  const existing = String(existingSourceUrl || "").trim();
+  const candidates = [];
+  const seen = new Set();
+
+  function pushCandidate(sourceKey, sourceUrl) {
+    const normalized = String(sourceUrl || "").trim();
+    if (!normalized || seen.has(normalized)) {
+      return;
+    }
+
+    seen.add(normalized);
+    candidates.push({ sourceKey, sourceUrl: normalized });
+  }
+
+  if (existing) {
+    pushCandidate(detectItemSourceKeyFromUrl(existing), existing);
+  }
+
+  for (const resolver of ITEM_IMAGE_SOURCE_RESOLVERS) {
+    pushCandidate(resolver.key, resolver.build(normalizedSlug));
+  }
+
+  for (const candidate of candidates) {
+    if (await probeItemSourceUrl(candidate.sourceUrl)) {
+      trackItemSourceResolution({
+        slug: normalizedSlug,
+        sourceKey: candidate.sourceKey,
+        usedFallback: candidate.sourceKey !== "wildriftfire",
+      });
+      return candidate;
+    }
+  }
+
+  trackItemSourceResolution({
+    slug: normalizedSlug,
+    sourceKey: "unresolved",
+    unresolved: true,
+  });
+  return null;
 }
 
 async function fetchRiftGgChampionHtml(slug) {
@@ -278,10 +428,12 @@ async function reconcileQueuedRiftItemAssets(now = new Date()) {
 
   for (const entry of pendingEntries) {
     const slug = entry.slug;
-    const sourceUrl = buildWildRiftFireItemImageUrl(slug);
     const existing = existingBySlug.get(slug);
-    const imageSourceUrl = existing?.imageUrl || sourceUrl;
-    const tooltipSourceUrl = existing?.tooltipImageUrl || sourceUrl;
+    const resolvedSource =
+      (await resolveItemImageSourceUrl(slug, existing?.imageUrl || existing?.tooltipImageUrl || "")) || null;
+    const sourceUrl = resolvedSource?.sourceUrl || null;
+    const imageSourceUrl = sourceUrl;
+    const tooltipSourceUrl = sourceUrl;
     const imageAssetKey = buildGuideAssetKey("guide", "item", slug, "image");
     const tooltipAssetKey = buildGuideAssetKey("guide", "item", slug, "tooltip");
     const hasImageAsset = existing?.imageUrl
@@ -300,11 +452,16 @@ async function reconcileQueuedRiftItemAssets(now = new Date()) {
           sourceUrl: tooltipSourceUrl,
         })
       : false;
-    const needsImage = !existing?.imageUrl || !hasImageAsset;
-    const needsTooltip = !existing?.tooltipImageUrl || !hasTooltipAsset;
+    const needsImage = Boolean(sourceUrl) && (!existing?.imageUrl || !hasImageAsset || existing.imageUrl !== imageSourceUrl);
+    const needsTooltip = Boolean(sourceUrl) && (!existing?.tooltipImageUrl || !hasTooltipAsset || existing.tooltipImageUrl !== tooltipSourceUrl);
 
     if (!needsImage && !needsTooltip) {
       summary.skipped += 1;
+      continue;
+    }
+
+    if (!sourceUrl) {
+      summary.failed += 1;
       continue;
     }
 
@@ -354,6 +511,23 @@ async function reconcileQueuedRiftItemAssets(now = new Date()) {
   console.log(
     `[riftgg-cn-stats] item asset reconcile -> total=${summary.total} updatedRows=${summary.updatedRows} mirrored=${summary.mirrored} skipped=${summary.skipped} failed=${summary.failed}`,
   );
+
+  if (itemSourceResolutionSummary?.total) {
+    const sources = Array.from(itemSourceResolutionSummary.bySource.entries())
+      .sort((left, right) => right[1] - left[1])
+      .map(([sourceKey, count]) => `${sourceKey}:${count}`)
+      .join(" | ");
+    const fallbackSamples = itemSourceResolutionSummary.fallbackSamples.length
+      ? ` fallbackSamples=${itemSourceResolutionSummary.fallbackSamples.join(",")}`
+      : "";
+    const unresolvedSamples = itemSourceResolutionSummary.unresolvedSamples.length
+      ? ` unresolvedSamples=${itemSourceResolutionSummary.unresolvedSamples.join(",")}`
+      : "";
+
+    console.warn(
+      `[riftgg-cn-stats] item asset sources -> total=${itemSourceResolutionSummary.total} fallback=${itemSourceResolutionSummary.fallbackUsed} unresolved=${itemSourceResolutionSummary.unresolved} ${sources}${fallbackSamples}${unresolvedSamples}`,
+    );
+  }
 
   if (guideAssetLogSummary?.totalErrors) {
     const details = Array.from(guideAssetLogSummary.byReason.entries())
@@ -500,6 +674,8 @@ async function importChampionStats({ slug, index, total }) {
 
 async function main() {
   guideAssetLogSummary = null;
+  itemSourceResolutionSummary = null;
+  itemSourceProbeCache.clear();
   const requestedSlugs = getRequestedSlugs();
   const championRows = requestedSlugs.length
     ? await db
