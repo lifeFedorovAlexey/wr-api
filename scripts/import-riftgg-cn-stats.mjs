@@ -23,6 +23,7 @@ const RIFTGG_SLUG_ALIASES = {
   leesin: "lee-sin",
   missfortune: "miss-fortune",
   masteryi: "master-yi",
+  monkeyking: "wukong",
   nunu: "nunu-and-willump",
   twistedfate: "twisted-fate",
   xinzhao: "xin-zhao",
