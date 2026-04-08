@@ -33,26 +33,32 @@ const RIFT_SECTION_REPORTS = [
     title: "Матчапы",
     label: "матчапы",
     expectedVisibleCount: (count) => count,
+    expandAll: true,
   },
   {
     key: "coreItems",
     title: "Основные предметы",
     label: "предметы",
     expectedVisibleCount: (count) => Math.min(count, 7),
+    expandAll: false,
   },
   {
     key: "runes",
     title: "Руны",
     label: "руны",
     expectedVisibleCount: (count) => Math.min(count, 7),
+    expandAll: false,
   },
   {
     key: "spells",
     title: "Заклинания",
     label: "заклинания",
     expectedVisibleCount: (count) => Math.min(count, 7),
+    expandAll: false,
   },
 ];
+
+const RIFT_BUILD_VISIBLE_LIMIT = 7;
 
 const RIFT_RANK_LABEL = {
   diamond_plus: "Алмаз",
@@ -216,6 +222,7 @@ function buildRiftBuildExpectationMap(normalized) {
       expectations.set(key, {
         count: 0,
         sampleNames: [],
+        visibleNames: [],
       });
     }
 
@@ -228,6 +235,15 @@ function buildRiftBuildExpectationMap(normalized) {
         .slice(0, 3)
         .map((slug) => dictionaries[kind]?.get(slug) || slug)
         .filter(Boolean);
+    }
+
+    if (target.visibleNames.length < RIFT_BUILD_VISIBLE_LIMIT * 3) {
+      const kind = RIFT_BUILD_KIND[row.buildType];
+      target.visibleNames.push(
+        ...(row.entrySlugs || [])
+          .map((slug) => dictionaries[kind]?.get(slug) || slug)
+          .filter(Boolean),
+      );
     }
   }
 
@@ -324,6 +340,28 @@ async function clickButtonByLabels(page, labels) {
   return clicked;
 }
 
+async function expandMatchupsSection(page) {
+  const clicked = await page.evaluate(() => {
+    const headings = Array.from(document.querySelectorAll("h2"));
+    const heading = headings.find((node) => node.textContent.trim() === "Матчапы");
+    const section = heading?.closest("section");
+    if (!section) return false;
+
+    const buttons = Array.from(section.querySelectorAll("button"));
+    const target = buttons.find((button) => /весь список/i.test(button.innerText.trim()));
+    if (!target) return false;
+
+    target.click();
+    return true;
+  });
+
+  if (clicked) {
+    await new Promise((resolve) => setTimeout(resolve, 120));
+  }
+
+  return clicked;
+}
+
 async function getGuideSectionSnapshot(page, title) {
   return await page.evaluate((targetTitle) => {
     const headings = Array.from(document.querySelectorAll("h2"));
@@ -340,6 +378,20 @@ async function getGuideSectionSnapshot(page, title) {
     )
       .map((img) => img.getAttribute("alt") || "")
       .map((value) => value.trim())
+      .filter(Boolean);
+    const matchupNames = Array.from(section.querySelectorAll("a[href], article"))
+      .map((node) => {
+        const values = Array.from(node.querySelectorAll("div"))
+          .map((child) => child.textContent?.trim() || "")
+          .filter(Boolean);
+        return (
+          values.find(
+            (value) =>
+              !["Процент побед", "Коэффициент выбора", "Лучшие", "Худшие"].includes(value) &&
+              !value.startsWith("#"),
+          ) || ""
+        );
+      })
       .filter(Boolean);
     const linkedGuideSlugs = Array.from(section.querySelectorAll("a[href]"))
       .map((link) => link.getAttribute("href") || "")
@@ -363,9 +415,10 @@ async function getGuideSectionSnapshot(page, title) {
       text,
       labels,
       itemNames: uniqueItemNames,
+      matchupNames: Array.from(new Set(matchupNames)),
       linkedGuideSlugs: Array.from(new Set(linkedGuideSlugs)),
       visibleEntryCount,
-      totalCount: Number.isFinite(totalCount) ? totalCount : null,
+      totalCount: Number.isFinite(totalCount) ? totalCount : visibleEntryCount,
     };
   }, title);
 }
@@ -414,6 +467,7 @@ function getExpectedSectionData(riftExpectation, rank, lane, sectionKey) {
         count: 0,
         sampleNames: [],
         sampleSlugs: [],
+        visibleNames: [],
       }
     );
   }
@@ -423,6 +477,7 @@ function getExpectedSectionData(riftExpectation, rank, lane, sectionKey) {
       count: 0,
       sampleNames: [],
       sampleSlugs: [],
+      visibleNames: [],
     }
   );
 }
@@ -447,14 +502,20 @@ function computeSectionComparison({ report, snapshot, expected }) {
   const siteTotalCount = snapshot?.totalCount || siteVisibleCount;
   const sourceTotalCount = expected.count || 0;
   const sourceVisibleCount = report.expectedVisibleCount(sourceTotalCount);
-  const siteNames = normalizeNames(snapshot?.itemNames || []);
-  const sourceNames = normalizeNames(expected.sampleNames || []);
+  const siteNames = normalizeNames(
+    report.key === "matchups" ? snapshot?.matchupNames || [] : snapshot?.itemNames || [],
+  );
+  const sourceNames = normalizeNames(
+    report.key === "matchups" ? expected.sampleNames || [] : expected.visibleNames || expected.sampleNames || [],
+  );
   const siteSlugs = normalizeNames(snapshot?.linkedGuideSlugs || []);
   const sourceSlugs = normalizeNames(expected.sampleSlugs || []);
   const namesOverlap =
     report.key === "matchups"
-      ? !sourceSlugs.length || sourceSlugs.every((slug) => siteSlugs.includes(slug))
-      : !sourceNames.length || sourceNames.every((name) => siteNames.includes(name));
+      ? (!sourceSlugs.length || sourceSlugs.every((slug) => siteSlugs.includes(slug))) &&
+        (!sourceNames.length || sourceNames.some((name) => siteNames.includes(name)))
+      : sourceNames.length === siteNames.length &&
+        sourceNames.every((name, index) => siteNames[index] === name);
   const countsMatch =
     report.key === "matchups"
       ? siteTotalCount === sourceTotalCount
@@ -562,6 +623,10 @@ async function auditGuide({
       }
 
       for (const report of RIFT_SECTION_REPORTS) {
+        if (report.expandAll) {
+          await expandMatchupsSection(page);
+        }
+
         const expected = getExpectedSectionData(riftExpectation, rank, lane, report.key);
         const snapshot = await getGuideSectionSnapshot(page, report.title);
         comparisons.push({
@@ -601,12 +666,12 @@ async function auditGuide({
         if (
           expected.count > 0 &&
           ((report.key === "matchups" && expected.sampleSlugs?.length) ||
-            (report.key !== "matchups" && expected.sampleNames.length))
+            (report.key !== "matchups" && (expected.visibleNames?.length || expected.sampleNames.length)))
         ) {
           const matchedName =
             report.key === "matchups"
               ? expected.sampleSlugs.find((item) => snapshot.linkedGuideSlugs.includes(item))
-              : expected.sampleNames.find((name) =>
+              : (expected.visibleNames || expected.sampleNames).find((name) =>
                   snapshot.text.includes(name) || snapshot.itemNames.includes(name),
                 );
 
@@ -616,6 +681,7 @@ async function auditGuide({
               rank,
               lane,
               sampleNames: expected.sampleNames,
+              visibleNames: expected.visibleNames,
               sampleSlugs: expected.sampleSlugs,
               siteNames: snapshot.itemNames,
               siteSlugs: snapshot.linkedGuideSlugs,
