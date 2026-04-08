@@ -699,11 +699,14 @@ async function auditGuide({
       }
     }
 
+    const comparisonMismatches = comparisons.filter((item) => !item.ok);
+
     return {
       slug,
-      ok: issues.length === 0,
+      ok: issues.length === 0 && comparisonMismatches.length === 0,
       issues,
       comparisons,
+      comparisonMismatches,
       checkedCombos: Array.from(checkedCombos),
       expectedWrfVariants: expectedWrfLabels.length,
     };
@@ -768,7 +771,7 @@ function printResult(result) {
   }
 
   console.log(
-    `[guides-ui-audit] ${result.slug} -> failed | issues=${result.issues.length} combos=${result.checkedCombos.length}`,
+    `[guides-ui-audit] ${result.slug} -> failed | issues=${result.issues.length} mismatches=${result.comparisonMismatches?.length || 0} combos=${result.checkedCombos.length}`,
   );
 
   for (const issue of result.issues) {
@@ -777,6 +780,13 @@ function printResult(result) {
       .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
       .join(" ");
     console.log(`  - [${issue.section}] ${issue.message}${details ? ` | ${details}` : ""}`);
+  }
+
+  for (const mismatch of result.comparisonMismatches || []) {
+    const comboLabel = `${RIFT_RANK_LABEL[mismatch.rank] || mismatch.rank} / ${localizeGuideLane(mismatch.lane) || mismatch.lane}`;
+    console.log(
+      `  - [compare] ${comboLabel} ${mismatch.sectionLabel} mismatch | siteVisible=${mismatch.siteVisibleCount} siteTotal=${mismatch.siteTotalCount} sourceVisible=${mismatch.sourceVisibleCount} sourceTotal=${mismatch.sourceTotalCount}`,
+    );
   }
 }
 
