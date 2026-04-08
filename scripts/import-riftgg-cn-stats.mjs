@@ -1,6 +1,6 @@
 import "dotenv/config";
 
-import { and, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 
 import { db, client } from "../db/client.js";
 import {
@@ -22,6 +22,7 @@ import { normalizeRiftGgCnStats, parseRiftGgCnStatsHtml } from "../lib/riftggCnS
 const REQUEST_TIMEOUT_MS = Math.max(1_000, Number(process.env.RIFTGG_REQUEST_TIMEOUT_MS || 20_000));
 const IMPORT_CONCURRENCY = Math.max(1, Number(process.env.RIFTGG_IMPORT_CONCURRENCY || 6));
 const MAX_FETCH_ATTEMPTS = Math.max(1, Number(process.env.RIFTGG_FETCH_RETRIES || 2));
+const SLOW_IMPORT_LOG_MS = Math.max(1_000, Number(process.env.RIFTGG_SLOW_IMPORT_LOG_MS || 15_000));
 let dictionariesSyncPromise = Promise.resolve();
 const reservedDictionaryKeys = new Set();
 const queuedRiftItemEntries = new Map();
@@ -324,25 +325,25 @@ async function ensureDictionariesSynced(entries, now = new Date()) {
   }
 
   const task = dictionariesSyncPromise.catch(() => {}).then(async () => {
-    for (const entry of pendingEntries) {
-      await db
-        .insert(riftggCnDictionaries)
-        .values({
+    await db
+      .insert(riftggCnDictionaries)
+      .values(
+        pendingEntries.map((entry) => ({
           kind: entry.kind,
           slug: entry.slug,
           name: entry.name,
           rawPayload: entry.rawPayload,
           updatedAt: now,
-        })
-        .onConflictDoUpdate({
-          target: [riftggCnDictionaries.kind, riftggCnDictionaries.slug],
-          set: {
-            name: entry.name,
-            rawPayload: entry.rawPayload,
-            updatedAt: now,
-          },
-        });
-    }
+        })),
+      )
+      .onConflictDoUpdate({
+        target: [riftggCnDictionaries.kind, riftggCnDictionaries.slug],
+        set: {
+          name: sql`excluded.name`,
+          rawPayload: sql`excluded.raw_payload`,
+          updatedAt: sql`excluded.updated_at`,
+        },
+      });
   });
 
   dictionariesSyncPromise = task;
@@ -579,6 +580,7 @@ function buildDataDateFilter(column, rows) {
 }
 
 async function importChampionStats({ slug, index, total }) {
+  const startedAt = Date.now();
   const html = await fetchRiftGgChampionHtml(slug);
 
   if (!html) {
@@ -649,7 +651,7 @@ async function importChampionStats({ slug, index, total }) {
   });
 
   console.log(
-    `[riftgg-cn-stats] ${index}/${total} ${slug} -> ok | matchups=${normalized.matchups.length} builds=${normalized.builds.length} dictionaries=${normalized.dictionaries.length}`,
+    `[riftgg-cn-stats] ${index}/${total} ${slug} -> ok | matchups=${normalized.matchups.length} builds=${normalized.builds.length} dictionaries=${normalized.dictionaries.length} elapsed=${Date.now() - startedAt}ms`,
   );
 
   return {
@@ -689,6 +691,12 @@ async function main() {
       cursor += 1;
 
       const slug = slugs[currentIndex];
+      const slowImportTimer = setTimeout(() => {
+        console.warn(
+          `[riftgg-cn-stats] ${currentIndex + 1}/${slugs.length} ${slug} -> still-running after ${SLOW_IMPORT_LOG_MS}ms`,
+        );
+      }, SLOW_IMPORT_LOG_MS);
+
       try {
         const result = await importChampionStats({
           slug,
@@ -704,6 +712,8 @@ async function main() {
       } catch (error) {
         failed.push({ slug, error: error?.message || String(error) });
         console.error(`[riftgg-cn-stats] ${currentIndex + 1}/${slugs.length} ${slug} -> failed`, error);
+      } finally {
+        clearTimeout(slowImportTimer);
       }
     }
   }
