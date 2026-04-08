@@ -26,16 +26,39 @@ function resolveRequestOrigin(req) {
   return `${proto}://${host}`;
 }
 
-function resolveAuditOrigins(req) {
+function normalizeExplicitOrigin(value) {
+  const normalized = String(value || "").trim().replace(/\/+$/, "");
+
+  if (!normalized) {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(normalized);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return "";
+    }
+    return normalized;
+  } catch {
+    return "";
+  }
+}
+
+function resolveAuditOrigins(req, input = {}) {
   const requestOrigin = resolveRequestOrigin(req);
+  const explicitUiOrigin = normalizeExplicitOrigin(input?.uiOrigin);
+  const explicitApiOrigin = normalizeExplicitOrigin(input?.apiOrigin);
   const productionUiOrigin =
     process.env.GUIDES_AUDIT_UI_ORIGIN ||
     process.env.ADMIN_PUBLIC_ORIGIN ||
     process.env.NEXT_PUBLIC_SITE_URL ||
     (process.env.NODE_ENV === "production" ? "https://wildriftallstats.ru" : "");
-  const uiOrigin = String(productionUiOrigin || process.env.UI_PUBLIC_ORIGIN || requestOrigin)
+  const uiOrigin = String(
+    explicitUiOrigin || productionUiOrigin || process.env.UI_PUBLIC_ORIGIN || requestOrigin,
+  )
     .replace(/\/+$/, "");
   const apiOrigin = String(
+    explicitApiOrigin ||
     process.env.GUIDES_AUDIT_API_ORIGIN ||
     process.env.API_PUBLIC_ORIGIN ||
     `${uiOrigin}/wr-api`,
@@ -82,7 +105,7 @@ async function requireAdminOperator(req, res) {
 }
 
 async function startAuditRun(run, req) {
-  const { uiOrigin, apiOrigin } = resolveAuditOrigins(req);
+  const { uiOrigin, apiOrigin } = resolveAuditOrigins(req, req?.body);
 
   activeRun = run;
 
