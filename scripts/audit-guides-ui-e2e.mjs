@@ -10,14 +10,47 @@ import {
 } from "../lib/riftggCnStats.mjs";
 
 const require = createRequire(import.meta.url);
-const { scrapeGuide } = require("../../ui/scripts/parse-wildriftfire-guide.js");
-const guideShared = require("../../ui/shared/guides-shared.js");
+const FALLBACK_LANE_LABELS = {
+  top: "Барон",
+  jungle: "Лес",
+  mid: "Мид",
+  adc: "Дракон",
+  support: "Саппорт",
+};
 
-const {
-  mapToRiotSlug,
-  localizeGuideLane,
-  repairGuideText,
-} = guideShared;
+function fallbackRepairGuideText(value = "") {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function fallbackLocalizeGuideLane(value = "") {
+  const normalized = String(value || "").trim().toLowerCase();
+  return FALLBACK_LANE_LABELS[normalized] || fallbackRepairGuideText(value);
+}
+
+function fallbackMapToRiotSlug(value = "") {
+  return String(value || "").trim().toLowerCase();
+}
+
+async function fallbackScrapeGuide() {
+  return { variants: [] };
+}
+
+let scrapeGuide = fallbackScrapeGuide;
+let mapToRiotSlug = fallbackMapToRiotSlug;
+let localizeGuideLane = fallbackLocalizeGuideLane;
+let repairGuideText = fallbackRepairGuideText;
+
+try {
+  const uiGuideParser = require("../../ui/scripts/parse-wildriftfire-guide.js");
+  const guideShared = require("../../ui/shared/guides-shared.js");
+
+  scrapeGuide = uiGuideParser?.scrapeGuide || fallbackScrapeGuide;
+  mapToRiotSlug = guideShared?.mapToRiotSlug || fallbackMapToRiotSlug;
+  localizeGuideLane = guideShared?.localizeGuideLane || fallbackLocalizeGuideLane;
+  repairGuideText = guideShared?.repairGuideText || fallbackRepairGuideText;
+} catch {}
 
 const DEFAULT_UI_ORIGIN = process.env.UI_ORIGIN || "http://127.0.0.1:3000";
 const DEFAULT_API_ORIGIN =
