@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.2 - 2026-04-08
+
+- centralized champion slug normalization and removed the dead `champion_guides` schema remnant from the active guide model
+- added `contentHash`-based skip logic so repeated guide imports no longer rewrite normalized guide child tables without content changes
+- fixed RiftGG guide delivery around latest snapshot selection, public item asset URLs, special-item asset fallback, and compact import diagnostics
+
 ## 1.2.1 - 2026-04-06
 
 - fixed public asset mode so direct S3 URLs no longer depend on upload credentials being present at runtime

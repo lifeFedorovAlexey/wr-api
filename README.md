@@ -4,9 +4,9 @@ Public Wild Rift API used by `wildriftallstats.ru`.
 
 ## Version
 
-- Current version: `1.2.1`
+- Current version: `1.2.2`
 - Release branch format: `release/x.y.z`
-- Stable tag format: `v1.2.1`
+- Stable tag format: `v1.2.2`
 
 ## Commands
 

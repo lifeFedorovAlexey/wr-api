@@ -1,6 +1,6 @@
 {
   "name": "wr-api",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "private": true,
   "description": "Public Wild Rift API",
   "type": "module",
