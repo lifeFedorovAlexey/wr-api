@@ -8,7 +8,7 @@ import {
   updateGuidesAuditRun,
   writeGuidesAuditReport,
 } from "../lib/guidesAuditStore.mjs";
-import { resolveAuditSlugs, runAudit } from "../scripts/audit-guides-ui-e2e.mjs";
+import { runAudit } from "../scripts/audit-guides-ui-e2e.mjs";
 import { setCors } from "./utils/cors.js";
 
 const RUN_LIST_LIMIT = 24;
@@ -242,20 +242,10 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "slug_required" });
   }
 
-  const { apiOrigin } = resolveAuditOrigins(req);
-  const targetSlugs = await resolveAuditSlugs({
-    slug: mode === "single" ? slug : null,
-    apiOrigin,
-  });
-
-  if (!targetSlugs.length) {
-    return res.status(400).json({ error: "no_guide_slugs" });
-  }
-
   const run = await createGuidesAuditRun({
     scope: mode,
     slug: mode === "single" ? slug : null,
-    targetCount: targetSlugs.length,
+    targetCount: mode === "single" ? 1 : null,
   });
 
   activeRun = run;
