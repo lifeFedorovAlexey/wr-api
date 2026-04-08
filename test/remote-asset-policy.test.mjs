@@ -24,6 +24,10 @@ test("allows known remote asset hosts over https", () => {
     true,
   );
   assert.equal(
+    isAllowedRemoteAssetUrl("https://support-wildrift.riotgames.com/hc/article_attachments/360088706614"),
+    true,
+  );
+  assert.equal(
     isAllowedRemoteAssetUrl("http://wildrift.leagueoflegends.com/file.png"),
     true,
   );

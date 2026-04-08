@@ -24,7 +24,8 @@
     "test": "node --test ./test",
     "test:coverage": "c8 npm run test",
     "sync:assets:s3": "node ./scripts/sync-assets-to-s3.mjs",
-    "backfill:guide-entity-assets": "node ./scripts/backfill-guide-entity-assets.mjs"
+    "backfill:guide-entity-assets": "node ./scripts/backfill-guide-entity-assets.mjs",
+    "backfill:profile-rank-assets": "node ./scripts/backfill-profile-rank-assets.mjs"
   },
   "overrides": {
     "basic-ftp": "5.2.0"
