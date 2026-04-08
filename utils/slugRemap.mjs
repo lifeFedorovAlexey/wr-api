@@ -1,5 +1,8 @@
-// utils/slugRemap.mjs
-// Маппинг slug'ов из китайской базы → slug'и у Riot Wild Rift
+import {
+  getChampionSlugAliases,
+  toCanonicalChampionSlug,
+  toLegacyLocalChampionSlug,
+} from "../lib/championSlug.mjs";
 
 export const SLUG_RIOT_REMAP = {
   nunu: "nunu-willump",
@@ -15,32 +18,17 @@ export const SLUG_RIOT_REMAP = {
 };
 
 export function mapToRiotSlug(cnSlug) {
-  return SLUG_RIOT_REMAP[cnSlug] ?? cnSlug;
+  return toCanonicalChampionSlug("legacyLocal", cnSlug) || String(cnSlug || "").trim();
 }
 
-const SLUG_LOCAL_REMAP = Object.fromEntries(
-  Object.entries(SLUG_RIOT_REMAP).map(([localSlug, riotSlug]) => [riotSlug, localSlug]),
-);
-
 export function mapToLocalSlug(riotSlug) {
-  return SLUG_LOCAL_REMAP[riotSlug] ?? riotSlug;
+  return toLegacyLocalChampionSlug(riotSlug) || String(riotSlug || "").trim();
 }
 
 export function getSlugAliases(slug) {
-  const normalized = String(slug || "").trim();
-  if (!normalized) return [];
-
-  return Array.from(
-    new Set([
-      normalized,
-      mapToRiotSlug(normalized),
-      mapToLocalSlug(normalized),
-    ].filter(Boolean)),
-  );
+  return getChampionSlugAliases(slug);
 }
 
-// Ручные фиксы имён, если после скрапа что-то не нашлось.
-// Ключ — ТВОЙ slug (из CN), не riot-овский.
 export const NAME_PATCHES = {
   nunu: {
     en_us: "Nunu & Willump",

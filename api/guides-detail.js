@@ -17,9 +17,9 @@ import {
   riftggCnDictionaries,
   riftggCnMatchups,
 } from "../db/schema.js";
+import { getChampionSlugAliases, getChampionSlugRecord } from "../lib/championSlug.mjs";
 import { assembleGuideDetail, collectGuideEntityRefs } from "../lib/guides.mjs";
 import { buildRiftGgGuidePayload } from "../lib/riftggCnStats.mjs";
-import { getSlugAliases } from "../utils/slugRemap.mjs";
 import { setCors } from "./utils/cors.js";
 
 const RIFT_DICTIONARY_SLUG_ALIASES = {
@@ -93,6 +93,9 @@ export default async function handler(req, res) {
   }
 
   try {
+    const championSlugRecord = getChampionSlugRecord(slug);
+    const championLookupSlugs = championSlugRecord?.aliases || [slug];
+
     const mergeRiftDictionaryAssets = (rows, assetRowsBySlug) =>
       rows.map((row) => {
         const assetRow = assetRowsBySlug.get(row.slug);
@@ -113,8 +116,8 @@ export default async function handler(req, res) {
     const summaryRows = await db
       .select()
       .from(guideSummaries)
-      .where(eq(guideSummaries.slug, slug))
-      .limit(1);
+      .where(inArray(guideSummaries.slug, championLookupSlugs))
+      .limit(championLookupSlugs.length || 1);
 
     if (!summaryRows.length) {
       warnSlugLookup({
@@ -127,24 +130,26 @@ export default async function handler(req, res) {
       return res.status(404).json({ error: "Not Found" });
     }
 
+    const guideSlug = summaryRows[0].slug;
+
     const [officialMetaRows, abilityRows, buildBreakdownRows, variantRows, sectionRows, skillOrderRows, skillRowRows, matchupRows, riftggMatchupRows, riftggBuildRows] =
       await Promise.all([
-        db.select().from(guideOfficialMeta).where(eq(guideOfficialMeta.guideSlug, slug)),
-        db.select().from(guideAbilities).where(eq(guideAbilities.guideSlug, slug)),
+        db.select().from(guideOfficialMeta).where(eq(guideOfficialMeta.guideSlug, guideSlug)),
+        db.select().from(guideAbilities).where(eq(guideAbilities.guideSlug, guideSlug)),
         db
           .select()
           .from(guideBuildBreakdowns)
-          .where(eq(guideBuildBreakdowns.guideSlug, slug)),
-        db.select().from(guideVariants).where(eq(guideVariants.guideSlug, slug)),
-        db.select().from(guideVariantSections).where(eq(guideVariantSections.guideSlug, slug)),
+          .where(eq(guideBuildBreakdowns.guideSlug, guideSlug)),
+        db.select().from(guideVariants).where(eq(guideVariants.guideSlug, guideSlug)),
+        db.select().from(guideVariantSections).where(eq(guideVariantSections.guideSlug, guideSlug)),
         db
           .select()
           .from(guideVariantSkillOrders)
-          .where(eq(guideVariantSkillOrders.guideSlug, slug)),
-        db.select().from(guideVariantSkillRows).where(eq(guideVariantSkillRows.guideSlug, slug)),
-        db.select().from(guideVariantMatchups).where(eq(guideVariantMatchups.guideSlug, slug)),
-        db.select().from(riftggCnMatchups).where(eq(riftggCnMatchups.championSlug, slug)),
-        db.select().from(riftggCnBuilds).where(eq(riftggCnBuilds.championSlug, slug)),
+          .where(eq(guideVariantSkillOrders.guideSlug, guideSlug)),
+        db.select().from(guideVariantSkillRows).where(eq(guideVariantSkillRows.guideSlug, guideSlug)),
+        db.select().from(guideVariantMatchups).where(eq(guideVariantMatchups.guideSlug, guideSlug)),
+        db.select().from(riftggCnMatchups).where(inArray(riftggCnMatchups.championSlug, championLookupSlugs)),
+        db.select().from(riftggCnBuilds).where(inArray(riftggCnBuilds.championSlug, championLookupSlugs)),
       ]);
 
     const entityRefs = collectGuideEntityRefs({
@@ -211,7 +216,7 @@ export default async function handler(req, res) {
     ];
 
     const opponentLookupSlugs = Array.from(
-      new Set(opponentSlugs.flatMap((value) => getSlugAliases(value)).filter(Boolean)),
+      new Set(opponentSlugs.flatMap((value) => getChampionSlugAliases(value)).filter(Boolean)),
     );
 
     const [opponentRowsRaw, itemRowsRaw, runeRowsRaw, spellRowsRaw, riftDictionaryAssetRows] = await Promise.all([
@@ -271,7 +276,7 @@ export default async function handler(req, res) {
     ]);
     const opponentSlugAliasesByResolvedSlug = new Map();
     for (const sourceSlug of opponentSlugs) {
-      for (const alias of getSlugAliases(sourceSlug)) {
+      for (const alias of getChampionSlugAliases(sourceSlug)) {
         if (!opponentSlugAliasesByResolvedSlug.has(alias)) {
           opponentSlugAliasesByResolvedSlug.set(alias, new Set());
         }

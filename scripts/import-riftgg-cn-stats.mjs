@@ -15,24 +15,13 @@ import {
   buildGuideAssetStorageKey,
   createGuideAssetStore,
 } from "../lib/guideAssets.mjs";
+import { getSourceChampionSlugCandidates } from "../lib/championSlug.mjs";
 import { createObjectStorageClient } from "../lib/objectStorage.mjs";
 import { normalizeRiftGgCnStats, parseRiftGgCnStatsHtml } from "../lib/riftggCnStats.mjs";
 
 const REQUEST_TIMEOUT_MS = Math.max(1_000, Number(process.env.RIFTGG_REQUEST_TIMEOUT_MS || 20_000));
 const IMPORT_CONCURRENCY = Math.max(1, Number(process.env.RIFTGG_IMPORT_CONCURRENCY || 6));
 const MAX_FETCH_ATTEMPTS = Math.max(1, Number(process.env.RIFTGG_FETCH_RETRIES || 2));
-const RIFTGG_SLUG_ALIASES = {
-  aurelionsol: "aurelion-sol",
-  drmundo: "dr-mundo",
-  jarvaniv: "jarvan-iv",
-  leesin: "lee-sin",
-  missfortune: "miss-fortune",
-  masteryi: "master-yi",
-  monkeyking: "wukong",
-  nunu: "nunu-and-willump",
-  twistedfate: "twisted-fate",
-  xinzhao: "xin-zhao",
-};
 let dictionariesSyncPromise = Promise.resolve();
 const reservedDictionaryKeys = new Set();
 const queuedRiftItemEntries = new Map();
@@ -115,7 +104,7 @@ function getGuideAssetStore() {
 }
 
 function toRiftGgSlug(slug) {
-  return RIFTGG_SLUG_ALIASES[slug] || slug;
+  return getSourceChampionSlugCandidates(slug, "riftgg")[0] || String(slug || "").trim();
 }
 
 async function probeItemSourceUrl(url) {
