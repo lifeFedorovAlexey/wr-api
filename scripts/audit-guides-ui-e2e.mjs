@@ -223,11 +223,15 @@ function buildRiftBuildExpectationMap(normalized) {
         count: 0,
         sampleNames: [],
         visibleNames: [],
+        dataDate: null,
       });
     }
 
     const target = expectations.get(key);
     target.count += 1;
+    if (!target.dataDate && row?.dataDate) {
+      target.dataDate = row.dataDate;
+    }
 
     if (!target.sampleNames.length) {
       const kind = RIFT_BUILD_KIND[row.buildType];
@@ -260,11 +264,15 @@ function buildRiftMatchupExpectationMap(normalized) {
         count: 0,
         sampleNames: [],
         sampleSlugs: [],
+        dataDate: null,
       });
     }
 
     const target = expectations.get(key);
     target.count += 1;
+    if (!target.dataDate && row?.dataDate) {
+      target.dataDate = row.dataDate;
+    }
 
     const opponentSlug = String(row?.opponentSlug || "").trim();
     if (opponentSlug && target.sampleSlugs.length < 5 && !target.sampleSlugs.includes(opponentSlug)) {
@@ -468,6 +476,7 @@ function getExpectedSectionData(riftExpectation, rank, lane, sectionKey) {
         sampleNames: [],
         sampleSlugs: [],
         visibleNames: [],
+        dataDate: null,
       }
     );
   }
@@ -478,8 +487,17 @@ function getExpectedSectionData(riftExpectation, rank, lane, sectionKey) {
       sampleNames: [],
       sampleSlugs: [],
       visibleNames: [],
+      dataDate: null,
     }
   );
+}
+
+function getSiteSectionData(apiGuide, rank, lane, sectionKey) {
+  const rows = apiGuide?.riftgg?.[sectionKey] || [];
+  const row = rows.find((item) => item?.rank === rank && item?.lane === lane);
+  return {
+    dataDate: row?.dataDate || null,
+  };
 }
 
 function normalizeNames(values = []) {
@@ -497,7 +515,7 @@ function summarizeNames(values = [], limit = 5) {
   return names.length ? names.join(", ") : "нет";
 }
 
-function computeSectionComparison({ report, snapshot, expected }) {
+function computeSectionComparison({ report, snapshot, expected, siteSection }) {
   const siteVisibleCount = snapshot?.visibleEntryCount || 0;
   const siteTotalCount = snapshot?.totalCount || siteVisibleCount;
   const sourceTotalCount = expected.count || 0;
@@ -520,6 +538,12 @@ function computeSectionComparison({ report, snapshot, expected }) {
     report.key === "matchups"
       ? siteTotalCount === sourceTotalCount
       : siteVisibleCount === sourceVisibleCount;
+  const sameDate =
+    !siteSection?.dataDate ||
+    !expected?.dataDate ||
+    siteSection.dataDate === expected.dataDate;
+  const ok = countsMatch && namesOverlap;
+  const status = ok ? "match" : sameDate ? "same-date-mismatch" : "source-drift";
 
   return {
     sectionKey: report.key,
@@ -532,7 +556,11 @@ function computeSectionComparison({ report, snapshot, expected }) {
     sourceNames,
     siteSlugs,
     sourceSlugs,
-    ok: countsMatch && namesOverlap,
+    siteDataDate: siteSection?.dataDate || null,
+    sourceDataDate: expected?.dataDate || null,
+    sameDate,
+    ok,
+    status,
   };
 }
 
@@ -628,16 +656,19 @@ async function auditGuide({
         }
 
         const expected = getExpectedSectionData(riftExpectation, rank, lane, report.key);
+        const siteSection = getSiteSectionData(apiGuide, rank, lane, report.key);
         const snapshot = await getGuideSectionSnapshot(page, report.title);
-        comparisons.push({
+        const comparison = {
           rank,
           lane,
           ...computeSectionComparison({
             report,
             snapshot,
             expected,
+            siteSection,
           }),
-        });
+        };
+        comparisons.push(comparison);
 
         if (!snapshot.exists) {
           issues.push(createIssue("riftgg", "UI section is missing", {
@@ -700,13 +731,15 @@ async function auditGuide({
     }
 
     const comparisonMismatches = comparisons.filter((item) => !item.ok);
+    const hardMismatches = comparisonMismatches.filter((item) => item.status === "same-date-mismatch");
 
     return {
       slug,
-      ok: issues.length === 0 && comparisonMismatches.length === 0,
+      ok: issues.length === 0 && hardMismatches.length === 0,
       issues,
       comparisons,
       comparisonMismatches,
+      hardMismatches,
       checkedCombos: Array.from(checkedCombos),
       expectedWrfVariants: expectedWrfLabels.length,
     };
@@ -750,12 +783,14 @@ function printComparisonRows(result) {
           : summarizeNames(row.sourceNames);
 
       console.log(
-        `  ${row.sectionLabel}: сайт ${siteCountText} names=[${siteNamesText}]`,
+        `  ${row.sectionLabel}: сайт ${siteCountText} date=${row.siteDataDate || "n/a"} names=[${siteNamesText}]`,
       );
       console.log(
-        `  ${row.sectionLabel}: RiftGG ${sourceCountText} names=[${sourceNamesText}]`,
+        `  ${row.sectionLabel}: RiftGG ${sourceCountText} date=${row.sourceDataDate || "n/a"} names=[${sourceNamesText}]`,
       );
-      console.log(`  итог: ${row.ok ? "совпало" : "не совпало"}`);
+      console.log(
+        `  итог: ${row.ok ? "совпало" : row.status === "source-drift" ? "не совпало (source drift)" : "не совпало (same-date mismatch)"}`,
+      );
     }
   }
 }
@@ -771,7 +806,7 @@ function printResult(result) {
   }
 
   console.log(
-    `[guides-ui-audit] ${result.slug} -> failed | issues=${result.issues.length} mismatches=${result.comparisonMismatches?.length || 0} combos=${result.checkedCombos.length}`,
+    `[guides-ui-audit] ${result.slug} -> failed | issues=${result.issues.length} mismatches=${result.comparisonMismatches?.length || 0} hard=${result.hardMismatches?.length || 0} combos=${result.checkedCombos.length}`,
   );
 
   for (const issue of result.issues) {
@@ -785,7 +820,7 @@ function printResult(result) {
   for (const mismatch of result.comparisonMismatches || []) {
     const comboLabel = `${RIFT_RANK_LABEL[mismatch.rank] || mismatch.rank} / ${localizeGuideLane(mismatch.lane) || mismatch.lane}`;
     console.log(
-      `  - [compare] ${comboLabel} ${mismatch.sectionLabel} mismatch | siteVisible=${mismatch.siteVisibleCount} siteTotal=${mismatch.siteTotalCount} sourceVisible=${mismatch.sourceVisibleCount} sourceTotal=${mismatch.sourceTotalCount}`,
+      `  - [compare] ${comboLabel} ${mismatch.sectionLabel} ${mismatch.status} | siteDate=${mismatch.siteDataDate || "n/a"} sourceDate=${mismatch.sourceDataDate || "n/a"} siteVisible=${mismatch.siteVisibleCount} siteTotal=${mismatch.siteTotalCount} sourceVisible=${mismatch.sourceVisibleCount} sourceTotal=${mismatch.sourceTotalCount}`,
     );
   }
 }
