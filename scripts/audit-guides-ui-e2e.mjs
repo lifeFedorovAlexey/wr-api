@@ -27,11 +27,32 @@ const RIFT_BUILD_KIND = {
   spells: "spell",
 };
 
-const RIFT_BUILD_TITLE = {
-  coreItems: "Основные предметы",
-  runes: "Руны",
-  spells: "Заклинания",
-};
+const RIFT_SECTION_REPORTS = [
+  {
+    key: "matchups",
+    title: "Матчапы",
+    label: "матчапы",
+    expectedVisibleCount: (count) => count,
+  },
+  {
+    key: "coreItems",
+    title: "Основные предметы",
+    label: "предметы",
+    expectedVisibleCount: (count) => Math.min(count, 7),
+  },
+  {
+    key: "runes",
+    title: "Руны",
+    label: "руны",
+    expectedVisibleCount: (count) => Math.min(count, 7),
+  },
+  {
+    key: "spells",
+    title: "Заклинания",
+    label: "заклинания",
+    expectedVisibleCount: (count) => Math.min(count, 7),
+  },
+];
 
 const RIFT_RANK_LABEL = {
   diamond_plus: "Алмаз",
@@ -175,7 +196,7 @@ function variantHasBuilds(variant) {
   ].some((items) => Array.isArray(items) && items.length);
 }
 
-function buildRiftExpectationMap(normalized) {
+function buildRiftBuildExpectationMap(normalized) {
   const dictionaries = {
     item: new Map(),
     rune: new Map(),
@@ -213,6 +234,37 @@ function buildRiftExpectationMap(normalized) {
   return expectations;
 }
 
+function buildRiftMatchupExpectationMap(normalized) {
+  const expectations = new Map();
+
+  for (const row of normalized?.matchups || []) {
+    const key = `${row.rank}::${row.lane}::matchups`;
+    if (!expectations.has(key)) {
+      expectations.set(key, {
+        count: 0,
+        sampleNames: [],
+      });
+    }
+
+    const target = expectations.get(key);
+    target.count += 1;
+
+    if (target.sampleNames.length < 5) {
+      const rawName =
+        row?.rawPayload?.heroName ||
+        row?.rawPayload?.name ||
+        row?.opponentSlug ||
+        "";
+      const repairedName = repairGuideText(String(rawName).trim());
+      if (repairedName && !target.sampleNames.includes(repairedName)) {
+        target.sampleNames.push(repairedName);
+      }
+    }
+  }
+
+  return expectations;
+}
+
 async function fetchRiftExpectation(slug) {
   const sourceSlug = mapToRiotSlug(slug);
   const url = `https://www.riftgg.app/en/champions/${encodeURIComponent(sourceSlug)}/cn-stats`;
@@ -228,7 +280,10 @@ async function fetchRiftExpectation(slug) {
 
   return {
     url,
-    expectationMap: buildRiftExpectationMap(normalized),
+    expectationMaps: {
+      matchups: buildRiftMatchupExpectationMap(normalized),
+      builds: buildRiftBuildExpectationMap(normalized),
+    },
   };
 }
 
@@ -283,8 +338,21 @@ async function getGuideSectionSnapshot(page, title) {
     const labels = Array.from(section.querySelectorAll("h3"))
       .map((node) => node.textContent.trim())
       .filter(Boolean);
+    const visibleEntryCount = Array.from(section.querySelectorAll("*")).filter(
+      (node) => node.textContent.trim() === "Процент побед",
+    ).length;
+    const totalMatch = text.match(/Весь список \((\d+)\)/);
+    const totalCount = Number.parseInt(totalMatch?.[1] || "", 10);
+    const uniqueItemNames = Array.from(new Set(itemNames));
 
-    return { exists: true, text, labels, itemNames };
+    return {
+      exists: true,
+      text,
+      labels,
+      itemNames: uniqueItemNames,
+      visibleEntryCount,
+      totalCount: Number.isFinite(totalCount) ? totalCount : null,
+    };
   }, title);
 }
 
@@ -325,6 +393,65 @@ function createIssue(section, message, extra = {}) {
   return { section, message, ...extra };
 }
 
+function getExpectedSectionData(riftExpectation, rank, lane, sectionKey) {
+  if (sectionKey === "matchups") {
+    return (
+      riftExpectation.expectationMaps.matchups.get(`${rank}::${lane}::matchups`) || {
+        count: 0,
+        sampleNames: [],
+      }
+    );
+  }
+
+  return (
+    riftExpectation.expectationMaps.builds.get(`${rank}::${lane}::${sectionKey}`) || {
+      count: 0,
+      sampleNames: [],
+    }
+  );
+}
+
+function normalizeNames(values = []) {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => repairGuideText(String(value || "").trim()))
+        .filter(Boolean),
+    ),
+  );
+}
+
+function summarizeNames(values = [], limit = 5) {
+  const names = normalizeNames(values).slice(0, limit);
+  return names.length ? names.join(", ") : "нет";
+}
+
+function computeSectionComparison({ report, snapshot, expected }) {
+  const siteVisibleCount = snapshot?.visibleEntryCount || 0;
+  const siteTotalCount = snapshot?.totalCount || siteVisibleCount;
+  const sourceTotalCount = expected.count || 0;
+  const sourceVisibleCount = report.expectedVisibleCount(sourceTotalCount);
+  const siteNames = normalizeNames(snapshot?.itemNames || []);
+  const sourceNames = normalizeNames(expected.sampleNames || []);
+  const namesOverlap = !sourceNames.length || sourceNames.every((name) => siteNames.includes(name));
+  const countsMatch =
+    report.key === "matchups"
+      ? siteTotalCount === sourceTotalCount
+      : siteVisibleCount === sourceVisibleCount;
+
+  return {
+    sectionKey: report.key,
+    sectionLabel: report.label,
+    siteVisibleCount,
+    siteTotalCount,
+    sourceVisibleCount,
+    sourceTotalCount,
+    siteNames,
+    sourceNames,
+    ok: countsMatch && namesOverlap,
+  };
+}
+
 async function auditGuide({
   browser,
   uiOrigin,
@@ -332,6 +459,7 @@ async function auditGuide({
   slug,
 }) {
   const issues = [];
+  const comparisons = [];
   const page = await browser.newPage();
 
   try {
@@ -410,16 +538,22 @@ async function auditGuide({
         }
       }
 
-      for (const [buildType, title] of Object.entries(RIFT_BUILD_TITLE)) {
-        const expected = riftExpectation.expectationMap.get(`${rank}::${lane}::${buildType}`) || {
-          count: 0,
-          sampleNames: [],
-        };
-        const snapshot = await getGuideSectionSnapshot(page, title);
+      for (const report of RIFT_SECTION_REPORTS) {
+        const expected = getExpectedSectionData(riftExpectation, rank, lane, report.key);
+        const snapshot = await getGuideSectionSnapshot(page, report.title);
+        comparisons.push({
+          rank,
+          lane,
+          ...computeSectionComparison({
+            report,
+            snapshot,
+            expected,
+          }),
+        });
 
         if (!snapshot.exists) {
           issues.push(createIssue("riftgg", "UI section is missing", {
-            title,
+            title: report.title,
             rank,
             lane,
             expectedCount: expected.count,
@@ -431,7 +565,7 @@ async function auditGuide({
 
         if (expected.count > 0 && hasEmptyState) {
           issues.push(createIssue("riftgg", "UI shows empty state while source has entries", {
-            title,
+            title: report.title,
             rank,
             lane,
             expectedCount: expected.count,
@@ -447,7 +581,7 @@ async function auditGuide({
 
           if (!matchedName) {
             issues.push(createIssue("riftgg", "UI section does not show expected source items", {
-              title,
+              title: report.title,
               rank,
               lane,
               sampleNames: expected.sampleNames,
@@ -457,7 +591,7 @@ async function auditGuide({
 
         if (expected.count === 0 && !hasEmptyState && !snapshot.text.includes("Процент побед")) {
           issues.push(createIssue("riftgg", "UI section looks filled although source has no entries", {
-            title,
+            title: report.title,
             rank,
             lane,
           }));
@@ -469,6 +603,7 @@ async function auditGuide({
       slug,
       ok: issues.length === 0,
       issues,
+      comparisons,
       checkedCombos: Array.from(checkedCombos),
       expectedWrfVariants: expectedWrfLabels.length,
     };
@@ -477,7 +612,46 @@ async function auditGuide({
   }
 }
 
+function printComparisonRows(result) {
+  const grouped = new Map();
+
+  for (const row of result.comparisons || []) {
+    const key = `${row.rank}::${row.lane}`;
+    if (!grouped.has(key)) {
+      grouped.set(key, []);
+    }
+    grouped.get(key).push(row);
+  }
+
+  for (const [key, rows] of grouped) {
+    const [rank, lane] = key.split("::");
+    const comboLabel = `${RIFT_RANK_LABEL[rank] || rank} / ${localizeGuideLane(lane) || lane}`;
+    console.log(`[guides-ui-audit] ${result.slug} ${comboLabel}`);
+
+    for (const row of rows) {
+      const siteCountText =
+        row.sectionKey === "matchups"
+          ? `count=${row.siteTotalCount}`
+          : `visible=${row.siteVisibleCount}`;
+      const sourceCountText =
+        row.sectionKey === "matchups"
+          ? `count=${row.sourceTotalCount}`
+          : `total=${row.sourceTotalCount} visible=${row.sourceVisibleCount}`;
+
+      console.log(
+        `  ${row.sectionLabel}: сайт ${siteCountText} names=[${summarizeNames(row.siteNames)}]`,
+      );
+      console.log(
+        `  ${row.sectionLabel}: RiftGG ${sourceCountText} names=[${summarizeNames(row.sourceNames)}]`,
+      );
+      console.log(`  итог: ${row.ok ? "совпало" : "не совпало"}`);
+    }
+  }
+}
+
 function printResult(result) {
+  printComparisonRows(result);
+
   if (result.ok) {
     console.log(
       `[guides-ui-audit] ${result.slug} -> ok | combos=${result.checkedCombos.length} wrfVariants=${result.expectedWrfVariants}`,
