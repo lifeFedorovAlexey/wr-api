@@ -1,3 +1,4 @@
+/* global document */
 import puppeteer from "puppeteer";
 import { createRequire } from "node:module";
 
