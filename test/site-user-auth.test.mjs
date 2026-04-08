@@ -63,3 +63,14 @@ test("mergeSiteAndAdminRoles keeps user role and dedupes admin roles", async () 
   ]);
   assert.deepEqual(mergeSiteAndAdminRoles([]), ["user"]);
 });
+
+test("normalizeWildRiftHandle accepts riot ids with spaces and alphanumeric tag", async () => {
+  process.env.DATABASE_URL ||= "postgres://postgres:postgres@127.0.0.1:5432/wr_api";
+  const { normalizeWildRiftHandle } = await import("../lib/siteUserAuth.mjs");
+
+  assert.equal(normalizeWildRiftHandle("life on fire#7595"), "life on fire#7595");
+  assert.equal(normalizeWildRiftHandle("Life_On_Fire#EUW1"), "Life_On_Fire#EUW1");
+  assert.equal(normalizeWildRiftHandle("ab#12"), null);
+  assert.equal(normalizeWildRiftHandle("name#12"), null);
+  assert.equal(normalizeWildRiftHandle("name without tag"), null);
+});

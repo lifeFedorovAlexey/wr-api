@@ -31,8 +31,18 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, user: session.user });
   }
 
-  const user = await updateSiteUserProfile(session.user.id, req.body || {}, {
-    identities: session.user.identities,
-  });
-  return res.status(200).json({ ok: true, user });
+  try {
+    const user = await updateSiteUserProfile(session.user.id, req.body || {}, {
+      identities: session.user.identities,
+    });
+    return res.status(200).json({ ok: true, user });
+  } catch (error) {
+    const code = error instanceof Error ? error.message : "profile_update_failed";
+
+    if (code === "invalid_wild_rift_handle" || code === "invalid_peak_rank") {
+      return res.status(400).json({ error: code });
+    }
+
+    return res.status(500).json({ error: "profile_update_failed" });
+  }
 }
