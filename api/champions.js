@@ -3,6 +3,7 @@ import { db } from "../db/client.js";
 import { champions } from "../db/schema.js";
 import { setCors } from "./utils/cors.js";
 import { buildPublicIconPath } from "../lib/championIcons.mjs";
+import { resolveChampionLocalizedName } from "../lib/championLocalization.mjs";
 
 function setPublicCache(res, { sMaxAge = 3600, swr = 21600 } = {}) {
   // Общий CDN-кеш. Ключ кеша = полный URL (path + query).
@@ -43,10 +44,14 @@ export default async function handler(req, res) {
         .from(champions);
 
       const data = rows.map((ch) => {
-        const nameLocalizations = ch.nameLocalizations || {};
         const item = {
           slug: ch.slug,
-          name: nameLocalizations[lang] ?? nameLocalizations.en_us ?? ch.name ?? null,
+          name: resolveChampionLocalizedName({
+            slug: ch.slug,
+            lang,
+            nameLocalizations: ch.nameLocalizations || {},
+            fallbackName: ch.name,
+          }),
         };
 
         if (fields === "index") {
@@ -86,7 +91,12 @@ export default async function handler(req, res) {
       const difficultyLocalizations = ch.difficultyLocalizations || {};
 
       const localizedName =
-        nameLocalizations[lang] ?? nameLocalizations.en_us ?? null;
+        resolveChampionLocalizedName({
+          slug: ch.slug,
+          lang,
+          nameLocalizations,
+          fallbackName: ch.name,
+        });
 
       const localizedRoles =
         rolesLocalizations[lang] ?? rolesLocalizations.en_us ?? [];
