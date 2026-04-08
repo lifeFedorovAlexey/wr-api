@@ -1,8 +1,13 @@
 /* global document */
 import puppeteer from "puppeteer";
 import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
 
-import { parseRiftGgCnStatsHtml, normalizeRiftGgCnStats } from "../lib/riftggCnStats.mjs";
+import {
+  buildRiftGgGuidePayload,
+  parseRiftGgCnStatsHtml,
+  normalizeRiftGgCnStats,
+} from "../lib/riftggCnStats.mjs";
 
 const require = createRequire(import.meta.url);
 const { scrapeGuide } = require("../../ui/scripts/parse-wildriftfire-guide.js");
@@ -20,12 +25,6 @@ const DEFAULT_API_ORIGIN =
   process.env.STATS_API_ORIGIN ||
   process.env.API_PROXY_TARGET ||
   "http://127.0.0.1:3001";
-
-const RIFT_BUILD_KIND = {
-  coreItems: "item",
-  runes: "rune",
-  spells: "spell",
-};
 
 const RIFT_SECTION_REPORTS = [
   {
@@ -173,6 +172,24 @@ async function fetchGuideSlugs(apiOrigin) {
   );
 }
 
+async function resolveAuditSlugs(options = {}) {
+  if (Array.isArray(options.slugs) && options.slugs.length) {
+    return Array.from(
+      new Set(
+        options.slugs
+          .map((item) => String(item || "").trim())
+          .filter(Boolean),
+      ),
+    );
+  }
+
+  if (options.slug) {
+    return [options.slug];
+  }
+
+  return (await fetchGuideSlugs(options.apiOrigin)).slice(0, options.limit || undefined);
+}
+
 async function fetchGuidePayload(apiOrigin, slug) {
   return await fetchJson(`${apiOrigin}/api/guides/${encodeURIComponent(slug)}?lang=ru_ru`);
 }
@@ -202,97 +219,109 @@ function variantHasBuilds(variant) {
   ].some((items) => Array.isArray(items) && items.length);
 }
 
-function buildRiftBuildExpectationMap(normalized) {
-  const dictionaries = {
-    item: new Map(),
-    rune: new Map(),
-    spell: new Map(),
+function buildSourceRiftPayload(normalized) {
+  const dictionariesByKind = {
+    item: [],
+    rune: [],
+    spell: [],
   };
 
   for (const row of normalized?.dictionaries || []) {
-    if (!row?.slug || !dictionaries[row.kind]) continue;
-    dictionaries[row.kind].set(row.slug, row.name || row.slug);
+    if (!row?.slug || !dictionariesByKind[row.kind]) continue;
+    dictionariesByKind[row.kind].push(row);
   }
 
-  const expectations = new Map();
-
-  for (const row of normalized?.builds || []) {
-    const key = `${row.rank}::${row.lane}::${row.buildType}`;
-    if (!expectations.has(key)) {
-      expectations.set(key, {
-        count: 0,
-        sampleNames: [],
-        visibleNames: [],
-        dataDate: null,
-      });
-    }
-
-    const target = expectations.get(key);
-    target.count += 1;
-    if (!target.dataDate && row?.dataDate) {
-      target.dataDate = row.dataDate;
-    }
-
-    if (!target.sampleNames.length) {
-      const kind = RIFT_BUILD_KIND[row.buildType];
-      target.sampleNames = (row.entrySlugs || [])
-        .slice(0, 3)
-        .map((slug) => dictionaries[kind]?.get(slug) || slug)
-        .filter(Boolean);
-    }
-
-    if (target.visibleNames.length < RIFT_BUILD_VISIBLE_LIMIT * 3) {
-      const kind = RIFT_BUILD_KIND[row.buildType];
-      target.visibleNames.push(
-        ...(row.entrySlugs || [])
-          .map((slug) => dictionaries[kind]?.get(slug) || slug)
-          .filter(Boolean),
-      );
-    }
-  }
-
-  return expectations;
+  return (
+    buildRiftGgGuidePayload({
+      matchupRows: normalized?.matchups || [],
+      buildRows: normalized?.builds || [],
+      opponentRows: [],
+      itemRows: dictionariesByKind.item,
+      runeRows: dictionariesByKind.rune,
+      spellRows: dictionariesByKind.spell,
+    }) || null
+  );
 }
 
-function buildRiftMatchupExpectationMap(normalized) {
-  const expectations = new Map();
+function createBuildSignature(entrySlugs = []) {
+  return (Array.isArray(entrySlugs) ? entrySlugs : [])
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .join("|");
+}
 
-  for (const row of normalized?.matchups || []) {
-    const key = `${row.rank}::${row.lane}::matchups`;
-    if (!expectations.has(key)) {
-      expectations.set(key, {
-        count: 0,
-        sampleNames: [],
-        sampleSlugs: [],
-        dataDate: null,
-      });
-    }
+function createEmptyComparisonData() {
+  return {
+    dataDate: null,
+    totalCount: 0,
+    visibleCount: 0,
+    visibleNames: [],
+    slugs: [],
+    signatureList: [],
+    visibleSignatureList: [],
+  };
+}
 
-    const target = expectations.get(key);
-    target.count += 1;
-    if (!target.dataDate && row?.dataDate) {
-      target.dataDate = row.dataDate;
-    }
+function getRiftDictionaryBySection(riftgg, sectionKey) {
+  if (sectionKey === "coreItems") return riftgg?.dictionaries?.items || {};
+  if (sectionKey === "runes") return riftgg?.dictionaries?.runes || {};
+  if (sectionKey === "spells") return riftgg?.dictionaries?.spells || {};
+  return {};
+}
 
-    const opponentSlug = String(row?.opponentSlug || "").trim();
-    if (opponentSlug && target.sampleSlugs.length < 5 && !target.sampleSlugs.includes(opponentSlug)) {
-      target.sampleSlugs.push(opponentSlug);
-    }
+function extractRiftSectionComparisonData(riftgg, rank, lane, sectionKey) {
+  const block = (riftgg?.[sectionKey] || []).find(
+    (item) => item?.rank === rank && item?.lane === lane,
+  );
 
-    if (target.sampleNames.length < 5) {
-      const rawName =
-        row?.rawPayload?.heroName ||
-        row?.rawPayload?.name ||
-        row?.opponentSlug ||
-        "";
-      const repairedName = repairGuideText(String(rawName).trim());
-      if (repairedName && !target.sampleNames.includes(repairedName)) {
-        target.sampleNames.push(repairedName);
-      }
-    }
+  if (!block) {
+    return createEmptyComparisonData();
   }
 
-  return expectations;
+  if (sectionKey === "matchups") {
+    const entries = Array.isArray(block.entries) ? block.entries : [];
+    const slugs = entries
+      .map((entry) => String(entry?.opponentSlug || "").trim())
+      .filter(Boolean);
+    const visibleNames = entries
+      .map((entry) => repairGuideText(String(entry?.opponent?.name || entry?.opponentSlug || "").trim()))
+      .filter(Boolean);
+
+    return {
+      dataDate: block.dataDate || null,
+      totalCount: slugs.length,
+      visibleCount: slugs.length,
+      visibleNames,
+      slugs,
+      signatureList: slugs,
+      visibleSignatureList: slugs,
+    };
+  }
+
+  const dictionary = getRiftDictionaryBySection(riftgg, sectionKey);
+  const entries = Array.isArray(block.entries) ? block.entries : [];
+  const visibleEntries = entries.slice(0, RIFT_BUILD_VISIBLE_LIMIT);
+  const signatureList = entries
+    .map((entry) => createBuildSignature(entry?.entrySlugs || []))
+    .filter(Boolean);
+  const visibleSignatureList = visibleEntries
+    .map((entry) => createBuildSignature(entry?.entrySlugs || []))
+    .filter(Boolean);
+  const visibleNames = visibleEntries.flatMap((entry) =>
+    (Array.isArray(entry?.entrySlugs) ? entry.entrySlugs : [])
+      .map((slug) => dictionary?.[slug]?.name || slug)
+      .filter(Boolean),
+  );
+
+  return {
+    dataDate: block.dataDate || null,
+    totalCount: signatureList.length,
+    visibleCount: visibleSignatureList.length,
+    visibleNames,
+    slugs: [],
+    signatureList,
+    visibleSignatureList,
+  };
 }
 
 async function fetchRiftExpectation(slug) {
@@ -310,10 +339,7 @@ async function fetchRiftExpectation(slug) {
 
   return {
     url,
-    expectationMaps: {
-      matchups: buildRiftMatchupExpectationMap(normalized),
-      builds: buildRiftBuildExpectationMap(normalized),
-    },
+    riftgg: buildSourceRiftPayload(normalized),
   };
 }
 
@@ -468,38 +494,6 @@ function createIssue(section, message, extra = {}) {
   return { section, message, ...extra };
 }
 
-function getExpectedSectionData(riftExpectation, rank, lane, sectionKey) {
-  if (sectionKey === "matchups") {
-    return (
-      riftExpectation.expectationMaps.matchups.get(`${rank}::${lane}::matchups`) || {
-        count: 0,
-        sampleNames: [],
-        sampleSlugs: [],
-        visibleNames: [],
-        dataDate: null,
-      }
-    );
-  }
-
-  return (
-    riftExpectation.expectationMaps.builds.get(`${rank}::${lane}::${sectionKey}`) || {
-      count: 0,
-      sampleNames: [],
-      sampleSlugs: [],
-      visibleNames: [],
-      dataDate: null,
-    }
-  );
-}
-
-function getSiteSectionData(apiGuide, rank, lane, sectionKey) {
-  const rows = apiGuide?.riftgg?.[sectionKey] || [];
-  const row = rows.find((item) => item?.rank === rank && item?.lane === lane);
-  return {
-    dataDate: row?.dataDate || null,
-  };
-}
-
 function normalizeNames(values = []) {
   return Array.from(
     new Set(
@@ -532,28 +526,22 @@ function normalizeDateKey(value) {
 }
 
 function computeSectionComparison({ report, snapshot, expected, siteSection }) {
-  const siteVisibleCount = snapshot?.visibleEntryCount || 0;
-  const siteTotalCount = snapshot?.totalCount || siteVisibleCount;
-  const sourceTotalCount = expected.count || 0;
-  const sourceVisibleCount = report.expectedVisibleCount(sourceTotalCount);
-  const siteNames = normalizeNames(
-    report.key === "matchups" ? snapshot?.matchupNames || [] : snapshot?.itemNames || [],
-  );
-  const sourceNames = normalizeNames(
-    report.key === "matchups" ? expected.sampleNames || [] : expected.visibleNames || expected.sampleNames || [],
-  );
-  const siteSlugs = normalizeNames(snapshot?.linkedGuideSlugs || []);
-  const sourceSlugs = normalizeNames(expected.sampleSlugs || []);
+  const siteVisibleCount = snapshot?.visibleEntryCount || siteSection?.visibleCount || 0;
+  const siteTotalCount = siteSection?.totalCount ?? snapshot?.totalCount ?? siteVisibleCount;
+  const sourceTotalCount = expected?.totalCount || 0;
+  const sourceVisibleCount = expected?.visibleCount ?? report.expectedVisibleCount(sourceTotalCount);
+  const siteNames = normalizeNames(siteSection?.visibleNames || []);
+  const sourceNames = normalizeNames(expected?.visibleNames || []);
+  const siteSlugs = normalizeNames(siteSection?.slugs || []);
+  const sourceSlugs = normalizeNames(expected?.slugs || []);
+  const siteSignatures =
+    report.key === "matchups" ? siteSection?.signatureList || [] : siteSection?.visibleSignatureList || [];
+  const sourceSignatures =
+    report.key === "matchups" ? expected?.signatureList || [] : expected?.visibleSignatureList || [];
   const namesOverlap =
-    report.key === "matchups"
-      ? (!sourceSlugs.length || sourceSlugs.every((slug) => siteSlugs.includes(slug))) &&
-        (!sourceNames.length || sourceNames.some((name) => siteNames.includes(name)))
-      : sourceNames.length === siteNames.length &&
-        sourceNames.every((name, index) => siteNames[index] === name);
-  const countsMatch =
-    report.key === "matchups"
-      ? siteTotalCount === sourceTotalCount
-      : siteVisibleCount === sourceVisibleCount;
+    siteSignatures.length === sourceSignatures.length &&
+    sourceSignatures.every((value, index) => siteSignatures[index] === value);
+  const countsMatch = siteVisibleCount === sourceVisibleCount && siteTotalCount === sourceTotalCount;
   const siteDateKey = normalizeDateKey(siteSection?.dataDate);
   const sourceDateKey = normalizeDateKey(expected?.dataDate);
   const sameDate =
@@ -673,8 +661,8 @@ async function auditGuide({
           await expandMatchupsSection(page);
         }
 
-        const expected = getExpectedSectionData(riftExpectation, rank, lane, report.key);
-        const siteSection = getSiteSectionData(apiGuide, rank, lane, report.key);
+        const expected = extractRiftSectionComparisonData(riftExpectation.riftgg, rank, lane, report.key);
+        const siteSection = extractRiftSectionComparisonData(apiGuide?.riftgg, rank, lane, report.key);
         const snapshot = await getGuideSectionSnapshot(page, report.title);
         const comparison = {
           rank,
@@ -693,34 +681,35 @@ async function auditGuide({
             title: report.title,
             rank,
             lane,
-            expectedCount: expected.count,
+            expectedCount: expected.totalCount,
           }));
           continue;
         }
 
         const hasEmptyState = snapshot.text.includes("RiftGG пока не отдаёт этот блок");
 
-        if (expected.count > 0 && hasEmptyState) {
+        if (expected.totalCount > 0 && hasEmptyState) {
           issues.push(createIssue("riftgg", "UI shows empty state while source has entries", {
             title: report.title,
             rank,
             lane,
-            expectedCount: expected.count,
-            sampleNames: expected.sampleNames,
-            sampleSlugs: expected.sampleSlugs,
+            expectedCount: expected.totalCount,
+            visibleNames: expected.visibleNames,
+            sampleSlugs: expected.slugs,
           }));
           continue;
         }
 
         if (
-          expected.count > 0 &&
-          ((report.key === "matchups" && expected.sampleSlugs?.length) ||
-            (report.key !== "matchups" && (expected.visibleNames?.length || expected.sampleNames.length)))
+          expected.totalCount > 0 &&
+          ((report.key === "matchups" && expected.signatureList.length) ||
+            (report.key !== "matchups" && expected.visibleSignatureList.length))
         ) {
           const matchedName =
             report.key === "matchups"
-              ? expected.sampleSlugs.find((item) => snapshot.linkedGuideSlugs.includes(item))
-              : (expected.visibleNames || expected.sampleNames).find((name) =>
+              ? expected.signatureList.find((item) => siteSection.signatureList.includes(item))
+              : expected.visibleSignatureList.find((item) => siteSection.visibleSignatureList.includes(item)) ||
+                expected.visibleNames.find((name) =>
                   snapshot.text.includes(name) || snapshot.itemNames.includes(name),
                 );
 
@@ -729,16 +718,15 @@ async function auditGuide({
               title: report.title,
               rank,
               lane,
-              sampleNames: expected.sampleNames,
               visibleNames: expected.visibleNames,
-              sampleSlugs: expected.sampleSlugs,
+              sampleSlugs: expected.slugs,
               siteNames: snapshot.itemNames,
               siteSlugs: snapshot.linkedGuideSlugs,
             }));
           }
         }
 
-        if (expected.count === 0 && !hasEmptyState && !snapshot.text.includes("Процент побед")) {
+        if (expected.totalCount === 0 && !hasEmptyState && !snapshot.text.includes("Процент побед")) {
           issues.push(createIssue("riftgg", "UI section looks filled although source has no entries", {
             title: report.title,
             rank,
@@ -761,6 +749,73 @@ async function auditGuide({
   } finally {
     await page.close();
   }
+}
+
+async function runAudit(options = {}, callbacks = {}) {
+  const resolvedOptions = {
+    slug: null,
+    limit: null,
+    uiOrigin: DEFAULT_UI_ORIGIN,
+    apiOrigin: DEFAULT_API_ORIGIN,
+    headless: true,
+    ...options,
+  };
+  const startedAt = new Date().toISOString();
+  const slugs = await resolveAuditSlugs(resolvedOptions);
+
+  callbacks.onResolvedSlugs?.(slugs);
+
+  if (!slugs.length) {
+    throw new Error("No guide slugs resolved from local API");
+  }
+
+  const browser = await puppeteer.launch({
+    headless: resolvedOptions.headless,
+  });
+
+  const results = [];
+
+  try {
+    for (const slug of slugs) {
+      callbacks.onGuideStart?.(slug);
+
+      const result = await auditGuide({
+        browser,
+        uiOrigin: resolvedOptions.uiOrigin,
+        apiOrigin: resolvedOptions.apiOrigin,
+        slug,
+      });
+
+      results.push(result);
+      callbacks.onGuideResult?.(result, {
+        index: results.length - 1,
+        processedCount: results.length,
+        totalCount: slugs.length,
+      });
+    }
+  } finally {
+    await browser.close();
+  }
+
+  const failed = results.filter((result) => !result.ok);
+  const passed = results.length - failed.length;
+
+  return {
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    options: {
+      slug: resolvedOptions.slug || null,
+      limit: resolvedOptions.limit || null,
+      uiOrigin: resolvedOptions.uiOrigin,
+      apiOrigin: resolvedOptions.apiOrigin,
+      headless: Boolean(resolvedOptions.headless),
+    },
+    slugs,
+    total: results.length,
+    passed,
+    failed: failed.length,
+    results,
+  };
 }
 
 function printComparisonRows(result) {
@@ -847,50 +902,42 @@ async function main() {
     printHelp();
     return;
   }
-
-  const slugs = options.slug
-    ? [options.slug]
-    : (await fetchGuideSlugs(options.apiOrigin)).slice(0, options.limit || undefined);
-
-  if (!slugs.length) {
-    throw new Error("No guide slugs resolved from local API");
-  }
-
-  const browser = await puppeteer.launch({
-    headless: options.headless,
+  const run = await runAudit(options, {
+    onGuideStart(slug) {
+      console.log(`[guides-ui-audit] start ${slug}`);
+    },
+    onGuideResult(result) {
+      printResult(result);
+    },
   });
 
-  const results = [];
-
-  try {
-    for (const slug of slugs) {
-      console.log(`[guides-ui-audit] start ${slug}`);
-      const result = await auditGuide({
-        browser,
-        uiOrigin: options.uiOrigin,
-        apiOrigin: options.apiOrigin,
-        slug,
-      });
-      results.push(result);
-      printResult(result);
-    }
-  } finally {
-    await browser.close();
-  }
-
-  const failed = results.filter((result) => !result.ok);
-  const passed = results.length - failed.length;
-
   console.log(
-    `[guides-ui-audit] done -> total=${results.length} passed=${passed} failed=${failed.length}`,
+    `[guides-ui-audit] done -> total=${run.total} passed=${run.passed} failed=${run.failed}`,
   );
 
-  if (failed.length) {
+  if (run.failed) {
     process.exitCode = 1;
   }
 }
 
-main().catch((error) => {
-  console.error("[guides-ui-audit] fatal", error);
-  process.exitCode = 1;
-});
+const isMainModule =
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (isMainModule) {
+  main().catch((error) => {
+    console.error("[guides-ui-audit] fatal", error);
+    process.exitCode = 1;
+  });
+}
+
+export {
+  DEFAULT_API_ORIGIN,
+  DEFAULT_UI_ORIGIN,
+  RIFT_SECTION_REPORTS,
+  buildSourceRiftPayload,
+  computeSectionComparison,
+  extractRiftSectionComparisonData,
+  resolveAuditSlugs,
+  runAudit,
+};
