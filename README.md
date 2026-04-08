@@ -74,6 +74,10 @@ Required env:
 - `DATABASE_URL`
 - `ADMIN_SESSION_SECRET`
 
+Optional unfinished user-auth env:
+
+- `USER_SESSION_SECRET`
+
 Current wr-api repo secret inventory:
 
 - `ADMIN_BOOTSTRAP_EMAILS`
@@ -106,6 +110,7 @@ but they are not part of the current approved production secret inventory:
 - `NEWS_SYNC_SECRET`
 - `NEWS_SYNC_TOKEN`
 - `TELEGRAM_BOT_TOKEN`
+- `USER_SESSION_SECRET`
 
 Setup:
 
