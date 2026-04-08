@@ -3,9 +3,11 @@ import assert from "node:assert/strict";
 
 import {
   RIFT_SECTION_REPORTS,
+  buildRiftGgStatsUrl,
   buildSourceRiftPayload,
   computeSectionComparison,
   extractRiftSectionComparisonData,
+  getRiftGgSlugCandidates,
 } from "../scripts/audit-guides-ui-e2e.mjs";
 
 test("buildSourceRiftPayload keeps only the latest build snapshot and applies API sort order", () => {
@@ -131,4 +133,22 @@ test("computeSectionComparison accepts matchup entries that are rendered without
 
   assert.equal(comparison.ok, true);
   assert.equal(comparison.status, "match");
+});
+
+test("getRiftGgSlugCandidates keeps source-specific and fallback aliases for audit fetches", () => {
+  assert.deepEqual(
+    getRiftGgSlugCandidates("aurelion-sol"),
+    ["aurelion-sol", "aurelionsol"],
+  );
+  assert.deepEqual(
+    getRiftGgSlugCandidates("nunu"),
+    ["nunu-and-willump", "nunu-willump", "nunu"],
+  );
+});
+
+test("buildRiftGgStatsUrl builds the public RiftGG cn-stats url", () => {
+  assert.equal(
+    buildRiftGgStatsUrl("aurelionsol"),
+    "https://www.riftgg.app/en/champions/aurelionsol/cn-stats",
+  );
 });

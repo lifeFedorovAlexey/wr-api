@@ -8,6 +8,7 @@ import {
   parseRiftGgCnStatsHtml,
   normalizeRiftGgCnStats,
 } from "../lib/riftggCnStats.mjs";
+import { getSourceChampionSlugCandidates } from "../lib/championSlug.mjs";
 
 const require = createRequire(import.meta.url);
 const FALLBACK_LANE_LABELS = {
@@ -385,22 +386,48 @@ function extractRiftSectionComparisonData(riftgg, rank, lane, sectionKey) {
 }
 
 async function fetchRiftExpectation(slug) {
-  const sourceSlug = mapToRiotSlug(slug);
-  const url = `https://www.riftgg.app/en/champions/${encodeURIComponent(sourceSlug)}/cn-stats`;
-  const response = await fetch(url, { cache: "no-store" });
+  const candidates = getRiftGgSlugCandidates(slug);
+  const failures = [];
 
-  if (!response.ok) {
-    throw new Error(`RiftGG HTTP ${response.status} for ${url}`);
+  for (const sourceSlug of candidates) {
+    const url = buildRiftGgStatsUrl(sourceSlug);
+
+    try {
+      const response = await fetch(url, { cache: "no-store" });
+
+      if (!response.ok) {
+        failures.push(`HTTP ${response.status} for ${url}`);
+        continue;
+      }
+
+      const html = await response.text();
+      const parsed = parseRiftGgCnStatsHtml(html);
+      const normalized = normalizeRiftGgCnStats(slug, parsed);
+
+      return {
+        url,
+        riftgg: buildSourceRiftPayload(normalized),
+      };
+    } catch (error) {
+      failures.push(`${error?.message || error} for ${url}`);
+    }
   }
 
-  const html = await response.text();
-  const parsed = parseRiftGgCnStatsHtml(html);
-  const normalized = normalizeRiftGgCnStats(slug, parsed);
+  throw new Error(
+    `RiftGG fetch failed for ${slug}: ${failures.join("; ") || "no candidate URLs"}`,
+  );
+}
 
-  return {
-    url,
-    riftgg: buildSourceRiftPayload(normalized),
-  };
+function getRiftGgSlugCandidates(slug) {
+  return Array.from(new Set([
+    ...getSourceChampionSlugCandidates(slug, "riftgg"),
+    mapToRiotSlug(slug),
+    String(slug || "").trim().toLowerCase(),
+  ].filter(Boolean)));
+}
+
+function buildRiftGgStatsUrl(sourceSlug) {
+  return `https://www.riftgg.app/en/champions/${encodeURIComponent(String(sourceSlug || "").trim())}/cn-stats`;
 }
 
 async function listButtonLabels(page) {
@@ -995,9 +1022,11 @@ export {
   DEFAULT_API_ORIGIN,
   DEFAULT_UI_ORIGIN,
   RIFT_SECTION_REPORTS,
+  buildRiftGgStatsUrl,
   buildSourceRiftPayload,
   computeSectionComparison,
   extractRiftSectionComparisonData,
+  getRiftGgSlugCandidates,
   resolveAuditSlugs,
   runAudit,
 };
