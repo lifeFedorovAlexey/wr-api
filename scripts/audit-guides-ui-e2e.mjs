@@ -39,6 +39,21 @@ const RIFT_RANK_LABEL = {
   super_server: "Претендент",
 };
 
+const RIFT_RANK_ALIASES = {
+  diamond_plus: ["Алмаз", "Diamond+"],
+  master_plus: ["Мастер", "Master+"],
+  challenger: ["ГМ", "Challenger"],
+  super_server: ["Претендент", "Super Server"],
+};
+
+const RIFT_LANE_ALIASES = {
+  top: ["Барон", "Baron", "Solo", "Top"],
+  jungle: ["Лес", "Jungle"],
+  mid: ["Мид", "Mid"],
+  adc: ["Дракон", "Dragon", "ADC", "Duo"],
+  support: ["Саппорт", "Support"],
+};
+
 function parseArgs(argv = process.argv.slice(2)) {
   const options = {
     slug: null,
@@ -206,24 +221,35 @@ async function fetchRiftExpectation(slug) {
   };
 }
 
-async function clickButtonByText(page, label) {
-  const clicked = await page.evaluate((targetLabel) => {
-    const buttons = Array.from(document.querySelectorAll("button"));
-    const target = buttons.find((button) => button.innerText.trim() === targetLabel);
-    if (!target) return false;
-    target.click();
-    return true;
-  }, label);
+async function listButtonLabels(page) {
+  return await page.evaluate(() =>
+    Array.from(document.querySelectorAll("button"))
+      .map((button) => button.innerText.trim())
+      .filter(Boolean),
+  );
+}
 
-  if (!clicked) {
-    throw new Error(`Button not found: ${label}`);
-  }
+async function clickButtonByLabels(page, labels) {
+  const clicked = await page.evaluate((targetLabels) => {
+    const buttons = Array.from(document.querySelectorAll("button"));
+    const normalizedTargets = targetLabels
+      .map((value) => String(value || "").trim().toLowerCase())
+      .filter(Boolean);
+    const target = buttons.find((button) =>
+      normalizedTargets.includes(button.innerText.trim().toLowerCase()),
+    );
+    if (!target) return null;
+    target.click();
+    return target.innerText.trim();
+  }, labels);
 
   await page.waitForFunction(
     () => document.readyState === "complete",
     { timeout: 2000 },
   ).catch(() => {});
   await new Promise((resolve) => setTimeout(resolve, 120));
+
+  return clicked;
 }
 
 async function getGuideSectionSnapshot(page, title) {
@@ -329,13 +355,33 @@ async function auditGuide({
       const [rank, lane] = combo.split("::");
       const rankLabel = RIFT_RANK_LABEL[rank];
       const laneLabel = localizeGuideLane(lane);
+      const rankAliases = RIFT_RANK_ALIASES[rank] || [rankLabel].filter(Boolean);
+      const laneAliases = RIFT_LANE_ALIASES[lane] || [laneLabel].filter(Boolean);
 
       if (!rankLabel || !laneLabel) continue;
       if (checkedCombos.has(combo)) continue;
       checkedCombos.add(combo);
 
-      await clickButtonByText(page, rankLabel);
-      await clickButtonByText(page, laneLabel);
+      const clickedRank = await clickButtonByLabels(page, rankAliases);
+      if (!clickedRank) {
+        issues.push(createIssue("ui-tabs", "Rank tab is missing in UI", {
+          rank,
+          expectedLabels: rankAliases,
+          availableButtons: await listButtonLabels(page),
+        }));
+        continue;
+      }
+
+      const clickedLane = await clickButtonByLabels(page, laneAliases);
+      if (!clickedLane) {
+        issues.push(createIssue("ui-tabs", "Lane tab is missing in UI", {
+          rank,
+          lane,
+          expectedLabels: laneAliases,
+          availableButtons: await listButtonLabels(page),
+        }));
+        continue;
+      }
 
       for (const [buildType, title] of Object.entries(RIFT_BUILD_TITLE)) {
         const expected = riftExpectation.expectationMap.get(`${rank}::${lane}::${buildType}`) || {
