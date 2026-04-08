@@ -59,6 +59,33 @@ const DEFAULT_API_ORIGIN =
   process.env.API_PROXY_TARGET ||
   "http://127.0.0.1:3001";
 
+function shouldDisablePuppeteerSandbox() {
+  if (process.env.PUPPETEER_NO_SANDBOX === "0") {
+    return false;
+  }
+
+  if (process.env.PUPPETEER_NO_SANDBOX === "1") {
+    return true;
+  }
+
+  return process.platform === "linux"
+    && typeof process.getuid === "function"
+    && process.getuid() === 0;
+}
+
+function buildPuppeteerLaunchOptions(options = {}) {
+  const args = [];
+
+  if (shouldDisablePuppeteerSandbox()) {
+    args.push("--no-sandbox", "--disable-setuid-sandbox");
+  }
+
+  return {
+    headless: options.headless,
+    args,
+  };
+}
+
 const RIFT_SECTION_REPORTS = [
   {
     key: "matchups",
@@ -802,9 +829,9 @@ async function runAudit(options = {}, callbacks = {}) {
     throw new Error("No guide slugs resolved from local API");
   }
 
-  const browser = await puppeteer.launch({
-    headless: resolvedOptions.headless,
-  });
+  const browser = await puppeteer.launch(
+    buildPuppeteerLaunchOptions(resolvedOptions),
+  );
 
   const results = [];
 
