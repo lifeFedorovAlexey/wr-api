@@ -13,7 +13,7 @@ import {
   guideVariantSkillRows,
   guideVariants,
 } from "../db/schema.js";
-import { buildGuideImportRecord } from "../lib/guides.mjs";
+import { buildGuideImportRecord, shouldSkipGuideImport } from "../lib/guides.mjs";
 import { ensureAuthorized } from "./utils/adminAuth.js";
 import { AUTH_PROFILES } from "./utils/authProfiles.js";
 import { setCors } from "./utils/cors.js";
@@ -45,6 +45,27 @@ export default async function handler(req, res) {
   try {
     const record = buildGuideImportRecord(guide);
     const now = new Date();
+    const [existingSummary] = await db
+      .select({
+        contentHash: guideSummaries.contentHash,
+        updatedAt: guideSummaries.updatedAt,
+      })
+      .from(guideSummaries)
+      .where(eq(guideSummaries.slug, record.summary.slug));
+
+    if (shouldSkipGuideImport(existingSummary, record.summary)) {
+      setNoStore(res);
+      return res.status(200).json({
+        ok: true,
+        slug: record.summary.slug,
+        skipped: true,
+        reason: "same-content-hash",
+        updatedAt:
+          existingSummary?.updatedAt instanceof Date
+            ? existingSummary.updatedAt.toISOString()
+            : null,
+      });
+    }
 
     await db.transaction(async (tx) => {
       await tx

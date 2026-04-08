@@ -1,7 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { collectGuideEntityRefs, localizeRole, summarizeGuide } from "../lib/guides.mjs";
+import {
+  collectGuideEntityRefs,
+  localizeRole,
+  shouldSkipGuideImport,
+  summarizeGuide,
+} from "../lib/guides.mjs";
 import { buildGuideAssetKey, buildPublicGuideAssetPath } from "../lib/guideAssets.mjs";
 
 test("localizeRole normalizes common lane names", () => {
@@ -88,4 +93,24 @@ test("collectGuideEntityRefs keeps entity kinds so equal slugs do not collide", 
     { kind: "item", slug: "ignite" },
     { kind: "champion", slug: "lux" },
   ]);
+});
+
+test("shouldSkipGuideImport returns true only for matching non-empty content hashes", () => {
+  assert.equal(
+    shouldSkipGuideImport({ contentHash: "abc123" }, { contentHash: "abc123" }),
+    true,
+  );
+  assert.equal(
+    shouldSkipGuideImport({ contentHash: "abc123" }, { contentHash: "def456" }),
+    false,
+  );
+  assert.equal(
+    shouldSkipGuideImport({ contentHash: "" }, { contentHash: "abc123" }),
+    false,
+  );
+  assert.equal(
+    shouldSkipGuideImport({ contentHash: "abc123" }, { contentHash: "" }),
+    false,
+  );
+  assert.equal(shouldSkipGuideImport(null, { contentHash: "abc123" }), false);
 });
