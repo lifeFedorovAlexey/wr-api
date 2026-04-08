@@ -515,6 +515,22 @@ function summarizeNames(values = [], limit = 5) {
   return names.length ? names.join(", ") : "нет";
 }
 
+function normalizeDateKey(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const plainDateMatch = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (plainDateMatch) {
+    return plainDateMatch[1];
+  }
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) {
+    return raw;
+  }
+
+  return parsed.toISOString().slice(0, 10);
+}
+
 function computeSectionComparison({ report, snapshot, expected, siteSection }) {
   const siteVisibleCount = snapshot?.visibleEntryCount || 0;
   const siteTotalCount = snapshot?.totalCount || siteVisibleCount;
@@ -538,10 +554,12 @@ function computeSectionComparison({ report, snapshot, expected, siteSection }) {
     report.key === "matchups"
       ? siteTotalCount === sourceTotalCount
       : siteVisibleCount === sourceVisibleCount;
+  const siteDateKey = normalizeDateKey(siteSection?.dataDate);
+  const sourceDateKey = normalizeDateKey(expected?.dataDate);
   const sameDate =
-    !siteSection?.dataDate ||
-    !expected?.dataDate ||
-    siteSection.dataDate === expected.dataDate;
+    !siteDateKey ||
+    !sourceDateKey ||
+    siteDateKey === sourceDateKey;
   const ok = countsMatch && namesOverlap;
   const status = ok ? "match" : sameDate ? "same-date-mismatch" : "source-drift";
 
@@ -556,8 +574,8 @@ function computeSectionComparison({ report, snapshot, expected, siteSection }) {
     sourceNames,
     siteSlugs,
     sourceSlugs,
-    siteDataDate: siteSection?.dataDate || null,
-    sourceDataDate: expected?.dataDate || null,
+    siteDataDate: siteDateKey,
+    sourceDataDate: sourceDateKey,
     sameDate,
     ok,
     status,
@@ -731,15 +749,12 @@ async function auditGuide({
     }
 
     const comparisonMismatches = comparisons.filter((item) => !item.ok);
-    const hardMismatches = comparisonMismatches.filter((item) => item.status === "same-date-mismatch");
-
     return {
       slug,
-      ok: issues.length === 0 && hardMismatches.length === 0,
+      ok: issues.length === 0 && comparisonMismatches.length === 0,
       issues,
       comparisons,
       comparisonMismatches,
-      hardMismatches,
       checkedCombos: Array.from(checkedCombos),
       expectedWrfVariants: expectedWrfLabels.length,
     };
@@ -806,7 +821,7 @@ function printResult(result) {
   }
 
   console.log(
-    `[guides-ui-audit] ${result.slug} -> failed | issues=${result.issues.length} mismatches=${result.comparisonMismatches?.length || 0} hard=${result.hardMismatches?.length || 0} combos=${result.checkedCombos.length}`,
+    `[guides-ui-audit] ${result.slug} -> failed | issues=${result.issues.length} mismatches=${result.comparisonMismatches?.length || 0} combos=${result.checkedCombos.length}`,
   );
 
   for (const issue of result.issues) {
