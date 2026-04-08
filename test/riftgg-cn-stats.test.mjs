@@ -446,9 +446,22 @@ test("buildRiftGgGuidePayload keeps public item asset urls instead of raw donor 
         payload.dictionaries.items["imperial-mandate"].tooltipImageUrl,
         "https://s3.twcstorage.ru/bucket-name/assets/guide-item-imperial-mandate-tooltip.png",
       );
+
+      const imperialMandateImageUrl = new URL(
+        payload.dictionaries.items["imperial-mandate"].imageUrl,
+      );
+
       assert.equal(
-        payload.dictionaries.items["imperial-mandate"].imageUrl?.includes("wildriftfire.com"),
-        false,
+        imperialMandateImageUrl.hostname,
+        "s3.twcstorage.ru",
+      );
+      assert.notEqual(
+        imperialMandateImageUrl.hostname,
+        "www.wildriftfire.com",
+      );
+      assert.notEqual(
+        imperialMandateImageUrl.hostname,
+        "wildriftfire.com",
       );
     },
   );
