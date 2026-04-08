@@ -152,7 +152,17 @@ async function fetchGuidePayload(apiOrigin, slug) {
 
 function normalizeWrfVariantLabel(variant) {
   const laneLabel = localizeGuideLane(variant?.lane || variant?.title || "");
-  return repairGuideText(laneLabel || variant?.title || variant?.lane || "").trim();
+  const fallbackLabel = repairGuideText(variant?.title || variant?.lane || "").trim();
+
+  if (!laneLabel && /^build\s*\d+$/i.test(fallbackLabel)) {
+    return "";
+  }
+
+  if (!laneLabel && /^guide\s*\d+$/i.test(fallbackLabel)) {
+    return "";
+  }
+
+  return repairGuideText(laneLabel || fallbackLabel).trim();
 }
 
 function variantHasBuilds(variant) {
@@ -291,6 +301,19 @@ function collectUiCombos(apiGuide) {
   return Array.from(combos);
 }
 
+function collectUiLanesForRank(apiGuide, rank) {
+  const lanes = new Set();
+
+  for (const collectionKey of ["matchups", "coreItems", "runes", "spells"]) {
+    for (const row of apiGuide?.riftgg?.[collectionKey] || []) {
+      if (row?.rank !== rank || !row?.lane) continue;
+      lanes.add(row.lane);
+    }
+  }
+
+  return Array.from(lanes);
+}
+
 function collectExpectedWrfLabels(wrfGuide) {
   return (wrfGuide?.variants || [])
     .filter(variantHasBuilds)
@@ -358,6 +381,7 @@ async function auditGuide({
       const laneLabel = localizeGuideLane(lane);
       const rankAliases = RIFT_RANK_ALIASES[rank] || [rankLabel].filter(Boolean);
       const laneAliases = RIFT_LANE_ALIASES[lane] || [laneLabel].filter(Boolean);
+      const lanesForRank = collectUiLanesForRank(apiGuide, rank);
 
       if (!rankLabel || !laneLabel) continue;
       if (checkedCombos.has(combo)) continue;
@@ -375,13 +399,15 @@ async function auditGuide({
 
       const clickedLane = await clickButtonByLabels(page, laneAliases);
       if (!clickedLane) {
-        issues.push(createIssue("ui-tabs", "Lane tab is missing in UI", {
-          rank,
-          lane,
-          expectedLabels: laneAliases,
-          availableButtons: await listButtonLabels(page),
-        }));
-        continue;
+        if (!(lanesForRank.length === 1 && lanesForRank[0] === lane)) {
+          issues.push(createIssue("ui-tabs", "Lane tab is missing in UI", {
+            rank,
+            lane,
+            expectedLabels: laneAliases,
+            availableButtons: await listButtonLabels(page),
+          }));
+          continue;
+        }
       }
 
       for (const [buildType, title] of Object.entries(RIFT_BUILD_TITLE)) {
