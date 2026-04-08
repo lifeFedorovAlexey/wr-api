@@ -5,6 +5,10 @@ import { setCors } from "./utils/cors.js";
 
 import { desc } from "drizzle-orm";
 import { buildPublicIconPath } from "../lib/championIcons.mjs";
+import {
+  buildPublicChampionSlugSet,
+  filterChampionsForPublicPool,
+} from "../lib/championPublicPool.mjs";
 
 let cachedSnapshot = null;
 
@@ -94,6 +98,7 @@ function getSeriesDelta(values) {
 }
 
 function buildPreparedRowsBySlice({ championRows, historyItems }) {
+  const publicChampionSlugs = buildPublicChampionSlugSet(championRows);
   const championBySlug = {};
   for (const champion of championRows) {
     if (!champion?.slug) continue;
@@ -122,6 +127,7 @@ function buildPreparedRowsBySlice({ championRows, historyItems }) {
     }
 
     const latestRows = sliceItems
+      .filter((item) => publicChampionSlugs.has(item.slug))
       .filter((item) => String(item.date) === latestDate)
       .sort(
         (left, right) =>
@@ -244,7 +250,7 @@ export default async function handler(req, res) {
         })
         .from(championStatsHistory)
         .where(buildDateInFilter(championStatsHistory.date, recentDates)),
-      db.select().from(champions),
+      Promise.resolve(filterChampionsForPublicPool(await db.select().from(champions))),
     ]);
 
     const items = rows.map((row) => ({

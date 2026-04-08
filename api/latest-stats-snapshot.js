@@ -1,9 +1,13 @@
 import { db } from "../db/client.js";
-import { championStatsHistory } from "../db/schema.js";
+import { championStatsHistory, champions } from "../db/schema.js";
 import { buildDateInFilter } from "./utils/dateFilters.js";
 import { setCors } from "./utils/cors.js";
 
 import { desc, eq, sql } from "drizzle-orm";
+import {
+  buildPublicChampionSlugSet,
+  filterChampionsForPublicPool,
+} from "../lib/championPublicPool.mjs";
 
 const EXCLUDED_RANK_KEYS = new Set(["overall"]);
 const LOW_ELO_RANKS = new Set(["diamondPlus", "masterPlus"]);
@@ -204,7 +208,7 @@ export default async function handler(req, res) {
       strengthLevel: championStatsHistory.strengthLevel,
     };
 
-    const [latestRows, recentRows] = await Promise.all([
+    const [latestRows, recentRows, championRows] = await Promise.all([
       db
         .select(rowShape)
         .from(championStatsHistory)
@@ -215,10 +219,19 @@ export default async function handler(req, res) {
             .from(championStatsHistory)
             .where(buildDateInFilter(championStatsHistory.date, recentDates))
         : Promise.resolve([]),
+      db.select().from(champions),
     ]);
 
-    const items = mapHistoryRows(latestRows);
-    const recentItems = mapHistoryRows(recentRows);
+    const publicChampionSlugs = buildPublicChampionSlugSet(
+      filterChampionsForPublicPool(championRows),
+    );
+
+    const items = mapHistoryRows(
+      latestRows.filter((row) => publicChampionSlugs.has(row.slug)),
+    );
+    const recentItems = mapHistoryRows(
+      recentRows.filter((row) => publicChampionSlugs.has(row.slug)),
+    );
     const picksBansMonthly = buildMonthlyPicksBans({
       historyItems: recentItems,
       dates: recentDates,

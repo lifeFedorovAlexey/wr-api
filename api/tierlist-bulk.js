@@ -2,6 +2,10 @@ import { db } from "../db/client.js";
 import { championStatsHistory, champions } from "../db/schema.js";
 import { setCors } from "./utils/cors.js";
 import { buildPublicIconPath } from "../lib/championIcons.mjs";
+import {
+  buildPublicChampionSlugSet,
+  filterChampionsForPublicPool,
+} from "../lib/championPublicPool.mjs";
 import { desc, eq, sql } from "drizzle-orm";
 
 function setPublicCache(res, { sMaxAge = 300, swr = 1800 } = {}) {
@@ -85,7 +89,10 @@ export default async function handler(req, res) {
       .where(eq(championStatsHistory.date, sql`${latestDate}::date`));
 
     // 3) Чемпионы
-    const championsRows = await db.select().from(champions);
+    const championsRows = filterChampionsForPublicPool(
+      await db.select().from(champions)
+    );
+    const publicChampionSlugs = buildPublicChampionSlugSet(championsRows);
 
     const champBySlug = {};
     for (const ch of championsRows) {
@@ -113,6 +120,7 @@ export default async function handler(req, res) {
       const rank = row.rank;
       const lane = row.lane;
       if (!slug || !rank || !lane) continue;
+      if (!publicChampionSlugs.has(slug)) continue;
 
       const bucket = ensureBucket(rank, lane);
 

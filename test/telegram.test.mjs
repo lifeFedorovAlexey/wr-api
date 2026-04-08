@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 
 import {
+  buildTelegramAuthProfileFromInitData,
   extractTelegramUser,
   extractTelegramUserId,
   verifyTelegramInitData,
@@ -64,5 +65,30 @@ test("verifyTelegramInitData rejects tampered payload", () => {
   assert.deepEqual(verifyTelegramInitData(tampered, botToken), {
     ok: false,
     reason: "bad_hash",
+  });
+});
+
+test("buildTelegramAuthProfileFromInitData maps a valid Telegram webapp user", () => {
+  const initData = buildInitData(
+    {
+      auth_date: "1710000000",
+      user: JSON.stringify({
+        id: 123456789,
+        username: "life",
+        first_name: "Life",
+        last_name: "Fedorov",
+        photo_url: "https://t.me/i/userpic/320/life.jpg",
+      }),
+    },
+    "12345:test-token",
+  );
+
+  assert.deepEqual(buildTelegramAuthProfileFromInitData(initData), {
+    provider: "telegram",
+    subject: "123456789",
+    email: "",
+    name: "Life Fedorov",
+    username: "life",
+    avatarUrl: "https://t.me/i/userpic/320/life.jpg",
   });
 });

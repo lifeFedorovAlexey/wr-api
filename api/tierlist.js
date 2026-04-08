@@ -3,6 +3,10 @@ import { db } from "../db/client.js";
 import { championStatsHistory, champions } from "../db/schema.js";
 import { setCors } from "./utils/cors.js";
 import { buildPublicIconPath } from "../lib/championIcons.mjs";
+import {
+  buildPublicChampionSlugSet,
+  filterChampionsForPublicPool,
+} from "../lib/championPublicPool.mjs";
 
 import { and, desc, eq, sql } from "drizzle-orm";
 
@@ -127,7 +131,10 @@ export default async function handler(req, res) {
       );
 
     // 3) Чемпионы (маленькая таблица, можно целиком)
-    const championsRows = await db.select().from(champions);
+    const championsRows = filterChampionsForPublicPool(
+      await db.select().from(champions)
+    );
+    const publicChampionSlugs = buildPublicChampionSlugSet(championsRows);
 
     const champBySlug = {};
     for (const ch of championsRows) {
@@ -148,6 +155,7 @@ export default async function handler(req, res) {
     for (const row of historyRows) {
       const slug = row.slug;
       if (!slug) continue;
+      if (!publicChampionSlugs.has(slug)) continue;
 
       const tier = strengthToTier(row.strengthLevel);
       const ch = champBySlug[slug];

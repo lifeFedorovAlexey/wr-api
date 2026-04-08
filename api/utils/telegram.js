@@ -55,3 +55,21 @@ export function extractTelegramUserId(initData) {
   const id = user?.id;
   return typeof id === "number" ? id : null;
 }
+
+export function buildTelegramAuthProfileFromInitData(initData) {
+  const user = extractTelegramUser(initData);
+  const id = user?.id;
+
+  if (!Number.isInteger(id) || id <= 0) {
+    return null;
+  }
+
+  return {
+    provider: "telegram",
+    subject: String(id),
+    email: "",
+    name: [user?.first_name, user?.last_name].filter(Boolean).join(" ").trim(),
+    username: String(user?.username || ""),
+    avatarUrl: String(user?.photo_url || ""),
+  };
+}

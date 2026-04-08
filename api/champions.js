@@ -4,6 +4,7 @@ import { champions } from "../db/schema.js";
 import { setCors } from "./utils/cors.js";
 import { buildPublicIconPath } from "../lib/championIcons.mjs";
 import { resolveChampionLocalizedName } from "../lib/championLocalization.mjs";
+import { filterChampionsForPublicPool } from "../lib/championPublicPool.mjs";
 
 function setPublicCache(res, { sMaxAge = 3600, swr = 21600 } = {}) {
   // Общий CDN-кеш. Ключ кеша = полный URL (path + query).
@@ -43,7 +44,7 @@ export default async function handler(req, res) {
         })
         .from(champions);
 
-      const data = rows.map((ch) => {
+      const data = filterChampionsForPublicPool(rows).map((ch) => {
         const item = {
           slug: ch.slug,
           name: resolveChampionLocalizedName({
@@ -85,7 +86,7 @@ export default async function handler(req, res) {
       })
       .from(champions);
 
-    const data = rows.map((ch) => {
+    const data = filterChampionsForPublicPool(rows).map((ch) => {
       const nameLocalizations = ch.nameLocalizations || {};
       const rolesLocalizations = ch.rolesLocalizations || {};
       const difficultyLocalizations = ch.difficultyLocalizations || {};
