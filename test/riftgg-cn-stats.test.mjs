@@ -302,6 +302,23 @@ test("buildRiftGgGuidePayload keeps only the latest dataDate per rank and lane",
   assert.deepEqual(payload.coreItems[0].entries[0].entrySlugs, ["trinity-force"]);
 });
 
+test("buildRiftGgGuidePayload keeps latest build rows per rank, lane and build type", () => {
+  const payload = buildRiftGgGuidePayload({
+    matchupRows: [],
+    buildRows: [
+      { rank: "diamond_plus", lane: "top", dataDate: "2026-03-31", buildType: "coreItems", entrySlugs: ["blade-of-the-ruined-king"], winRate: 58.7, pickRate: 7.8, winRateRank: 1, pickRateRank: 2 },
+      { rank: "diamond_plus", lane: "top", dataDate: "2026-04-05", buildType: "runes", entrySlugs: ["lethal-tempo"], winRate: 55.1, pickRate: 21.2, winRateRank: 1, pickRateRank: 1 },
+      { rank: "diamond_plus", lane: "top", dataDate: "2026-04-05", buildType: "spells", entrySlugs: ["flash", "barrier"], winRate: 54.2, pickRate: 18.4, winRateRank: 1, pickRateRank: 1 },
+    ],
+  });
+
+  assert.equal(payload.coreItems.length, 1);
+  assert.equal(payload.runes.length, 1);
+  assert.equal(payload.spells.length, 1);
+  assert.equal(payload.coreItems[0].dataDate, "2026-03-31");
+  assert.deepEqual(payload.coreItems[0].entries[0].entrySlugs, ["blade-of-the-ruined-king"]);
+});
+
 test("buildRiftGgGuidePayload ignores invalid rank and lane rows", () => {
   const payload = buildRiftGgGuidePayload({
     matchupRows: [
