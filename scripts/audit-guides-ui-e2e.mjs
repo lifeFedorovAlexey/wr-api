@@ -243,11 +243,17 @@ function buildRiftMatchupExpectationMap(normalized) {
       expectations.set(key, {
         count: 0,
         sampleNames: [],
+        sampleSlugs: [],
       });
     }
 
     const target = expectations.get(key);
     target.count += 1;
+
+    const opponentSlug = String(row?.opponentSlug || "").trim();
+    if (opponentSlug && target.sampleSlugs.length < 5 && !target.sampleSlugs.includes(opponentSlug)) {
+      target.sampleSlugs.push(opponentSlug);
+    }
 
     if (target.sampleNames.length < 5) {
       const rawName =
@@ -335,6 +341,13 @@ async function getGuideSectionSnapshot(page, title) {
       .map((img) => img.getAttribute("alt") || "")
       .map((value) => value.trim())
       .filter(Boolean);
+    const linkedGuideSlugs = Array.from(section.querySelectorAll("a[href]"))
+      .map((link) => link.getAttribute("href") || "")
+      .map((href) => {
+        const match = href.match(/\/guides\/([^/?#]+)/i);
+        return match?.[1] || "";
+      })
+      .filter(Boolean);
     const labels = Array.from(section.querySelectorAll("h3"))
       .map((node) => node.textContent.trim())
       .filter(Boolean);
@@ -350,6 +363,7 @@ async function getGuideSectionSnapshot(page, title) {
       text,
       labels,
       itemNames: uniqueItemNames,
+      linkedGuideSlugs: Array.from(new Set(linkedGuideSlugs)),
       visibleEntryCount,
       totalCount: Number.isFinite(totalCount) ? totalCount : null,
     };
@@ -399,6 +413,7 @@ function getExpectedSectionData(riftExpectation, rank, lane, sectionKey) {
       riftExpectation.expectationMaps.matchups.get(`${rank}::${lane}::matchups`) || {
         count: 0,
         sampleNames: [],
+        sampleSlugs: [],
       }
     );
   }
@@ -407,6 +422,7 @@ function getExpectedSectionData(riftExpectation, rank, lane, sectionKey) {
     riftExpectation.expectationMaps.builds.get(`${rank}::${lane}::${sectionKey}`) || {
       count: 0,
       sampleNames: [],
+      sampleSlugs: [],
     }
   );
 }
@@ -433,7 +449,12 @@ function computeSectionComparison({ report, snapshot, expected }) {
   const sourceVisibleCount = report.expectedVisibleCount(sourceTotalCount);
   const siteNames = normalizeNames(snapshot?.itemNames || []);
   const sourceNames = normalizeNames(expected.sampleNames || []);
-  const namesOverlap = !sourceNames.length || sourceNames.every((name) => siteNames.includes(name));
+  const siteSlugs = normalizeNames(snapshot?.linkedGuideSlugs || []);
+  const sourceSlugs = normalizeNames(expected.sampleSlugs || []);
+  const namesOverlap =
+    report.key === "matchups"
+      ? !sourceSlugs.length || sourceSlugs.every((slug) => siteSlugs.includes(slug))
+      : !sourceNames.length || sourceNames.every((name) => siteNames.includes(name));
   const countsMatch =
     report.key === "matchups"
       ? siteTotalCount === sourceTotalCount
@@ -448,6 +469,8 @@ function computeSectionComparison({ report, snapshot, expected }) {
     sourceTotalCount,
     siteNames,
     sourceNames,
+    siteSlugs,
+    sourceSlugs,
     ok: countsMatch && namesOverlap,
   };
 }
@@ -570,14 +593,22 @@ async function auditGuide({
             lane,
             expectedCount: expected.count,
             sampleNames: expected.sampleNames,
+            sampleSlugs: expected.sampleSlugs,
           }));
           continue;
         }
 
-        if (expected.count > 0 && expected.sampleNames.length) {
-          const matchedName = expected.sampleNames.find((name) =>
-            snapshot.text.includes(name) || snapshot.itemNames.includes(name),
-          );
+        if (
+          expected.count > 0 &&
+          ((report.key === "matchups" && expected.sampleSlugs?.length) ||
+            (report.key !== "matchups" && expected.sampleNames.length))
+        ) {
+          const matchedName =
+            report.key === "matchups"
+              ? expected.sampleSlugs.find((item) => snapshot.linkedGuideSlugs.includes(item))
+              : expected.sampleNames.find((name) =>
+                  snapshot.text.includes(name) || snapshot.itemNames.includes(name),
+                );
 
           if (!matchedName) {
             issues.push(createIssue("riftgg", "UI section does not show expected source items", {
@@ -585,6 +616,9 @@ async function auditGuide({
               rank,
               lane,
               sampleNames: expected.sampleNames,
+              sampleSlugs: expected.sampleSlugs,
+              siteNames: snapshot.itemNames,
+              siteSlugs: snapshot.linkedGuideSlugs,
             }));
           }
         }
@@ -631,18 +665,26 @@ function printComparisonRows(result) {
     for (const row of rows) {
       const siteCountText =
         row.sectionKey === "matchups"
-          ? `count=${row.siteTotalCount}`
+          ? `total=${row.siteTotalCount} visible=${row.siteVisibleCount}`
           : `visible=${row.siteVisibleCount}`;
       const sourceCountText =
         row.sectionKey === "matchups"
-          ? `count=${row.sourceTotalCount}`
+          ? `total=${row.sourceTotalCount} visible=${row.sourceVisibleCount}`
           : `total=${row.sourceTotalCount} visible=${row.sourceVisibleCount}`;
+      const siteNamesText =
+        row.sectionKey === "matchups"
+          ? summarizeNames(row.siteSlugs.length ? row.siteSlugs : row.siteNames)
+          : summarizeNames(row.siteNames);
+      const sourceNamesText =
+        row.sectionKey === "matchups"
+          ? summarizeNames(row.sourceSlugs.length ? row.sourceSlugs : row.sourceNames)
+          : summarizeNames(row.sourceNames);
 
       console.log(
-        `  ${row.sectionLabel}: сайт ${siteCountText} names=[${summarizeNames(row.siteNames)}]`,
+        `  ${row.sectionLabel}: сайт ${siteCountText} names=[${siteNamesText}]`,
       );
       console.log(
-        `  ${row.sectionLabel}: RiftGG ${sourceCountText} names=[${summarizeNames(row.sourceNames)}]`,
+        `  ${row.sectionLabel}: RiftGG ${sourceCountText} names=[${sourceNamesText}]`,
       );
       console.log(`  итог: ${row.ok ? "совпало" : "не совпало"}`);
     }
