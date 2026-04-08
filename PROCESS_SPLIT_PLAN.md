@@ -57,8 +57,6 @@
 - `GET /api/latest-stats-snapshot`
 - `GET /api/winrates-snapshot`
 - `GET /api/updated-at`
-- `GET /api/news`
-- `GET /api/news/:id`
 - `GET /icons/:slug`
 - `GET /assets/:key`
 - `GET /hero-media/:slug.mp4`
@@ -120,7 +118,6 @@
 HTTP import endpoints как write surface:
 
 - `POST /api/guides/import`
-- `POST /api/news/import`
 - `POST /api/cron-import-champions`
 
 Целевой статус:
@@ -130,7 +127,7 @@ HTTP import endpoints как write surface:
 
 Рекомендуемый итог:
 
-- `guides` и `news` sync должны уйти от публично доступных write endpoints к internal execution path
+- `guides` sync должен уйти от публично доступных write endpoints к internal execution path
 
 ## PM2 целевая схема
 

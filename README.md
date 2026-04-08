@@ -35,9 +35,6 @@ npm run setup:news
 - `GET /api/guides`
 - `GET /api/guides/:slug`
 - `POST /api/guides/import`
-- `GET /api/news`
-- `GET /api/news/:id`
-- `POST /api/news/import`
 - `GET /api/health`
 
 Static asset endpoints served by the API:
@@ -127,7 +124,7 @@ Where to get values:
 3. Run `npm run test`
 4. Confirm `.env` still contains the expected `DATABASE_URL`, S3 settings, `ASSET_PUBLIC_MODE=s3`, and `GUIDES_SYNC_SECRET`
 5. Verify the service responds on `http://127.0.0.1:3001/api/health`
-6. Check `GET /api/guides` and `GET /api/news`
+6. Check `GET /api/guides`
 7. Push the release branch as `release/x.y.z`
 8. Push the stable tag as `vx.y.z`
 
