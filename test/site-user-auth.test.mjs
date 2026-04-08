@@ -51,3 +51,15 @@ test("user exchange envelope round-trips only with USER_SESSION_SECRET", async (
   assert.equal(verified?.profile?.provider, "vk");
   assert.equal(rejectedWithAdminOnly, null);
 });
+
+test("mergeSiteAndAdminRoles keeps user role and dedupes admin roles", async () => {
+  process.env.DATABASE_URL ||= "postgres://postgres:postgres@127.0.0.1:5432/wr_api";
+  const { mergeSiteAndAdminRoles } = await import("../lib/siteUserAuth.mjs");
+
+  assert.deepEqual(mergeSiteAndAdminRoles(["admin", "owner", "admin"]), [
+    "user",
+    "admin",
+    "owner",
+  ]);
+  assert.deepEqual(mergeSiteAndAdminRoles([]), ["user"]);
+});
