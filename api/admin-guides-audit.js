@@ -1,6 +1,7 @@
 import { getAdminSessionFromRequest, userHasAnyRole } from "../lib/adminAuth.mjs";
 import {
   buildGuidesAuditReport,
+  clearGuidesAuditStore,
   createGuidesAuditRun,
   listGuidesAuditRuns,
   readGuidesAuditReport,
@@ -167,6 +168,30 @@ export default async function handler(req, res) {
       runs,
       report,
       selectedRunId: selectedRunId || null,
+      operator: {
+        id: session.user.id,
+        roles: session.user.roles || [],
+      },
+    });
+  }
+
+  if (req.method === "DELETE") {
+    if (activeRun) {
+      return res.status(409).json({
+        error: "audit_already_running",
+        activeRun,
+      });
+    }
+
+    await clearGuidesAuditStore();
+
+    return res.status(200).json({
+      ok: true,
+      running: false,
+      activeRun: null,
+      runs: [],
+      report: null,
+      selectedRunId: null,
       operator: {
         id: session.user.id,
         roles: session.user.roles || [],
