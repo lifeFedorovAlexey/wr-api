@@ -16,10 +16,7 @@ for (const origin of extraOrigins) {
 export function setCors(req, res) {
   const origin = req.headers.origin;
 
-  // TG WebView часто не присылает origin вообще
-  if (!origin || origin === "null") {
-    res.setHeader("Access-Control-Allow-Origin", "*");
-  } else if (ALLOWED_ORIGINS.has(origin)) {
+  if (origin && origin !== "null" && ALLOWED_ORIGINS.has(origin)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
 
     const prevVary = res.getHeader("Vary");
