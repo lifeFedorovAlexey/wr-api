@@ -13,6 +13,8 @@ test("localizeRole normalizes common lane names", () => {
   assert.equal(localizeRole("Support Lane"), "Саппорт");
   assert.equal(localizeRole("Mid"), "Мид");
   assert.equal(localizeRole("Jungle"), "Лес");
+  assert.equal(localizeRole("ADC"), "Дракон");
+  assert.equal(localizeRole("Tank"), "");
 });
 
 test("summarizeGuide builds lightweight summary for list endpoint", () => {
@@ -57,6 +59,25 @@ test("summarizeGuide builds lightweight summary for list endpoint", () => {
   assert.equal(summary.recommendedRole, "Саппорт");
   assert.deepEqual(summary.roles, ["Саппорт", "Мид"]);
   assert.equal(summary.buildCount, 2);
+});
+
+test("summarizeGuide keeps lane metadata separate from official roles", () => {
+  const summary = summarizeGuide({
+    champion: {
+      slug: "shen",
+      name: "Shen",
+    },
+    metadata: {
+      recommendedRole: "Top Lane",
+    },
+    official: {
+      roles: ["Tank", "Support"],
+    },
+    variants: [],
+  });
+
+  assert.equal(summary.recommendedRole, "Барон");
+  assert.deepEqual(summary.roles, ["Барон"]);
 });
 
 test("guide asset helpers build stable proxied paths", () => {
