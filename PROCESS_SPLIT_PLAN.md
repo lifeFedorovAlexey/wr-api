@@ -2,6 +2,12 @@
 
 Этот документ фиксирует целевую схему разделения `wr-api` после стабилизации guide-domain.
 
+Текущий статус на `2026-04-08`:
+
+- кодовое разделение на `server-public.mjs`, `server-auth.mjs` и `server-gateway.mjs` уже реализовано
+- deploy workflow уже поднимает три PM2 app
+- `server.mjs` сохранён как local fallback/compatibility monolith до полного отказа от старого режима
+
 Цель шага:
 
 - уменьшить blast radius одного live-процесса

@@ -7,6 +7,9 @@
   "scripts": {
     "start": "node ./server.mjs",
     "dev": "node --watch ./server.mjs",
+    "start:public": "node ./server-public.mjs",
+    "start:auth": "node ./server-auth.mjs",
+    "start:gateway": "node ./server-gateway.mjs",
     "lint": "eslint .",
     "dup:check": "jscpd --config .jscpd.json",
     "audit:prod": "npm audit --omit=dev",

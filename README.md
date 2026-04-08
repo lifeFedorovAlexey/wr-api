@@ -13,6 +13,9 @@ Public Wild Rift API used by `wildriftallstats.ru`.
 ```bash
 npm run dev
 npm run start
+npm run start:public
+npm run start:auth
+npm run start:gateway
 npm run test
 npm run setup:admin
 npm run import:champions
@@ -134,8 +137,21 @@ Deploys to Timeweb run from GitHub Actions on pushes to `main`.
 
 - `.github/workflows/deploy-timeweb.yml` builds a fresh release in `/var/www/wr-api/releases/<timestamp>`
 - schema setup runs before the new release is started
-- a canary instance is checked on `127.0.0.1:3101`
-- after a healthy canary the workflow replaces the live PM2 process on `127.0.0.1:3001`
+- canary instances are checked on:
+  - `127.0.0.1:3101` for the gateway
+  - `127.0.0.1:3102` for `wr-api-public`
+  - `127.0.0.1:3103` for `wr-api-auth`
+- after healthy canaries the workflow replaces three live PM2 apps:
+  - `wr-api` on `127.0.0.1:3001`
+  - `wr-api-public` on `127.0.0.1:3002`
+  - `wr-api-auth` on `127.0.0.1:3003`
+
+## Runtime topology
+
+- `server.mjs` remains the compatibility monolith for local fallback
+- `server-public.mjs` serves public read API and runtime assets
+- `server-auth.mjs` serves admin/user session boundaries
+- `server-gateway.mjs` keeps one external port and proxies requests to internal `public` and `auth` apps
 
 ## Scheduled jobs
 

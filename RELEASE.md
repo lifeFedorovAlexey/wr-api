@@ -21,6 +21,9 @@
 1. Push the release branch
 2. Validate the branch state
 3. Merge to `main`
-4. Let the deploy workflow build a fresh release, run schema setup, and pass the canary health check on port `3101`
-5. Confirm the live service is healthy on `http://127.0.0.1:3001/api/health`
+4. Let the deploy workflow build a fresh release, run schema setup, and pass canary health checks on `3101`, `3102`, and `3103`
+5. Confirm the live gateway and internal apps are healthy on:
+   - `http://127.0.0.1:3001/api/health`
+   - `http://127.0.0.1:3002/api/health`
+   - `http://127.0.0.1:3003/api/health`
 

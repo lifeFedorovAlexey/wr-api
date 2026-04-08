@@ -87,10 +87,18 @@ jobs:
             REPO_DIR="${APP_ROOT}/repo"
             RELEASE_ID="$(date +%Y%m%d%H%M%S)"
             RELEASE_DIR="${RELEASES_DIR}/${RELEASE_ID}"
-            CANARY_NAME="wr-api-canary-${RELEASE_ID}"
-            PM2_APP_NAME="wr-api"
-            APP_PORT="3001"
-            CANARY_PORT="3101"
+            PUBLIC_CANARY_NAME="wr-api-public-canary-${RELEASE_ID}"
+            AUTH_CANARY_NAME="wr-api-auth-canary-${RELEASE_ID}"
+            GATEWAY_CANARY_NAME="wr-api-gateway-canary-${RELEASE_ID}"
+            PUBLIC_PM2_APP_NAME="wr-api-public"
+            AUTH_PM2_APP_NAME="wr-api-auth"
+            GATEWAY_PM2_APP_NAME="wr-api"
+            GATEWAY_APP_PORT="3001"
+            PUBLIC_APP_PORT="3002"
+            AUTH_APP_PORT="3003"
+            GATEWAY_CANARY_PORT="3101"
+            PUBLIC_CANARY_PORT="3102"
+            AUTH_CANARY_PORT="3103"
             PREVIOUS_TARGET=""
 
             upsert_env() {
@@ -121,8 +129,17 @@ jobs:
               return 1
             }
 
-            cleanup_canary() {
-              pm2 delete "${CANARY_NAME}" >/dev/null 2>&1 || true
+            cleanup_canaries() {
+              pm2 delete "${PUBLIC_CANARY_NAME}" >/dev/null 2>&1 || true
+              pm2 delete "${AUTH_CANARY_NAME}" >/dev/null 2>&1 || true
+              pm2 delete "${GATEWAY_CANARY_NAME}" >/dev/null 2>&1 || true
+            }
+
+            restart_live_apps() {
+              pm2 delete "${GATEWAY_PM2_APP_NAME}" >/dev/null 2>&1 || true
+              pm2 delete "${PUBLIC_PM2_APP_NAME}" >/dev/null 2>&1 || true
+              pm2 delete "${AUTH_PM2_APP_NAME}" >/dev/null 2>&1 || true
+              pm2 start "${SHARED_DIR}/ecosystem.config.cjs" --update-env
             }
 
             log_step() {
@@ -172,23 +189,37 @@ jobs:
             npm run setup:riftgg-cn-stats
             npm run setup:news
 
-            log_step "start canary on ${CANARY_PORT}"
-            cleanup_canary
-            PORT="${CANARY_PORT}" HOST="127.0.0.1" pm2 start npm --name "${CANARY_NAME}" --cwd "${RELEASE_DIR}" -- start
-            if ! wait_for_health "${CANARY_PORT}" 60; then
-              pm2 logs "${CANARY_NAME}" --lines 120 --nostream || true
-              cleanup_canary
-              echo "canary failed health-check"
+            log_step "start canary public/auth/gateway"
+            cleanup_canaries
+            PORT="${PUBLIC_CANARY_PORT}" HOST="127.0.0.1" pm2 start "${RELEASE_DIR}/server-public.mjs" --interpreter node --name "${PUBLIC_CANARY_NAME}" --cwd "${RELEASE_DIR}"
+            PORT="${AUTH_CANARY_PORT}" HOST="127.0.0.1" pm2 start "${RELEASE_DIR}/server-auth.mjs" --interpreter node --name "${AUTH_CANARY_NAME}" --cwd "${RELEASE_DIR}"
+            PORT="${GATEWAY_CANARY_PORT}" HOST="127.0.0.1" PUBLIC_UPSTREAM_PORT="${PUBLIC_CANARY_PORT}" AUTH_UPSTREAM_PORT="${AUTH_CANARY_PORT}" pm2 start "${RELEASE_DIR}/server-gateway.mjs" --interpreter node --name "${GATEWAY_CANARY_NAME}" --cwd "${RELEASE_DIR}"
+            if ! wait_for_health "${PUBLIC_CANARY_PORT}" 60; then
+              pm2 logs "${PUBLIC_CANARY_NAME}" --lines 120 --nostream || true
+              cleanup_canaries
+              echo "public canary failed health-check"
               exit 1
             fi
-            cleanup_canary
+            if ! wait_for_health "${AUTH_CANARY_PORT}" 60; then
+              pm2 logs "${AUTH_CANARY_NAME}" --lines 120 --nostream || true
+              cleanup_canaries
+              echo "auth canary failed health-check"
+              exit 1
+            fi
+            if ! wait_for_health "${GATEWAY_CANARY_PORT}" 60; then
+              pm2 logs "${GATEWAY_CANARY_NAME}" --lines 120 --nostream || true
+              cleanup_canaries
+              echo "gateway canary failed health-check"
+              exit 1
+            fi
+            cleanup_canaries
 
             cat > "${SHARED_DIR}/ecosystem.config.cjs" <<EOF
             module.exports = {
               apps: [
                 {
-                  name: "${PM2_APP_NAME}",
-                  script: "./server.mjs",
+                  name: "${PUBLIC_PM2_APP_NAME}",
+                  script: "./server-public.mjs",
                   cwd: "${CURRENT_LINK}",
                   interpreter: "node",
                   instances: 1,
@@ -196,8 +227,38 @@ jobs:
                   listen_timeout: 10000,
                   kill_timeout: 10000,
                   env: {
-                    PORT: "${APP_PORT}",
+                    PORT: "${PUBLIC_APP_PORT}",
                     HOST: "127.0.0.1"
+                  }
+                },
+                {
+                  name: "${AUTH_PM2_APP_NAME}",
+                  script: "./server-auth.mjs",
+                  cwd: "${CURRENT_LINK}",
+                  interpreter: "node",
+                  instances: 1,
+                  exec_mode: "fork",
+                  listen_timeout: 10000,
+                  kill_timeout: 10000,
+                  env: {
+                    PORT: "${AUTH_APP_PORT}",
+                    HOST: "127.0.0.1"
+                  }
+                },
+                {
+                  name: "${GATEWAY_PM2_APP_NAME}",
+                  script: "./server-gateway.mjs",
+                  cwd: "${CURRENT_LINK}",
+                  interpreter: "node",
+                  instances: 1,
+                  exec_mode: "fork",
+                  listen_timeout: 10000,
+                  kill_timeout: 10000,
+                  env: {
+                    PORT: "${GATEWAY_APP_PORT}",
+                    HOST: "127.0.0.1",
+                    PUBLIC_UPSTREAM_PORT: "${PUBLIC_APP_PORT}",
+                    AUTH_UPSTREAM_PORT: "${AUTH_APP_PORT}"
                   }
                 }
               ]
@@ -210,21 +271,38 @@ jobs:
             log_step "switch current symlink"
             ln -sfn "${RELEASE_DIR}" "${CURRENT_LINK}"
 
-            log_step "replace live pm2 process"
-            pm2 delete "${PM2_APP_NAME}" >/dev/null 2>&1 || true
-            pm2 start "${SHARED_DIR}/ecosystem.config.cjs" --only "${PM2_APP_NAME}" --update-env
-            pm2 delete "${CANARY_NAME}" >/dev/null 2>&1 || true
+            log_step "replace live pm2 processes"
+            restart_live_apps
 
-            log_step "wait for production health on ${APP_PORT}"
-            if ! wait_for_health "${APP_PORT}" 60; then
-              pm2 logs "${PM2_APP_NAME}" --lines 120 --nostream || true
+            log_step "wait for production health on ${PUBLIC_APP_PORT}, ${AUTH_APP_PORT}, ${GATEWAY_APP_PORT}"
+            if ! wait_for_health "${PUBLIC_APP_PORT}" 60; then
+              pm2 logs "${PUBLIC_PM2_APP_NAME}" --lines 120 --nostream || true
               if [ -n "${PREVIOUS_TARGET}" ] && [ -d "${PREVIOUS_TARGET}" ]; then
                 log_step "rollback to previous release"
                 ln -sfn "${PREVIOUS_TARGET}" "${CURRENT_LINK}"
-                pm2 delete "${PM2_APP_NAME}" >/dev/null 2>&1 || true
-                pm2 start "${SHARED_DIR}/ecosystem.config.cjs" --only "${PM2_APP_NAME}" --update-env || true
+                restart_live_apps || true
               fi
-              echo "production failed health-check after reload"
+              echo "public failed health-check after reload"
+              exit 1
+            fi
+            if ! wait_for_health "${AUTH_APP_PORT}" 60; then
+              pm2 logs "${AUTH_PM2_APP_NAME}" --lines 120 --nostream || true
+              if [ -n "${PREVIOUS_TARGET}" ] && [ -d "${PREVIOUS_TARGET}" ]; then
+                log_step "rollback to previous release"
+                ln -sfn "${PREVIOUS_TARGET}" "${CURRENT_LINK}"
+                restart_live_apps || true
+              fi
+              echo "auth failed health-check after reload"
+              exit 1
+            fi
+            if ! wait_for_health "${GATEWAY_APP_PORT}" 60; then
+              pm2 logs "${GATEWAY_PM2_APP_NAME}" --lines 120 --nostream || true
+              if [ -n "${PREVIOUS_TARGET}" ] && [ -d "${PREVIOUS_TARGET}" ]; then
+                log_step "rollback to previous release"
+                ln -sfn "${PREVIOUS_TARGET}" "${CURRENT_LINK}"
+                restart_live_apps || true
+              fi
+              echo "gateway failed health-check after reload"
               exit 1
             fi
 
