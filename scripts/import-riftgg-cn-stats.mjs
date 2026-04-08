@@ -15,6 +15,7 @@ import {
   buildGuideAssetStorageKey,
   createGuideAssetStore,
 } from "../lib/guideAssets.mjs";
+import { filterChampionsForPublicPool } from "../lib/championPublicPool.mjs";
 import { getSourceChampionSlugCandidates } from "../lib/championSlug.mjs";
 import { createObjectStorageClient } from "../lib/objectStorage.mjs";
 import { normalizeRiftGgCnStats, parseRiftGgCnStatsHtml } from "../lib/riftggCnStats.mjs";
@@ -670,18 +671,23 @@ async function main() {
   const requestedSlugs = getRequestedSlugs();
   const championRows = requestedSlugs.length
     ? await db
-        .select({ slug: champions.slug })
+        .select({ slug: champions.slug, nameLocalizations: champions.nameLocalizations })
         .from(champions)
         .where(inArray(champions.slug, requestedSlugs))
-    : await db.select({ slug: champions.slug }).from(champions);
+    : await db
+        .select({ slug: champions.slug, nameLocalizations: champions.nameLocalizations })
+        .from(champions);
 
-  const slugs = championRows.map((row) => row.slug).filter(Boolean);
+  const publicChampionRows = filterChampionsForPublicPool(championRows);
+
+  const slugs = publicChampionRows.map((row) => row.slug).filter(Boolean);
   const uploaded = [];
   const skipped = [];
   const failed = [];
+  const filteredOutCount = championRows.length - publicChampionRows.length;
 
   console.log(
-    `[riftgg-cn-stats] start: champions=${slugs.length}${requestedSlugs.length ? " (filtered)" : ""} concurrency=${IMPORT_CONCURRENCY}`,
+    `[riftgg-cn-stats] start: champions=${slugs.length}${requestedSlugs.length ? " (filtered)" : ""} concurrency=${IMPORT_CONCURRENCY}${filteredOutCount > 0 ? ` excludedNonPublic=${filteredOutCount}` : ""}`,
   );
 
   let cursor = 0;
