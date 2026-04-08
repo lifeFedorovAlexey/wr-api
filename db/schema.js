@@ -76,29 +76,6 @@ export const webappOpens = pgTable("webapp_opens", {
     .notNull(),
 });
 
-export const championGuides = pgTable("champion_guides", {
-  slug: text("slug").primaryKey(),
-  name: text("name").notNull(),
-  title: text("title"),
-  icon: text("icon"),
-  patch: text("patch"),
-  tier: text("tier"),
-  recommendedRole: text("recommended_role"),
-  roles: jsonb("roles"),
-  buildCount: integer("build_count").default(1).notNull(),
-  sourceSite: text("source_site").notNull(),
-  sourceUrl: text("source_url"),
-  contentHash: text("content_hash"),
-  fetchedAt: timestamp("fetched_at", { withTimezone: true }),
-  payload: jsonb("payload").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
-
 export const guideSummaries = pgTable("guide_summaries", {
   slug: text("slug").primaryKey(),
   name: text("name").notNull(),
