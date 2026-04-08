@@ -513,6 +513,7 @@ export const siteUsers = pgTable(
     displayName: text("display_name"),
     avatarUrl: text("avatar_url"),
     wildRiftHandle: text("wild_rift_handle"),
+    peakRank: text("peak_rank"),
     mainChampionSlugs: text("main_champion_slugs").array().notNull().default([]),
     status: text("status").notNull().default("active"),
     createdAt: timestamp("created_at", { withTimezone: true })

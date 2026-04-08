@@ -118,6 +118,7 @@ async function main() {
       display_name text,
       avatar_url text,
       wild_rift_handle text,
+      peak_rank text,
       main_champion_slugs text[] not null default '{}',
       status text not null default 'active',
       created_at timestamptz not null default now(),
@@ -129,6 +130,11 @@ async function main() {
   await client`
     alter table site_users
     add column if not exists wild_rift_handle text;
+  `;
+
+  await client`
+    alter table site_users
+    add column if not exists peak_rank text;
   `;
 
   await client`
