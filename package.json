@@ -21,6 +21,7 @@
     "setup:riftgg-cn-stats": "node ./scripts/setup-riftgg-cn-stats-table.mjs",
     "setup:news": "node ./scripts/setup-news-tables.mjs",
     "export:news-mapper": "node ./scripts/export-news-entity-mapper.mjs",
+    "audit:guides:ui": "node ./scripts/audit-guides-ui-e2e.mjs",
     "test": "node --test ./test",
     "test:coverage": "c8 npm run test",
     "sync:assets:s3": "node ./scripts/sync-assets-to-s3.mjs",
