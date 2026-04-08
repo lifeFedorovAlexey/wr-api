@@ -117,11 +117,23 @@ async function main() {
       id serial primary key,
       display_name text,
       avatar_url text,
+      wild_rift_handle text,
+      main_champion_slugs text[] not null default '{}',
       status text not null default 'active',
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now(),
       last_login_at timestamptz
     );
+  `;
+
+  await client`
+    alter table site_users
+    add column if not exists wild_rift_handle text;
+  `;
+
+  await client`
+    alter table site_users
+    add column if not exists main_champion_slugs text[] not null default '{}';
   `;
 
   await client`

@@ -1,6 +1,7 @@
+import { getAdminSessionFromRequest } from "../lib/adminAuth.mjs";
 import {
-  getSiteUserSessionFromRequest,
-  updateSiteUserProfile,
+  resolveSiteUserViewForAdminUser,
+  updateSiteProfileForAdminUser,
 } from "../lib/siteUserAuth.mjs";
 import { setCors } from "./utils/cors.js";
 
@@ -22,17 +23,16 @@ export default async function handler(req, res) {
 
   setNoStore(res);
 
-  const session = await getSiteUserSessionFromRequest(req);
+  const session = await getAdminSessionFromRequest(req);
   if (!session) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
   if (req.method === "GET") {
-    return res.status(200).json({ ok: true, user: session.user });
+    const user = await resolveSiteUserViewForAdminUser(session.user.id);
+    return res.status(200).json({ ok: true, user });
   }
 
-  const user = await updateSiteUserProfile(session.user.id, req.body || {}, {
-    identities: session.user.identities,
-  });
+  const user = await updateSiteProfileForAdminUser(session.user.id, req.body || {});
   return res.status(200).json({ ok: true, user });
 }
