@@ -24,6 +24,7 @@ const REQUEST_TIMEOUT_MS = Math.max(1_000, Number(process.env.RIFTGG_REQUEST_TIM
 const IMPORT_CONCURRENCY = Math.max(1, Number(process.env.RIFTGG_IMPORT_CONCURRENCY || 6));
 const MAX_FETCH_ATTEMPTS = Math.max(1, Number(process.env.RIFTGG_FETCH_RETRIES || 2));
 const SLOW_IMPORT_LOG_MS = Math.max(1_000, Number(process.env.RIFTGG_SLOW_IMPORT_LOG_MS || 15_000));
+const ITEM_PROBE_TIMEOUT_MS = Math.max(1_000, Number(process.env.RIFTGG_ITEM_PROBE_TIMEOUT_MS || 8_000));
 let dictionariesSyncPromise = Promise.resolve();
 const reservedDictionaryKeys = new Set();
 const queuedRiftItemEntries = new Map();
@@ -109,6 +110,23 @@ function toRiftGgSlug(slug) {
   return getSourceChampionSlugCandidates(slug, "riftgg")[0] || String(slug || "").trim();
 }
 
+async function fetchWithTimeout(url, options = {}, timeoutMs = ITEM_PROBE_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () => controller.abort(new Error(`timeout after ${timeoutMs}ms`)),
+    timeoutMs,
+  );
+
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function probeItemSourceUrl(url) {
   const normalized = String(url || "").trim();
   if (!normalized) {
@@ -121,7 +139,7 @@ async function probeItemSourceUrl(url) {
 
   const probePromise = (async () => {
     try {
-      const response = await fetch(normalized, {
+      const response = await fetchWithTimeout(normalized, {
         method: "HEAD",
         headers: {
           "user-agent": "wildriftallstats-bot/1.0 (+https://wildriftallstats.ru)",
@@ -134,7 +152,7 @@ async function probeItemSourceUrl(url) {
       }
 
       if (response.status === 405) {
-        const fallbackResponse = await fetch(normalized, {
+        const fallbackResponse = await fetchWithTimeout(normalized, {
           method: "GET",
           headers: {
             "user-agent": "wildriftallstats-bot/1.0 (+https://wildriftallstats.ru)",
