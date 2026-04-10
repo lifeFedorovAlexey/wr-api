@@ -32,11 +32,22 @@ const SLOW_IMPORT_LOG_MS = Math.max(1_000, Number(process.env.RIFTGG_SLOW_IMPORT
 const ITEM_PROBE_TIMEOUT_MS = Math.max(1_000, Number(process.env.RIFTGG_ITEM_PROBE_TIMEOUT_MS || 8_000));
 let dictionariesSyncPromise = Promise.resolve();
 const reservedDictionaryKeys = new Set();
-const queuedRiftItemEntries = new Map();
+const queuedRiftDictionaryEntries = new Map();
 let guideAssetStorePromise = null;
 let guideAssetLogSummary = null;
 const itemSourceProbeCache = new Map();
 let itemSourceResolutionSummary = null;
+
+const RIFT_DICTIONARY_SLUG_ALIASES = {
+  item: {},
+  rune: {
+    "eyeball-collection": ["eyeball-collector"],
+  },
+  spell: {
+    hexflash: ["hextech-flashtraption", "hex-flash"],
+    cleanse: ["boost", "purify"],
+  },
+};
 
 function withTimeout(promise, timeoutMs, label) {
   let timeoutId = null;
@@ -68,6 +79,26 @@ const ITEM_IMAGE_SOURCE_RESOLVERS = [
     },
   },
 ];
+
+const DICTIONARY_IMAGE_SOURCE_RESOLVERS = {
+  item: ITEM_IMAGE_SOURCE_RESOLVERS,
+  rune: [
+    {
+      key: "wildriftfire",
+      build(slug) {
+        return `https://www.wildriftfire.com/images/runes/${encodeURIComponent(String(slug || "").trim())}.png`;
+      },
+    },
+  ],
+  spell: [
+    {
+      key: "wildriftfire",
+      build(slug) {
+        return `https://www.wildriftfire.com/images/summoners/${encodeURIComponent(String(slug || "").trim())}.png`;
+      },
+    },
+  ],
+};
 
 function warnSlugLookup({ service, requestedSlug, candidateSlug = "", source = "", status = "" }) {
   const parts = [
@@ -285,6 +316,54 @@ async function resolveItemImageSourceUrl(slug, existingSourceUrl = "") {
   return null;
 }
 
+async function resolveDictionaryImageSourceUrl(kind, slug, existingSourceUrl = "") {
+  const normalizedKind = String(kind || "").trim().toLowerCase();
+  const normalizedSlug = String(slug || "").trim();
+  const existing = String(existingSourceUrl || "").trim();
+  const candidates = [];
+  const seen = new Set();
+  const candidateSlugs = getRiftDictionaryLookupSlugs(normalizedKind, normalizedSlug);
+  const resolvers = DICTIONARY_IMAGE_SOURCE_RESOLVERS[normalizedKind] || [];
+
+  function pushCandidate(sourceKey, sourceUrl) {
+    const normalized = String(sourceUrl || "").trim();
+    if (!normalized || seen.has(normalized)) {
+      return;
+    }
+
+    seen.add(normalized);
+    candidates.push({ sourceKey, sourceUrl: normalized });
+  }
+
+  if (existing) {
+    pushCandidate(detectItemSourceKeyFromUrl(existing), existing);
+  }
+
+  for (const candidateSlug of candidateSlugs) {
+    for (const resolver of resolvers) {
+      pushCandidate(resolver.key, resolver.build(candidateSlug));
+    }
+  }
+
+  for (const candidate of candidates) {
+    if (await probeItemSourceUrl(candidate.sourceUrl)) {
+      trackItemSourceResolution({
+        slug: `${normalizedKind}:${normalizedSlug}`,
+        sourceKey: candidate.sourceKey,
+        usedFallback: candidate.sourceKey !== "wildriftfire",
+      });
+      return candidate;
+    }
+  }
+
+  trackItemSourceResolution({
+    slug: `${normalizedKind}:${normalizedSlug}`,
+    sourceKey: "unresolved",
+    unresolved: true,
+  });
+  return null;
+}
+
 async function fetchRiftGgChampionHtml(slug) {
   const riftGgSlug = toRiftGgSlug(slug);
   let lastError = null;
@@ -405,18 +484,40 @@ async function ensureDictionariesSynced(entries, now = new Date()) {
   }
 }
 
-function queueRiftItemAssets(entries) {
+function toGuideEntityKind(kind = "") {
+  return kind === "spell" ? "summonerSpell" : kind;
+}
+
+function getRiftDictionaryLookupSlugs(kind, slug) {
+  const normalizedKind = String(kind || "").trim().toLowerCase();
+  const normalizedSlug = String(slug || "").trim();
+  if (!normalizedSlug) {
+    return [];
+  }
+
+  return Array.from(
+    new Set([
+      normalizedSlug,
+      ...((RIFT_DICTIONARY_SLUG_ALIASES[normalizedKind] || {})[normalizedSlug] || []),
+    ]),
+  );
+}
+
+function queueRiftDictionaryAssets(entries) {
   for (const entry of Array.isArray(entries) ? entries : []) {
-    if (entry?.kind !== "item" || !entry?.slug) {
+    const kind = String(entry?.kind || "").trim();
+    if (!["item", "rune", "spell"].includes(kind) || !entry?.slug) {
       continue;
     }
 
     const slug = String(entry.slug).trim();
-    if (!slug || queuedRiftItemEntries.has(slug)) {
+    const key = `${kind}:${slug}`;
+    if (!slug || queuedRiftDictionaryEntries.has(key)) {
       continue;
     }
 
-    queuedRiftItemEntries.set(slug, {
+    queuedRiftDictionaryEntries.set(key, {
+      kind,
       slug,
       name: String(entry.name || slug).trim(),
     });
@@ -442,6 +543,36 @@ async function hasMirroredGuideAsset({
   return Boolean(guideAssetStore.getCachedFilePath(assetKey));
 }
 
+function buildQueuedDictionaryLookupRefs(entries) {
+  return Array.from(
+    new Map(
+      entries
+        .flatMap((entry) =>
+          getRiftDictionaryLookupSlugs(entry.kind, entry.slug).map((lookupSlug) => ({
+            kind: toGuideEntityKind(entry.kind),
+            slug: lookupSlug,
+          })),
+        )
+        .map((ref) => [`${ref.kind}:${ref.slug}`, ref]),
+    ).values(),
+  );
+}
+
+function pickExistingDictionaryRow(existingRows, entry, exact = false) {
+  const guideEntityKind = toGuideEntityKind(entry.kind);
+  const lookupSlugs = getRiftDictionaryLookupSlugs(entry.kind, entry.slug);
+
+  return (
+    existingRows.find((row) => {
+      if (row.kind !== guideEntityKind) {
+        return false;
+      }
+
+      return exact ? row.slug === entry.slug : lookupSlugs.includes(row.slug);
+    }) || null
+  );
+}
+
 export function resolveReconciledGuideEntityAssetUrls({
   existing = null,
   sourceUrl = "",
@@ -463,37 +594,60 @@ export function resolveReconciledGuideEntityAssetUrls({
 }
 
 async function reconcileQueuedRiftItemAssets(now = new Date()) {
-  const pendingEntries = Array.from(queuedRiftItemEntries.values());
+  const pendingEntries = Array.from(queuedRiftDictionaryEntries.values());
   if (!pendingEntries.length) {
     return { total: 0, mirrored: 0, skipped: 0, failed: 0, updatedRows: 0 };
   }
 
-  const itemSlugs = pendingEntries.map((entry) => entry.slug);
-  const existingRows = await db
-    .select({
-      slug: guideEntities.slug,
-      name: guideEntities.name,
-      imageUrl: guideEntities.imageUrl,
-      tooltipImageUrl: guideEntities.tooltipImageUrl,
-    })
-    .from(guideEntities)
-    .where(and(eq(guideEntities.kind, "item"), inArray(guideEntities.slug, itemSlugs)));
-  const existingBySlug = new Map(existingRows.map((row) => [row.slug, row]));
+  const lookupRefs = buildQueuedDictionaryLookupRefs(pendingEntries);
+  const existingRows = lookupRefs.length
+    ? await db
+        .select({
+          kind: guideEntities.kind,
+          slug: guideEntities.slug,
+          name: guideEntities.name,
+          imageUrl: guideEntities.imageUrl,
+          tooltipImageUrl: guideEntities.tooltipImageUrl,
+        })
+        .from(guideEntities)
+        .where(
+          or(
+            ...lookupRefs.map((ref) =>
+              and(eq(guideEntities.kind, ref.kind), eq(guideEntities.slug, ref.slug)),
+            ),
+          ),
+        )
+    : [];
   const guideAssetStore = await getGuideAssetStore();
   const objectStorage = createObjectStorageClient(process.env);
   const summary = { total: pendingEntries.length, mirrored: 0, skipped: 0, failed: 0, updatedRows: 0 };
 
   for (const entry of pendingEntries) {
+    const exactExisting = pickExistingDictionaryRow(existingRows, entry, true);
+    const sourceExisting = pickExistingDictionaryRow(existingRows, entry, false);
+    const guideEntityKind = toGuideEntityKind(entry.kind);
     const slug = entry.slug;
-    const existing = existingBySlug.get(slug);
     const resolvedSource =
-      (await resolveItemImageSourceUrl(slug, existing?.imageUrl || existing?.tooltipImageUrl || "")) || null;
+      (
+        await (
+          entry.kind === "item"
+            ? resolveItemImageSourceUrl(
+                slug,
+                sourceExisting?.imageUrl || sourceExisting?.tooltipImageUrl || "",
+              )
+            : resolveDictionaryImageSourceUrl(
+                entry.kind,
+                slug,
+                sourceExisting?.imageUrl || sourceExisting?.tooltipImageUrl || "",
+              )
+        )
+      ) || null;
     const sourceUrl = resolvedSource?.sourceUrl || null;
     const imageSourceUrl = sourceUrl;
     const tooltipSourceUrl = sourceUrl;
-    const imageAssetKey = buildGuideAssetKey("guide", "item", slug, "image");
-    const tooltipAssetKey = buildGuideAssetKey("guide", "item", slug, "tooltip");
-    const hasImageAsset = existing?.imageUrl
+    const imageAssetKey = buildGuideAssetKey("guide", guideEntityKind, slug, "image");
+    const tooltipAssetKey = buildGuideAssetKey("guide", guideEntityKind, slug, "tooltip");
+    const hasImageAsset = exactExisting?.imageUrl
       ? await hasMirroredGuideAsset({
           guideAssetStore,
           objectStorage,
@@ -501,7 +655,7 @@ async function reconcileQueuedRiftItemAssets(now = new Date()) {
           sourceUrl: imageSourceUrl,
         })
       : false;
-    const hasTooltipAsset = existing?.tooltipImageUrl
+    const hasTooltipAsset = exactExisting?.tooltipImageUrl
       ? await hasMirroredGuideAsset({
           guideAssetStore,
           objectStorage,
@@ -509,8 +663,8 @@ async function reconcileQueuedRiftItemAssets(now = new Date()) {
           sourceUrl: tooltipSourceUrl,
         })
       : false;
-    const needsImage = Boolean(sourceUrl) && (!existing?.imageUrl || !hasImageAsset || existing.imageUrl !== imageSourceUrl);
-    const needsTooltip = Boolean(sourceUrl) && (!existing?.tooltipImageUrl || !hasTooltipAsset || existing.tooltipImageUrl !== tooltipSourceUrl);
+    const needsImage = Boolean(sourceUrl) && (!exactExisting?.imageUrl || !hasImageAsset || exactExisting.imageUrl !== imageSourceUrl);
+    const needsTooltip = Boolean(sourceUrl) && (!exactExisting?.tooltipImageUrl || !hasTooltipAsset || exactExisting.tooltipImageUrl !== tooltipSourceUrl);
 
     if (!needsImage && !needsTooltip) {
       summary.skipped += 1;
@@ -524,36 +678,45 @@ async function reconcileQueuedRiftItemAssets(now = new Date()) {
 
     const { imageUrl: nextImageUrl, tooltipImageUrl: nextTooltipImageUrl } =
       resolveReconciledGuideEntityAssetUrls({
-        existing,
+        existing: exactExisting,
         sourceUrl,
         needsImage,
         needsTooltip,
       });
 
     try {
-      if (!existing) {
+      if (!exactExisting) {
         await db
           .insert(guideEntities)
           .values({
-            kind: "item",
+            kind: guideEntityKind,
             slug,
             name: entry.name,
-            imageUrl: sourceUrl,
-            tooltipTitle: entry.name,
-            tooltipImageUrl: sourceUrl,
+            imageUrl: nextImageUrl,
+            tooltipTitle: sourceExisting?.name || entry.name,
+            tooltipImageUrl: nextTooltipImageUrl,
             updatedAt: now,
           })
-          .onConflictDoNothing();
+          .onConflictDoUpdate({
+            target: [guideEntities.kind, guideEntities.slug],
+            set: {
+              name: entry.name,
+              imageUrl: nextImageUrl,
+              tooltipTitle: sourceExisting?.name || entry.name,
+              tooltipImageUrl: nextTooltipImageUrl,
+              updatedAt: now,
+            },
+          });
       } else {
         await db
           .update(guideEntities)
           .set({
             imageUrl: nextImageUrl,
             tooltipImageUrl: nextTooltipImageUrl,
-            tooltipTitle: existing.name || entry.name,
+            tooltipTitle: exactExisting.name || sourceExisting?.name || entry.name,
             updatedAt: now,
           })
-          .where(and(eq(guideEntities.kind, "item"), eq(guideEntities.slug, slug)));
+          .where(and(eq(guideEntities.kind, guideEntityKind), eq(guideEntities.slug, slug)));
       }
 
       summary.updatedRows += 1;
@@ -569,12 +732,12 @@ async function reconcileQueuedRiftItemAssets(now = new Date()) {
       }
     } catch (error) {
       summary.failed += 1;
-      console.warn(`[riftgg-cn-stats] item asset reconcile failed for ${slug}:`, error?.message || error);
+      console.warn(`[riftgg-cn-stats] guide asset reconcile failed for ${entry.kind}:${slug}:`, error?.message || error);
     }
   }
 
   console.log(
-    `[riftgg-cn-stats] item asset reconcile -> total=${summary.total} updatedRows=${summary.updatedRows} mirrored=${summary.mirrored} skipped=${summary.skipped} failed=${summary.failed}`,
+    `[riftgg-cn-stats] guide asset reconcile -> total=${summary.total} updatedRows=${summary.updatedRows} mirrored=${summary.mirrored} skipped=${summary.skipped} failed=${summary.failed}`,
   );
 
   if (itemSourceResolutionSummary?.total) {
@@ -590,7 +753,7 @@ async function reconcileQueuedRiftItemAssets(now = new Date()) {
       : "";
 
     console.warn(
-      `[riftgg-cn-stats] item asset sources -> total=${itemSourceResolutionSummary.total} fallback=${itemSourceResolutionSummary.fallbackUsed} unresolved=${itemSourceResolutionSummary.unresolved} ${sources}${fallbackSamples}${unresolvedSamples}`,
+      `[riftgg-cn-stats] guide asset sources -> total=${itemSourceResolutionSummary.total} fallback=${itemSourceResolutionSummary.fallbackUsed} unresolved=${itemSourceResolutionSummary.unresolved} ${sources}${fallbackSamples}${unresolvedSamples}`,
     );
   }
 
@@ -604,7 +767,7 @@ async function reconcileQueuedRiftItemAssets(now = new Date()) {
       .join(" | ");
 
     console.warn(
-      `[riftgg-cn-stats] item asset mirror issues -> total=${guideAssetLogSummary.totalErrors} ${details}`,
+      `[riftgg-cn-stats] guide asset mirror issues -> total=${guideAssetLogSummary.totalErrors} ${details}`,
     );
   }
 
@@ -667,7 +830,7 @@ async function importChampionStats({ slug, index, total }) {
   const normalized = normalizeRiftGgCnStats(slug, parsed);
   const now = new Date();
   await ensureDictionariesSynced(normalized.dictionaries, now);
-  queueRiftItemAssets(normalized.dictionaries);
+  queueRiftDictionaryAssets(normalized.dictionaries);
 
   await db.transaction(async (tx) => {
     const matchupDateFilter = buildDataDateFilter(riftggCnMatchups.dataDate, normalized.matchups);
@@ -801,6 +964,7 @@ export async function runRiftGgCnStatsImport(options = {}) {
   guideAssetLogSummary = null;
   itemSourceResolutionSummary = null;
   itemSourceProbeCache.clear();
+  queuedRiftDictionaryEntries.clear();
   const requestedSlugs = Array.isArray(options.requestedSlugs)
     ? options.requestedSlugs.map((value) => String(value || "").trim()).filter(Boolean)
     : getRequestedSlugs();
