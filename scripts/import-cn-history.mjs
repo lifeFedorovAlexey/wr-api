@@ -134,6 +134,8 @@ export async function runCnHistoryImport() {
   let upserted = 0;
   let skippedNoStats = 0;
   const skippedNoStatsChampions = [];
+  let championsProcessed = 0;
+  const totalChampions = championRows.length;
 
   for (const champion of championRows) {
     const cnHeroId = String(champion.cnHeroId);
@@ -142,6 +144,12 @@ export async function runCnHistoryImport() {
     if (!heroStats) {
       skippedNoStats += 1;
       skippedNoStatsChampions.push(`${champion.slug}(${cnHeroId})`);
+      championsProcessed += 1;
+      if (championsProcessed % 10 === 0 || championsProcessed === totalChampions) {
+        log(
+          `[cn-history] progress -> champions=${championsProcessed}/${totalChampions} upserted=${upserted} skippedNoStats=${skippedNoStats}`,
+        );
+      }
       continue;
     }
 
@@ -178,7 +186,20 @@ export async function runCnHistoryImport() {
           });
 
         upserted += 1;
+
+        if (upserted % 100 === 0) {
+          log(
+            `[cn-history] progress -> champions=${championsProcessed + 1}/${totalChampions} upserted=${upserted} current=${champion.slug}`,
+          );
+        }
       }
+    }
+
+    championsProcessed += 1;
+    if (championsProcessed % 10 === 0 || championsProcessed === totalChampions) {
+      log(
+        `[cn-history] progress -> champions=${championsProcessed}/${totalChampions} upserted=${upserted} skippedNoStats=${skippedNoStats}`,
+      );
     }
   }
 
