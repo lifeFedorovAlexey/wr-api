@@ -1,0 +1,127 @@
+name: Sync All Data
+
+on:
+  schedule:
+    - cron: "0 * * * *"
+    - cron: "20 3 * * *"
+    - cron: "0 4 * * 0"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Sync mode
+        required: true
+        type: choice
+        default: full
+        options:
+          - champions-history
+          - champions-history-riftgg
+          - full
+
+concurrency:
+  group: sync-all-data
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
+      S3_BUCKET: ${{ secrets.S3_BUCKET }}
+      S3_PUBLIC_BASE_URL: ${{ secrets.S3_PUBLIC_BASE_URL }}
+      S3_FORCE_PATH_STYLE: ${{ secrets.S3_FORCE_PATH_STYLE }}
+      ASSET_PUBLIC_MODE: ${{ secrets.ASSET_PUBLIC_MODE }}
+      S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+      S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+      RIFTGG_IMPORT_CONCURRENCY: 4
+      RIFTGG_REQUEST_TIMEOUT_MS: 20000
+      RIFTGG_FETCH_RETRIES: 2
+
+    steps:
+      - name: Checkout UI repo
+        uses: actions/checkout@v5
+        with:
+          repository: lifeFedorovAlexey/wildRiftChampions
+          ref: main
+          path: wildriftchampionsData
+
+      - name: Checkout WR API repo
+        uses: actions/checkout@v5
+        with:
+          path: wildriftchampionsData/wr-api
+
+      - name: Ensure workflow secrets are present
+        shell: bash
+        run: |
+          required=(DATABASE_URL S3_ENDPOINT S3_BUCKET S3_PUBLIC_BASE_URL S3_ACCESS_KEY_ID S3_SECRET_ACCESS_KEY)
+          missing=()
+          for name in "${required[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              missing+=("$name")
+            fi
+          done
+
+          if (( ${#missing[@]} > 0 )); then
+            echo "Missing required secrets: ${missing[*]}" >&2
+            exit 1
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            wildriftchampionsData/package-lock.json
+            wildriftchampionsData/ui/package-lock.json
+            wildriftchampionsData/wr-api/package-lock.json
+
+      - name: Install root dependencies
+        working-directory: wildriftchampionsData
+        run: npm ci
+
+      - name: Install UI dependencies
+        working-directory: wildriftchampionsData/ui
+        run: npm ci
+
+      - name: Install WR API dependencies
+        working-directory: wildriftchampionsData/wr-api
+        run: npm ci
+
+      - name: Resolve sync mode
+        id: sync_mode
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            mode="${{ inputs.mode }}"
+          elif [[ "${{ github.event.schedule }}" == "0 * * * *" ]]; then
+            mode="champions-history"
+          elif [[ "${{ github.event.schedule }}" == "20 3 * * *" ]]; then
+            mode="champions-history-riftgg"
+          else
+            mode="full"
+          fi
+
+          case "$mode" in
+            champions-history)
+              flags="--skip-riftgg --skip-guides"
+              ;;
+            champions-history-riftgg)
+              flags="--skip-guides"
+              ;;
+            full)
+              flags=""
+              ;;
+            *)
+              echo "Unsupported sync mode: $mode" >&2
+              exit 1
+              ;;
+          esac
+
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          echo "flags=$flags" >> "$GITHUB_OUTPUT"
+
+      - name: Run unified sync pipeline
+        working-directory: wildriftchampionsData
+        run: npm run sync:data -- ${{ steps.sync_mode.outputs.flags }}
