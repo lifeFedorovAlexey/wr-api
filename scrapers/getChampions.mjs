@@ -240,17 +240,30 @@ async function fetchTextWithRetryUsingOptions(
 function decodeHtmlEntities(value) {
   if (!value) return "";
 
-  return String(value)
-    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, code) =>
-      String.fromCodePoint(Number.parseInt(code, 16))
-    )
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;|&apos;/g, "'")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&nbsp;/g, " ");
+  const namedEntities = {
+    quot: '"',
+    "#39": "'",
+    apos: "'",
+    amp: "&",
+    lt: "<",
+    gt: ">",
+    nbsp: " ",
+  };
+
+  return String(value).replace(
+    /&(?:#\d+|#x[0-9a-f]+|quot|#39|apos|amp|lt|gt|nbsp);/gi,
+    (entity) => {
+      if (/^&#\d+;$/i.test(entity)) {
+        return String.fromCodePoint(Number(entity.slice(2, -1)));
+      }
+
+      if (/^&#x[0-9a-f]+;$/i.test(entity)) {
+        return String.fromCodePoint(Number.parseInt(entity.slice(3, -1), 16));
+      }
+
+      return namedEntities[entity.slice(1, -1).toLowerCase()] ?? entity;
+    }
+  );
 }
 
 function extractHtmlAttribute(source, attributeName) {
