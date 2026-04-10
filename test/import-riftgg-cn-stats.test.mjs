@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import {
   buildRiftGgImportPlan,
   buildRiftGgImportReport,
-} from "../scripts/import-riftgg-cn-stats.mjs";
+} from "../lib/riftggImportPlan.mjs";
 
 test("buildRiftGgImportPlan keeps temporary en-only Riot champions in the import set", () => {
   const plan = buildRiftGgImportPlan({
