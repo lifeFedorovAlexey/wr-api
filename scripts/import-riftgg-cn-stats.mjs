@@ -442,6 +442,26 @@ async function hasMirroredGuideAsset({
   return Boolean(guideAssetStore.getCachedFilePath(assetKey));
 }
 
+export function resolveReconciledGuideEntityAssetUrls({
+  existing = null,
+  sourceUrl = "",
+  needsImage = false,
+  needsTooltip = false,
+}) {
+  const normalizedSourceUrl = String(sourceUrl || "").trim();
+
+  return {
+    imageUrl:
+      needsImage || !existing?.imageUrl
+        ? normalizedSourceUrl || null
+        : existing.imageUrl,
+    tooltipImageUrl:
+      needsTooltip || !existing?.tooltipImageUrl
+        ? normalizedSourceUrl || null
+        : existing.tooltipImageUrl,
+  };
+}
+
 async function reconcileQueuedRiftItemAssets(now = new Date()) {
   const pendingEntries = Array.from(queuedRiftItemEntries.values());
   if (!pendingEntries.length) {
@@ -502,6 +522,14 @@ async function reconcileQueuedRiftItemAssets(now = new Date()) {
       continue;
     }
 
+    const { imageUrl: nextImageUrl, tooltipImageUrl: nextTooltipImageUrl } =
+      resolveReconciledGuideEntityAssetUrls({
+        existing,
+        sourceUrl,
+        needsImage,
+        needsTooltip,
+      });
+
     try {
       if (!existing) {
         await db
@@ -520,8 +548,8 @@ async function reconcileQueuedRiftItemAssets(now = new Date()) {
         await db
           .update(guideEntities)
           .set({
-            imageUrl: existing.imageUrl || sourceUrl,
-            tooltipImageUrl: existing.tooltipImageUrl || sourceUrl,
+            imageUrl: nextImageUrl,
+            tooltipImageUrl: nextTooltipImageUrl,
             tooltipTitle: existing.name || entry.name,
             updatedAt: now,
           })

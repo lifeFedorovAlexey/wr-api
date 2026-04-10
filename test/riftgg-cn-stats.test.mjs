@@ -483,3 +483,58 @@ test("buildRiftGgGuidePayload keeps public item asset urls instead of raw donor 
     },
   );
 });
+
+test("buildRiftGgGuidePayload preserves fallback item asset extensions from RiftGG assets", () => {
+  withEnv(
+    {
+      S3_ENDPOINT: "https://s3.twcstorage.ru",
+      S3_BUCKET: "bucket-name",
+      S3_ACCESS_KEY_ID: "key",
+      S3_SECRET_ACCESS_KEY: "secret",
+      S3_PUBLIC_BASE_URL: "https://s3.twcstorage.ru/bucket-name",
+      ASSET_PUBLIC_MODE: "s3",
+    },
+    () => {
+      const payload = buildRiftGgGuidePayload({
+        matchupRows: [],
+        buildRows: [
+          {
+            rank: "diamond_plus",
+            lane: "support",
+            dataDate: "2026-04-08",
+            buildType: "coreItems",
+            entrySlugs: ["control-ward"],
+            winRate: 55.4,
+            pickRate: 1.9,
+            winRateRank: 1,
+            pickRateRank: 1,
+          },
+        ],
+        itemRows: [
+          {
+            kind: "item",
+            slug: "control-ward",
+            name: "Control Ward",
+            imageUrl: "https://assets.riftgg.app/items/control-ward.webp",
+            tooltipImageUrl: "https://assets.riftgg.app/items/control-ward.webp",
+            rawPayload: {
+              slug: "control-ward",
+              name: "Control Ward",
+              imageUrl: "https://assets.riftgg.app/items/control-ward.webp",
+              tooltipImageUrl: "https://assets.riftgg.app/items/control-ward.webp",
+            },
+          },
+        ],
+      });
+
+      assert.equal(
+        payload.dictionaries.items["control-ward"].imageUrl,
+        "https://s3.twcstorage.ru/bucket-name/assets/guide-item-control-ward-image.webp",
+      );
+      assert.equal(
+        payload.dictionaries.items["control-ward"].tooltipImageUrl,
+        "https://s3.twcstorage.ru/bucket-name/assets/guide-item-control-ward-tooltip.webp",
+      );
+    },
+  );
+});

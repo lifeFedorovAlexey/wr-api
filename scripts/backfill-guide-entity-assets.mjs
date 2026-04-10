@@ -2,7 +2,12 @@ import "dotenv/config";
 
 import { client, db } from "../db/client.js";
 import { guideEntities } from "../db/schema.js";
-import { buildGuideAssetKey, createGuideAssetStore } from "../lib/guideAssets.mjs";
+import {
+  buildGuideAssetKey,
+  buildGuideAssetStorageKey,
+  createGuideAssetStore,
+  detectGuideAssetContentType,
+} from "../lib/guideAssets.mjs";
 import { createObjectStorageClient, shouldUseS3PublicUrls } from "../lib/objectStorage.mjs";
 import { attachBackfillShutdown, parseBackfillCliArgs } from "./backfillShared.mjs";
 
@@ -75,7 +80,17 @@ async function main() {
   for (const [index, task] of tasks.entries()) {
     try {
       const cachedFilePath = guideAssetStore.getCachedFilePath(task.assetKey);
-      if (cachedFilePath && !options.force) {
+      const hasS3Object = cachedFilePath && useS3
+        ? await objectStorage.objectExists(
+            buildGuideAssetStorageKey(
+              task.assetKey,
+              task.sourceUrl,
+              detectGuideAssetContentType(cachedFilePath),
+            ),
+          )
+        : false;
+
+      if (cachedFilePath && (!useS3 || hasS3Object) && !options.force) {
         summary.skipped.push({
           ...task,
           reason: "already-cached",
