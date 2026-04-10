@@ -211,8 +211,8 @@ async function main() {
     values
       ('owner', 'Owner', 'Full access, can manage roles and admin users'),
       ('admin', 'Admin', 'Operational access to admin tools'),
-      ('editor', 'Editor', 'Content management access'),
-      ('viewer', 'Viewer', 'Read-only admin access')
+      ('streamer', 'Streamer', 'Access to streamer-only sections'),
+      ('patron', 'Patron', 'Access to patron-only sections')
     on conflict (key) do nothing;
   `;
 

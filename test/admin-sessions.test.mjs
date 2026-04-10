@@ -13,6 +13,7 @@ process.env.DATABASE_URL ||= "postgres://local:local@127.0.0.1:5432/local";
 const {
   canBootstrapAdmin,
   createSignedExchangeEnvelope,
+  normalizeManagedAdminRoleKeys,
   verifySignedExchangeEnvelope,
   userHasAnyRole,
 } = await import("../lib/adminAuth.mjs");
@@ -73,4 +74,11 @@ test("canBootstrapAdmin accepts configured bootstrap identities", () => {
 test("userHasAnyRole matches owner or admin role membership", () => {
   assert.equal(userHasAnyRole({ roles: ["viewer", "admin"] }, ["owner", "admin"]), true);
   assert.equal(userHasAnyRole({ roles: ["viewer"] }, ["owner", "admin"]), false);
+});
+
+test("normalizeManagedAdminRoleKeys keeps only supported roles and dedupes them", () => {
+  assert.deepEqual(
+    normalizeManagedAdminRoleKeys(["admin", " patron ", "editor", "ADMIN", "streamer"]),
+    ["admin", "patron", "streamer"],
+  );
 });
