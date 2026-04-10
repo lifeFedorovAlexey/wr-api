@@ -16,6 +16,11 @@ on:
           - champions-history
           - champions-history-riftgg
           - full
+      slugs:
+        description: Optional champion slugs separated by spaces
+        required: false
+        type: string
+        default: ""
 
 concurrency:
   group: sync-all-data
@@ -97,8 +102,11 @@ jobs:
         id: sync_mode
         shell: bash
         run: |
+          requested_slugs=""
+
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             mode="${{ inputs.mode }}"
+            requested_slugs="${{ inputs.slugs }}"
           elif [[ "${{ github.event.schedule }}" == "0 * * * *" ]]; then
             mode="champions-history"
           elif [[ "${{ github.event.schedule }}" == "20 3 * * *" ]]; then
@@ -122,6 +130,11 @@ jobs:
               exit 1
               ;;
           esac
+
+          requested_slugs="$(echo "$requested_slugs" | xargs)"
+          if [[ -n "$requested_slugs" ]]; then
+            flags="$flags $requested_slugs"
+          fi
 
           echo "mode=$mode" >> "$GITHUB_OUTPUT"
           echo "flags=$flags" >> "$GITHUB_OUTPUT"
