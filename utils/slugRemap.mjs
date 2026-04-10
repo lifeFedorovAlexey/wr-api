@@ -5,7 +5,7 @@ import {
 } from "../lib/championSlug.mjs";
 
 export const SLUG_RIOT_REMAP = {
-  nunu: "nunu-willump",
+  nunu: "nunu-and-willump",
   monkeyking: "wukong",
   xinzhao: "xin-zhao",
   aurelionsol: "aurelion-sol",

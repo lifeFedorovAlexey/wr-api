@@ -5,7 +5,8 @@ import "dotenv/config";
 import { updateChampions } from "../lib/updateChampions.mjs";
 
 async function main() {
-  await updateChampions();
+  const report = await updateChampions();
+  console.log("[import-champions] report:", JSON.stringify(report, null, 2));
   process.exit(0);
 }
 

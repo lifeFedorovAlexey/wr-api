@@ -24,9 +24,9 @@ export default async function handler(req, res) {
   }
 
   try {
-    await updateChampions();
+    const report = await updateChampions();
     setNoStore(res);
-    res.status(200).json({ ok: true });
+    res.status(200).json({ ok: true, report });
   } catch (e) {
     console.error("[cron] error:", e);
     setNoStore(res);

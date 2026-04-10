@@ -4,3 +4,7 @@
 docker-data/
 .env
 debug-getChampions.mjs
+.runtime/
+.runtime-local-server.log
+.runtime-local-server.err.log
+db-backups/

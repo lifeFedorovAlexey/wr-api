@@ -13,13 +13,15 @@ import { getSlugAliases, mapToLocalSlug, mapToRiotSlug } from "../utils/slugRema
 test("toCanonicalChampionSlug resolves legacy local aliases to official wild rift slugs", () => {
   assert.equal(toCanonicalChampionSlug("legacyLocal", "monkeyking"), "wukong");
   assert.equal(toCanonicalChampionSlug("legacyLocal", "masteryi"), "master-yi");
-  assert.equal(toCanonicalChampionSlug("legacyLocal", "nunu"), "nunu-willump");
+  assert.equal(toCanonicalChampionSlug("legacyLocal", "nunu"), "nunu-and-willump");
 });
 
 test("toCanonicalChampionSlug accepts canonical slugs unchanged", () => {
   assert.equal(toCanonicalChampionSlug("riot", "lee-sin"), "lee-sin");
   assert.equal(toCanonicalChampionSlug("riftgg", "wukong"), "wukong");
   assert.equal(toCanonicalChampionSlug("riot", "ahri"), "ahri");
+  assert.equal(toCanonicalChampionSlug("riot", "nunu-and-willump"), "nunu-and-willump");
+  assert.equal(toCanonicalChampionSlug("wildriftfire", "nunu-willump"), "nunu-and-willump");
 });
 
 test("toLegacyLocalChampionSlug maps canonical slugs back to current storage slugs", () => {
@@ -42,7 +44,7 @@ test("getChampionSlugAliases returns canonical and compatibility aliases", () =>
 test("getSourceChampionSlugCandidates returns source-specific slug candidates with preferred source first", () => {
   assert.deepEqual(
     getSourceChampionSlugCandidates("nunu", "riftgg"),
-    ["nunu-and-willump", "nunu-willump", "nunu"],
+    ["nunu-and-willump", "nunu"],
   );
   assert.deepEqual(
     getSourceChampionSlugCandidates("monkeyking", "riftgg"),
@@ -51,6 +53,10 @@ test("getSourceChampionSlugCandidates returns source-specific slug candidates wi
   assert.deepEqual(
     getSourceChampionSlugCandidates("xinzhao", "riot"),
     ["xin-zhao", "xinzhao"],
+  );
+  assert.deepEqual(
+    getSourceChampionSlugCandidates("nunu", "riot"),
+    ["nunu-and-willump", "nunu-willump", "nunu"],
   );
 });
 

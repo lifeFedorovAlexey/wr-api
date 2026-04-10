@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { pathToFileURL } from "node:url";
 
 import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 
@@ -15,7 +16,11 @@ import {
   buildGuideAssetStorageKey,
   createGuideAssetStore,
 } from "../lib/guideAssets.mjs";
-import { filterChampionsForPublicPool } from "../lib/championPublicPool.mjs";
+import {
+  filterChampionsForPublicPool,
+  isChampionInPublicPool,
+  summarizeChampionPublicPool,
+} from "../lib/championPublicPool.mjs";
 import { getSourceChampionSlugCandidates } from "../lib/championSlug.mjs";
 import { createObjectStorageClient } from "../lib/objectStorage.mjs";
 import { normalizeRiftGgCnStats, parseRiftGgCnStatsHtml } from "../lib/riftggCnStats.mjs";
@@ -32,6 +37,22 @@ let guideAssetStorePromise = null;
 let guideAssetLogSummary = null;
 const itemSourceProbeCache = new Map();
 let itemSourceResolutionSummary = null;
+
+function withTimeout(promise, timeoutMs, label) {
+  let timeoutId = null;
+
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(`${label} timeout after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  });
+}
 
 const ITEM_IMAGE_SOURCE_RESOLVERS = [
   {
@@ -296,7 +317,14 @@ async function fetchRiftGgChampionHtml(slug) {
         throw new Error(`HTTP ${response.status}`);
       }
 
-      const html = await response.text();
+      const bodyBuffer = Buffer.from(
+        await withTimeout(
+          response.arrayBuffer(),
+          REQUEST_TIMEOUT_MS,
+          `riftgg body read for ${riftGgSlug}`,
+        ),
+      );
+      const html = bodyBuffer.toString("utf8");
       clearTimeout(timeout);
       return html;
     } catch (error) {
@@ -682,12 +710,8 @@ async function importChampionStats({ slug, index, total }) {
   };
 }
 
-async function main() {
-  guideAssetLogSummary = null;
-  itemSourceResolutionSummary = null;
-  itemSourceProbeCache.clear();
-  const requestedSlugs = getRequestedSlugs();
-  const championRows = requestedSlugs.length
+async function loadChampionRowsForImport(requestedSlugs) {
+  return requestedSlugs.length
     ? await db
         .select({ slug: champions.slug, nameLocalizations: champions.nameLocalizations })
         .from(champions)
@@ -695,18 +719,72 @@ async function main() {
     : await db
         .select({ slug: champions.slug, nameLocalizations: champions.nameLocalizations })
         .from(champions);
+}
 
+export function buildRiftGgImportPlan({ championRows, requestedSlugs = [] }) {
+  const normalizedRequestedSlugs = requestedSlugs
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+  const requestedSlugSet = new Set(normalizedRequestedSlugs);
+  const foundSlugSet = new Set(
+    championRows.map((row) => String(row?.slug || "").trim()).filter(Boolean),
+  );
   const publicChampionRows = filterChampionsForPublicPool(championRows);
-
+  const poolSummary = summarizeChampionPublicPool(championRows);
   const slugs = publicChampionRows.map((row) => row.slug).filter(Boolean);
+  const filteredOutCount = championRows.length - publicChampionRows.length;
+  const missingRequestedSlugs = normalizedRequestedSlugs.filter((slug) => !foundSlugSet.has(slug));
+  const excludedRequestedSlugs = championRows
+    .filter((row) => requestedSlugSet.has(String(row?.slug || "").trim()))
+    .filter((row) => !isChampionInPublicPool(row))
+    .map((row) => String(row?.slug || "").trim());
+
+  return {
+    requestedSlugs: normalizedRequestedSlugs,
+    championRows,
+    publicChampionRows,
+    slugs,
+    poolSummary,
+    filteredOutCount,
+    missingRequestedSlugs,
+    excludedRequestedSlugs,
+  };
+}
+
+export function logRiftGgImportPlan(plan) {
+  console.log(
+    `[riftgg-cn-stats] start: champions=${plan.slugs.length}${plan.requestedSlugs.length ? " (filtered)" : ""} concurrency=${IMPORT_CONCURRENCY}${plan.filteredOutCount > 0 ? ` excludedNonPublic=${plan.filteredOutCount}` : ""}${plan.poolSummary.temporaryEnOnly > 0 ? ` temporaryEnOnly=${plan.poolSummary.temporaryEnOnly}` : ""}`,
+  );
+
+  if (plan.poolSummary.temporaryEnOnly > 0) {
+    console.warn(
+      `[riftgg-cn-stats] temporary en-only Riot champions included in import: ${plan.poolSummary.temporaryEnOnlySlugs.join(", ")}`,
+    );
+  }
+
+  if (plan.poolSummary.excluded > 0) {
+    console.warn(
+      `[riftgg-cn-stats] excluded non-public champions: ${plan.poolSummary.excludedSlugs.join(", ")}`,
+    );
+  }
+
+  if (plan.missingRequestedSlugs.length) {
+    console.warn(
+      `[riftgg-cn-stats] requested slugs missing from champions catalog: ${plan.missingRequestedSlugs.join(", ")}`,
+    );
+  }
+
+  if (plan.excludedRequestedSlugs.length) {
+    console.warn(
+      `[riftgg-cn-stats] requested slugs excluded from public pool: ${plan.excludedRequestedSlugs.join(", ")}`,
+    );
+  }
+}
+
+async function runRiftGgImportWorkers(slugs) {
   const uploaded = [];
   const skipped = [];
   const failed = [];
-  const filteredOutCount = championRows.length - publicChampionRows.length;
-
-  console.log(
-    `[riftgg-cn-stats] start: champions=${slugs.length}${requestedSlugs.length ? " (filtered)" : ""} concurrency=${IMPORT_CONCURRENCY}${filteredOutCount > 0 ? ` excludedNonPublic=${filteredOutCount}` : ""}`,
-  );
 
   let cursor = 0;
   async function worker() {
@@ -743,34 +821,88 @@ async function main() {
   }
 
   await Promise.all(Array.from({ length: Math.min(IMPORT_CONCURRENCY, slugs.length) }, () => worker()));
+
+  return {
+    uploaded,
+    skipped,
+    failed,
+  };
+}
+
+export function buildRiftGgImportReport({ plan, execution, itemAssetSummary }) {
+  return {
+    requested: plan.requestedSlugs.length || null,
+    total: plan.slugs.length,
+    uploaded: execution.uploaded.length,
+    skipped: execution.skipped.length,
+    failed: execution.failed.length,
+    temporaryEnOnly: plan.poolSummary.temporaryEnOnly,
+    excludedNonPublic: plan.filteredOutCount,
+    missingRequestedSlugs: plan.missingRequestedSlugs,
+    excludedRequestedSlugs: plan.excludedRequestedSlugs,
+    itemAssets: itemAssetSummary,
+  };
+}
+
+export async function runRiftGgCnStatsImport(options = {}) {
+  guideAssetLogSummary = null;
+  itemSourceResolutionSummary = null;
+  itemSourceProbeCache.clear();
+  const requestedSlugs = Array.isArray(options.requestedSlugs)
+    ? options.requestedSlugs.map((value) => String(value || "").trim()).filter(Boolean)
+    : getRequestedSlugs();
+  const championRows = await loadChampionRowsForImport(requestedSlugs);
+  const importPlan = buildRiftGgImportPlan({ championRows, requestedSlugs });
+  logRiftGgImportPlan(importPlan);
+
+  const execution = await runRiftGgImportWorkers(importPlan.slugs);
   const itemAssetSummary = await reconcileQueuedRiftItemAssets();
+  const report = buildRiftGgImportReport({
+    plan: importPlan,
+    execution,
+    itemAssetSummary,
+  });
 
   console.log(
-    `[riftgg-cn-stats] done -> total=${slugs.length} uploaded=${uploaded.length} skipped=${skipped.length} failed=${failed.length} itemAssetsMirrored=${itemAssetSummary.mirrored} itemAssetsFailed=${itemAssetSummary.failed}`,
+    `[riftgg-cn-stats] done -> total=${report.total} uploaded=${report.uploaded} skipped=${report.skipped} failed=${report.failed} itemAssetsMirrored=${itemAssetSummary.mirrored} itemAssetsFailed=${itemAssetSummary.failed}`,
   );
 
-  if (skipped.length) {
+  if (execution.skipped.length) {
     console.warn(
-      `[riftgg-cn-stats] skipped -> ${skipped.map((entry) => `${entry.slug}:${entry.reason}`).join(" | ")}`,
+      `[riftgg-cn-stats] skipped -> ${execution.skipped.map((entry) => `${entry.slug}:${entry.reason}`).join(" | ")}`,
     );
   }
 
-  if (failed.length) {
+  if (execution.failed.length) {
     console.error(
-      `[riftgg-cn-stats] failed -> ${failed.map((entry) => `${entry.slug}:${entry.error}`).join(" | ")}`,
+      `[riftgg-cn-stats] failed -> ${execution.failed.map((entry) => `${entry.slug}:${entry.error}`).join(" | ")}`,
     );
   }
 
-  if (failed.length) {
+  return {
+    ...report,
+    skippedEntries: execution.skipped,
+    failedEntries: execution.failed,
+  };
+}
+
+async function main() {
+  const report = await runRiftGgCnStatsImport();
+  if ((report.failed || 0) > 0) {
     process.exitCode = 1;
   }
 }
 
-main()
-  .catch((error) => {
-    console.error("[riftgg-cn-stats] fatal error:", error);
-    process.exitCode = 1;
-  })
-  .finally(async () => {
-    await client.end({ timeout: 5 });
-  });
+const isDirectRun =
+  process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url;
+
+if (isDirectRun) {
+  main()
+    .catch((error) => {
+      console.error("[riftgg-cn-stats] fatal error:", error);
+      process.exitCode = 1;
+    })
+    .finally(async () => {
+      await client.end({ timeout: 5 });
+    });
+}

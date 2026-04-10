@@ -142,7 +142,7 @@ test("getRiftGgSlugCandidates keeps source-specific and fallback aliases for aud
   );
   assert.deepEqual(
     getRiftGgSlugCandidates("nunu"),
-    ["nunu-and-willump", "nunu-willump", "nunu"],
+    ["nunu-and-willump", "nunu"],
   );
 });
 
