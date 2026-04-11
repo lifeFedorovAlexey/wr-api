@@ -191,6 +191,7 @@ jobs:
             npm run setup:stats
             npm run setup:guides
             npm run setup:admin
+            npm run setup:chat
             npm run setup:riftgg-cn-stats
             npm run setup:news
 
