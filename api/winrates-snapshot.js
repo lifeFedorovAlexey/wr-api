@@ -97,7 +97,7 @@ function getSeriesDelta(values) {
   return Number((finite[finite.length - 1] - finite[0]).toFixed(2));
 }
 
-function buildPreparedRowsBySlice({ championRows, historyItems }) {
+function buildPreparedRowsBySlice({ championRows, historyItems, latestSnapshotId }) {
   const publicChampionSlugs = buildPublicChampionSlugSet(championRows);
   const championBySlug = {};
   for (const champion of championRows) {
@@ -111,8 +111,7 @@ function buildPreparedRowsBySlice({ championRows, historyItems }) {
 
   for (const [sliceKey, sliceItems] of Object.entries(sliceMap)) {
     const recentDates = getRecentDates(sliceItems, 7);
-    const latestDate = recentDates[recentDates.length - 1] ?? null;
-    if (!latestDate) {
+    if (!recentDates.length) {
       rowsBySlice[sliceKey] = [];
       continue;
     }
@@ -128,7 +127,7 @@ function buildPreparedRowsBySlice({ championRows, historyItems }) {
 
     const latestRows = sliceItems
       .filter((item) => publicChampionSlugs.has(item.slug))
-      .filter((item) => String(item.date) === latestDate)
+      .filter((item) => item.snapshotId === latestSnapshotId)
       .sort(
         (left, right) =>
           (left.position ?? Number.POSITIVE_INFINITY) -
@@ -238,6 +237,7 @@ export default async function handler(req, res) {
         ? db
             .select({
               date: championStatsHistory.date,
+              snapshotId: championStatsHistory.snapshotId,
               slug: championStatsHistory.slug,
               rank: championStatsHistory.rank,
               lane: championStatsHistory.lane,
@@ -255,6 +255,7 @@ export default async function handler(req, res) {
 
     const items = rows.map((row) => ({
       date: toDateString(row.date),
+      snapshotId: row.snapshotId,
       slug: row.slug,
       rank: row.rank,
       lane: row.lane,
@@ -268,6 +269,7 @@ export default async function handler(req, res) {
     const { rowsBySlice, maxRowCount } = buildPreparedRowsBySlice({
       championRows,
       historyItems: items,
+      latestSnapshotId: latestSnapshot?.id ?? null,
     });
 
     const payload = {
