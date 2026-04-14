@@ -128,10 +128,28 @@ export function summarizeCnHistoryCoverage(championRows, statsByHeroId) {
   };
 }
 
+async function ensureCnHistoryInsertCompatibility() {
+  await client`
+    alter table champion_stats_history
+    drop constraint if exists champion_stats_history_uq;
+  `;
+
+  await client`
+    drop index if exists champion_stats_history_date_slug_rank_lane_uidx;
+  `;
+
+  await client`
+    create unique index if not exists champion_stats_history_snapshot_slug_rank_lane_uidx
+    on champion_stats_history (snapshot_id, slug, rank, lane);
+  `;
+}
+
 export async function runCnHistoryImport() {
   const today = new Date().toISOString().slice(0, 10);
   const runStartedAt = new Date();
   log(`[cn-history] start -> date=${today}`);
+
+  await ensureCnHistoryInsertCompatibility();
 
   const snapshot = await createChampionStatsSnapshot({
     statsDate: today,
