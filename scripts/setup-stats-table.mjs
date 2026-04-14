@@ -111,6 +111,11 @@ async function backfillChampionStatsSnapshots() {
 
 async function ensureChampionStatsIndexes() {
   await client`
+    alter table champion_stats_history
+    drop constraint if exists champion_stats_history_uq;
+  `;
+
+  await client`
     drop index if exists champion_stats_history_date_slug_rank_lane_uidx;
   `;
 
