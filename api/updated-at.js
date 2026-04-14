@@ -1,8 +1,6 @@
 // api/updated-at.js
-import { db } from "../db/client.js";
-import { championStatsHistory } from "../db/schema.js";
-import { max } from "drizzle-orm";
 import { setCors } from "./utils/cors.js";
+import { getLatestCompletedChampionStatsSnapshot } from "../lib/statsSnapshots.mjs";
 
 function setPublicCache(res, { sMaxAge = 60, swr = 300 } = {}) {
   res.setHeader(
@@ -26,19 +24,11 @@ export default async function handler(req, res) {
   }
 
   try {
-    const rows = await db
-      .select({
-        lastDate: max(championStatsHistory.date),
-        lastRunAt: max(championStatsHistory.createdAt),
-      })
-      .from(championStatsHistory);
-
-    const lastDate = rows[0]?.lastDate || null;
-    const lastRunAt = rows[0]?.lastRunAt || null;
+    const latestSnapshot = await getLatestCompletedChampionStatsSnapshot();
 
     return res.status(200).json({
-      updatedAt: lastRunAt,
-      statsDate: lastDate,
+      updatedAt: latestSnapshot?.completedAt || null,
+      statsDate: latestSnapshot?.statsDate || null,
     });
   } catch (e) {
     console.error("[wr-api] /api/updated-at error:", e);

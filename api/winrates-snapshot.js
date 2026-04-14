@@ -1,9 +1,9 @@
 import { db } from "../db/client.js";
 import { championStatsHistory, champions } from "../db/schema.js";
-import { buildDateInFilter } from "./utils/dateFilters.js";
 import { setCors } from "./utils/cors.js";
+import { listRecentCompletedChampionStatsSnapshotsByDate } from "../lib/statsSnapshots.mjs";
 
-import { desc } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
 import { buildPublicIconPath } from "../lib/championIcons.mjs";
 import {
   buildPublicChampionSlugSet,
@@ -200,21 +200,18 @@ export default async function handler(req, res) {
   }
 
   try {
-    const recentDatesRows = await db
-      .selectDistinct({
-        date: championStatsHistory.date,
-      })
-      .from(championStatsHistory)
-      .orderBy(desc(championStatsHistory.date))
-      .limit(7);
-
-    const recentDates = recentDatesRows
-      .map((row) => toDateString(row.date))
+    const recentSnapshots = await listRecentCompletedChampionStatsSnapshotsByDate(7);
+    const recentDates = recentSnapshots
+      .map((snapshot) => toDateString(snapshot.statsDate))
       .filter(Boolean)
       .sort();
-    const latestDate = recentDates[recentDates.length - 1] ?? null;
+    const latestSnapshot = recentSnapshots[0] || null;
+    const latestDate = toDateString(latestSnapshot?.statsDate);
+    const latestSnapshotKey = latestSnapshot
+      ? `${latestSnapshot.id}:${latestDate}`
+      : null;
 
-    if (cachedSnapshot && cachedSnapshot.latestDate === latestDate) {
+    if (cachedSnapshot && cachedSnapshot.latestSnapshotKey === latestSnapshotKey) {
       setPublicCache(res);
       return res.status(200).json(cachedSnapshot.payload);
     }
@@ -228,28 +225,31 @@ export default async function handler(req, res) {
         maxRowCount: 0,
       };
       cachedSnapshot = {
-        latestDate: null,
+        latestSnapshotKey: null,
         payload: emptyPayload,
       };
       setPublicCache(res);
       return res.status(200).json(emptyPayload);
     }
 
+    const snapshotIds = recentSnapshots.map((snapshot) => snapshot.id);
     const [rows, championRows] = await Promise.all([
-      db
-        .select({
-          date: championStatsHistory.date,
-          slug: championStatsHistory.slug,
-          rank: championStatsHistory.rank,
-          lane: championStatsHistory.lane,
-          position: championStatsHistory.position,
-          winRate: championStatsHistory.winRate,
-          pickRate: championStatsHistory.pickRate,
-          banRate: championStatsHistory.banRate,
-          strengthLevel: championStatsHistory.strengthLevel,
-        })
-        .from(championStatsHistory)
-        .where(buildDateInFilter(championStatsHistory.date, recentDates)),
+      snapshotIds.length
+        ? db
+            .select({
+              date: championStatsHistory.date,
+              slug: championStatsHistory.slug,
+              rank: championStatsHistory.rank,
+              lane: championStatsHistory.lane,
+              position: championStatsHistory.position,
+              winRate: championStatsHistory.winRate,
+              pickRate: championStatsHistory.pickRate,
+              banRate: championStatsHistory.banRate,
+              strengthLevel: championStatsHistory.strengthLevel,
+            })
+            .from(championStatsHistory)
+            .where(inArray(championStatsHistory.snapshotId, snapshotIds))
+        : Promise.resolve([]),
       Promise.resolve(filterChampionsForPublicPool(await db.select().from(champions))),
     ]);
 
@@ -279,7 +279,7 @@ export default async function handler(req, res) {
     };
 
     cachedSnapshot = {
-      latestDate,
+      latestSnapshotKey,
       payload,
     };
 

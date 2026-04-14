@@ -3,6 +3,13 @@ import { pathToFileURL } from "node:url";
 
 import { db, client } from "../db/client.js";
 import { champions, championStatsHistory } from "../db/schema.js";
+import {
+  createChampionStatsSnapshot,
+  determineChampionStatsSnapshotStatus,
+  getLatestCompletedChampionStatsSnapshot,
+  SNAPSHOT_STATUS_FAILED,
+  updateChampionStatsSnapshot,
+} from "../lib/statsSnapshots.mjs";
 
 const HERO_RANK_URL =
   "https://mlol.qt.qq.com/go/lgame_battle_info/hero_rank_list_v2";
@@ -127,98 +134,140 @@ export async function runCnHistoryImport() {
   const runStartedAt = new Date();
   log(`[cn-history] start -> date=${today}`);
 
-  const championRows = await loadCnHistoryChampionsFromDb();
-  const statsByHeroId = await fetchCnHeroRank();
-  const coverage = summarizeCnHistoryCoverage(championRows, statsByHeroId);
+  const previousCompletedSnapshot = await getLatestCompletedChampionStatsSnapshot();
+  const snapshot = await createChampionStatsSnapshot({
+    statsDate: today,
+    startedAt: runStartedAt,
+    metadata: {
+      kind: "cn-history",
+    },
+  });
 
-  let upserted = 0;
-  let skippedNoStats = 0;
-  const skippedNoStatsChampions = [];
-  let championsProcessed = 0;
-  const totalChampions = championRows.length;
+  try {
+    const championRows = await loadCnHistoryChampionsFromDb();
+    const statsByHeroId = await fetchCnHeroRank();
+    const coverage = summarizeCnHistoryCoverage(championRows, statsByHeroId);
 
-  for (const champion of championRows) {
-    const cnHeroId = String(champion.cnHeroId);
-    const heroStats = statsByHeroId[cnHeroId];
+    let upserted = 0;
+    let skippedNoStats = 0;
+    const skippedNoStatsChampions = [];
+    let championsProcessed = 0;
+    const totalChampions = championRows.length;
 
-    if (!heroStats) {
-      skippedNoStats += 1;
-      skippedNoStatsChampions.push(`${champion.slug}(${cnHeroId})`);
+    for (const champion of championRows) {
+      const cnHeroId = String(champion.cnHeroId);
+      const heroStats = statsByHeroId[cnHeroId];
+
+      if (!heroStats) {
+        skippedNoStats += 1;
+        skippedNoStatsChampions.push(`${champion.slug}(${cnHeroId})`);
+        championsProcessed += 1;
+        if (championsProcessed % 10 === 0 || championsProcessed === totalChampions) {
+          log(
+            `[cn-history] progress -> champions=${championsProcessed}/${totalChampions} upserted=${upserted} skippedNoStats=${skippedNoStats}`,
+          );
+        }
+        continue;
+      }
+
+      for (const rankName of Object.keys(heroStats)) {
+        const lanes = heroStats[rankName] || {};
+
+        for (const laneName of Object.keys(lanes)) {
+          const cell = lanes[laneName];
+          const row = {
+            snapshotId: snapshot.id,
+            date: today,
+            slug: champion.slug,
+            cnHeroId,
+            rank: rankName,
+            lane: laneName,
+            position: cell.position,
+            winRate: cell.winRate,
+            pickRate: cell.pickRate,
+            banRate: cell.banRate,
+            strengthLevel: cell.strengthLevel,
+            createdAt: runStartedAt,
+          };
+
+          await db
+            .insert(championStatsHistory)
+            .values(row)
+            .onConflictDoUpdate({
+              target: [
+                championStatsHistory.snapshotId,
+                championStatsHistory.slug,
+                championStatsHistory.rank,
+                championStatsHistory.lane,
+              ],
+              set: row,
+            });
+
+          upserted += 1;
+
+          if (upserted % 100 === 0) {
+            log(
+              `[cn-history] progress -> champions=${championsProcessed + 1}/${totalChampions} upserted=${upserted} current=${champion.slug}`,
+            );
+          }
+        }
+      }
+
       championsProcessed += 1;
       if (championsProcessed % 10 === 0 || championsProcessed === totalChampions) {
         log(
           `[cn-history] progress -> champions=${championsProcessed}/${totalChampions} upserted=${upserted} skippedNoStats=${skippedNoStats}`,
         );
       }
-      continue;
     }
 
-    for (const rankName of Object.keys(heroStats)) {
-      const lanes = heroStats[rankName] || {};
+    const report = {
+      snapshotId: snapshot.id,
+      date: today,
+      champions: championRows.length,
+      matched: coverage.matchedCount,
+      missingInApi: coverage.missingInApi.length,
+      extraInApi: coverage.extraInApi.length,
+      upserted,
+      skippedNoStats,
+      skippedNoStatsChampions,
+    };
 
-      for (const laneName of Object.keys(lanes)) {
-        const cell = lanes[laneName];
-        const row = {
-          date: today,
+    const snapshotStatus = determineChampionStatsSnapshotStatus({
+      rowCount: upserted,
+      previousCompletedRowCount: previousCompletedSnapshot?.rowCount ?? 0,
+    });
+
+    await updateChampionStatsSnapshot(snapshot.id, {
+      status: snapshotStatus,
+      completedAt: new Date(),
+      championCount: championRows.length,
+      matchedChampionCount: coverage.matchedCount,
+      rowCount: upserted,
+      missingChampionCount: coverage.missingInApi.length,
+      metadata: {
+        kind: "cn-history",
+        missingInApi: coverage.missingInApi.map((champion) => ({
           slug: champion.slug,
-          cnHeroId,
-          rank: rankName,
-          lane: laneName,
-          position: cell.position,
-          winRate: cell.winRate,
-          pickRate: cell.pickRate,
-          banRate: cell.banRate,
-          strengthLevel: cell.strengthLevel,
-          createdAt: runStartedAt,
-        };
+          cnHeroId: champion.cnHeroId,
+        })),
+        extraInApi: coverage.extraInApi,
+        skippedNoStatsChampions,
+      },
+    });
 
-        await db
-          .insert(championStatsHistory)
-          .values(row)
-          .onConflictDoUpdate({
-            target: [
-              championStatsHistory.date,
-              championStatsHistory.slug,
-              championStatsHistory.rank,
-              championStatsHistory.lane,
-            ],
-            set: row,
-          });
+    console.log(
+      `[cn-history] done -> snapshot=${snapshot.id} status=${snapshotStatus} champions=${report.champions} matched=${report.matched} upserted=${report.upserted} skippedNoStats=${report.skippedNoStats}`,
+    );
 
-        upserted += 1;
-
-        if (upserted % 100 === 0) {
-          log(
-            `[cn-history] progress -> champions=${championsProcessed + 1}/${totalChampions} upserted=${upserted} current=${champion.slug}`,
-          );
-        }
-      }
-    }
-
-    championsProcessed += 1;
-    if (championsProcessed % 10 === 0 || championsProcessed === totalChampions) {
-      log(
-        `[cn-history] progress -> champions=${championsProcessed}/${totalChampions} upserted=${upserted} skippedNoStats=${skippedNoStats}`,
-      );
-    }
+    return report;
+  } catch (error) {
+    await updateChampionStatsSnapshot(snapshot.id, {
+      status: SNAPSHOT_STATUS_FAILED,
+      completedAt: new Date(),
+    });
+    throw error;
   }
-
-  const report = {
-    date: today,
-    champions: championRows.length,
-    matched: coverage.matchedCount,
-    missingInApi: coverage.missingInApi.length,
-    extraInApi: coverage.extraInApi.length,
-    upserted,
-    skippedNoStats,
-    skippedNoStatsChampions,
-  };
-
-  console.log(
-    `[cn-history] done -> champions=${report.champions} matched=${report.matched} upserted=${report.upserted} skippedNoStats=${report.skippedNoStats}`,
-  );
-
-  return report;
 }
 
 async function main() {

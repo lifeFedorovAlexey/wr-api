@@ -31,6 +31,7 @@ export const championStatsHistory = pgTable(
   "champion_stats_history",
   {
     id: serial("id").primaryKey(),
+    snapshotId: integer("snapshot_id"),
     date: pgDate("date").notNull(),
     slug: text("slug").notNull(),
     cnHeroId: text("cn_hero_id").notNull(),
@@ -46,13 +47,16 @@ export const championStatsHistory = pgTable(
       .notNull(),
   },
   (table) => ({
-    dateSlugRankLaneUidx: uniqueIndex("champion_stats_history_date_slug_rank_lane_uidx").on(
-      table.date,
+    snapshotSlugRankLaneUidx: uniqueIndex(
+      "champion_stats_history_snapshot_slug_rank_lane_uidx",
+    ).on(
+      table.snapshotId,
       table.slug,
       table.rank,
       table.lane,
     ),
     dateIdx: index("champion_stats_history_date_idx").on(table.date),
+    snapshotIdx: index("champion_stats_history_snapshot_idx").on(table.snapshotId),
     rankLaneDateIdx: index("champion_stats_history_rank_lane_date_idx").on(
       table.rank,
       table.lane,
@@ -578,5 +582,154 @@ export const siteSessions = pgTable(
     sessionHashUidx: uniqueIndex("site_sessions_session_hash_uidx").on(table.sessionHash),
     userIdx: index("site_sessions_user_idx").on(table.userId),
     expiresIdx: index("site_sessions_expires_idx").on(table.expiresAt),
+  }),
+);
+
+export const championStatsSnapshots = pgTable(
+  "champion_stats_snapshots",
+  {
+    id: serial("id").primaryKey(),
+    source: text("source").notNull(),
+    statsDate: pgDate("stats_date").notNull(),
+    status: text("status").notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    championCount: integer("champion_count"),
+    matchedChampionCount: integer("matched_champion_count"),
+    rowCount: integer("row_count"),
+    missingChampionCount: integer("missing_champion_count"),
+    metadata: jsonb("metadata"),
+  },
+  (table) => ({
+    sourceDateIdx: index("champion_stats_snapshots_source_date_idx").on(
+      table.source,
+      table.statsDate,
+    ),
+    sourceStatusDateIdx: index("champion_stats_snapshots_source_status_date_idx").on(
+      table.source,
+      table.status,
+      table.statsDate,
+    ),
+  }),
+);
+
+export const chatGroups = pgTable(
+  "chat_groups",
+  {
+    id: serial("id").primaryKey(),
+    ownerUserId: integer("owner_user_id").notNull(),
+    slug: text("slug").notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    isPrivate: boolean("is_private").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    slugUidx: uniqueIndex("chat_groups_slug_uidx").on(table.slug),
+    ownerIdx: index("chat_groups_owner_idx").on(table.ownerUserId),
+  }),
+);
+
+export const chatGroupMembers = pgTable(
+  "chat_group_members",
+  {
+    groupId: integer("group_id").notNull(),
+    userId: integer("user_id").notNull(),
+    role: text("role").notNull().default("member"),
+    joinedAt: timestamp("joined_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.groupId, table.userId], name: "chat_group_members_pk" }),
+    userIdx: index("chat_group_members_user_idx").on(table.userId),
+    roleIdx: index("chat_group_members_role_idx").on(table.role),
+  }),
+);
+
+export const chatGroupInvites = pgTable(
+  "chat_group_invites",
+  {
+    id: serial("id").primaryKey(),
+    groupId: integer("group_id").notNull(),
+    inviterUserId: integer("inviter_user_id").notNull(),
+    inviteeUserId: integer("invitee_user_id").notNull(),
+    status: text("status").notNull().default("pending"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    respondedAt: timestamp("responded_at", { withTimezone: true }),
+  },
+  (table) => ({
+    groupInviteeIdx: index("chat_group_invites_group_invitee_idx").on(
+      table.groupId,
+      table.inviteeUserId,
+    ),
+    statusIdx: index("chat_group_invites_status_idx").on(table.status),
+  }),
+);
+
+export const chatGroupBans = pgTable(
+  "chat_group_bans",
+  {
+    groupId: integer("group_id").notNull(),
+    userId: integer("user_id").notNull(),
+    bannedByUserId: integer("banned_by_user_id").notNull(),
+    reason: text("reason"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.groupId, table.userId], name: "chat_group_bans_pk" }),
+    userIdx: index("chat_group_bans_user_idx").on(table.userId),
+  }),
+);
+
+export const chatChannels = pgTable(
+  "chat_channels",
+  {
+    id: serial("id").primaryKey(),
+    groupId: integer("group_id").notNull(),
+    slug: text("slug").notNull(),
+    name: text("name").notNull(),
+    kind: text("kind").notNull().default("text"),
+    position: integer("position").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    groupSlugUidx: uniqueIndex("chat_channels_group_slug_uidx").on(table.groupId, table.slug),
+    groupPositionIdx: index("chat_channels_group_position_idx").on(table.groupId, table.position),
+  }),
+);
+
+export const chatMessages = pgTable(
+  "chat_messages",
+  {
+    id: serial("id").primaryKey(),
+    channelId: integer("channel_id").notNull(),
+    authorUserId: integer("author_user_id").notNull(),
+    body: text("body").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    editedAt: timestamp("edited_at", { withTimezone: true }),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => ({
+    channelCreatedIdx: index("chat_messages_channel_created_idx").on(
+      table.channelId,
+      table.createdAt,
+    ),
+    authorIdx: index("chat_messages_author_idx").on(table.authorUserId),
   }),
 );
