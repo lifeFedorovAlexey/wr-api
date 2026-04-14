@@ -98,6 +98,10 @@ jobs:
         working-directory: wildriftchampionsData/wr-api
         run: npm ci
 
+      - name: Ensure stats schema is up to date
+        working-directory: wildriftchampionsData/wr-api
+        run: npm run setup:stats
+
       - name: Resolve sync mode
         id: sync_mode
         shell: bash
