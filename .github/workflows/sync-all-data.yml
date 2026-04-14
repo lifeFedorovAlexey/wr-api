@@ -43,6 +43,8 @@ jobs:
       GUIDE_ASSETS_DIR: /tmp/wr-runtime/guide-assets
       GUIDE_HERO_MEDIA_DIR: /tmp/wr-runtime/guide-hero-media
       CHAMPION_ICONS_DIR: /tmp/wr-runtime/champion-icons
+      CN_FETCH_TIMEOUT_MS: 30000
+      CN_FETCH_RETRIES: 5
       RIFTGG_IMPORT_CONCURRENCY: 4
       RIFTGG_REQUEST_TIMEOUT_MS: 20000
       RIFTGG_FETCH_RETRIES: 2

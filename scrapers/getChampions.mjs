@@ -4,6 +4,8 @@
 //  - CN hero_list.js + hero/<id>.js -> только enrich уже известных Riot slug-ов
 // НИ ОДНОГО JSON-файла на диске.
 
+import { request as httpsRequest } from "node:https";
+
 import {
   buildChampionCatalogFromSources,
   buildRiotChampionCatalog,
@@ -187,13 +189,14 @@ async function fetchTextWithRetry(url, label) {
     timeoutMs: CN_FETCH_TIMEOUT_MS,
     retries: CN_FETCH_RETRIES,
     headers: CN_FETCH_HEADERS,
+    forceIpv4: true,
   });
 }
 
 async function fetchTextWithRetryUsingOptions(
   url,
   label,
-  { timeoutMs, retries, headers }
+  { timeoutMs, retries, headers, forceIpv4 = false }
 ) {
   let lastError = null;
 
@@ -205,20 +208,19 @@ async function fetchTextWithRetryUsingOptions(
     );
 
     try {
-      const res = await fetch(url, {
-        headers,
-        signal: controller.signal,
-      });
+      const resText = forceIpv4
+        ? await fetchTextViaHttps(url, {
+            timeoutMs,
+            headers,
+            forceIpv4,
+          })
+        : await fetchTextViaFetch(url, {
+            timeoutMs,
+            headers,
+            signal: controller.signal,
+          });
       clearTimeout(timeout);
-
-      if (!res.ok) {
-        const body = await res.text().catch(() => "");
-        throw new Error(
-          `${label} HTTP ${res.status}${body ? `: ${body.slice(0, 160)}` : ""}`
-        );
-      }
-
-      return await res.text();
+      return resText;
     } catch (error) {
       clearTimeout(timeout);
       lastError = error;
@@ -235,6 +237,88 @@ async function fetchTextWithRetryUsingOptions(
   }
 
   throw lastError;
+}
+
+async function fetchTextViaFetch(url, { timeoutMs, headers, signal }) {
+  const res = await fetch(url, {
+    headers,
+    signal,
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(
+      `HTTP ${res.status}${body ? `: ${body.slice(0, 160)}` : ""}`
+    );
+  }
+
+  return await res.text();
+}
+
+function fetchTextViaHttps(
+  url,
+  { timeoutMs, headers, forceIpv4 = false, redirectCount = 0 }
+) {
+  return new Promise((resolve, reject) => {
+    const parsedUrl = new URL(url);
+    const req = httpsRequest(
+      {
+        protocol: parsedUrl.protocol,
+        hostname: parsedUrl.hostname,
+        port: parsedUrl.port || 443,
+        path: `${parsedUrl.pathname}${parsedUrl.search}`,
+        method: "GET",
+        headers,
+        family: forceIpv4 ? 4 : undefined,
+      },
+      (res) => {
+        const statusCode = res.statusCode || 0;
+        const location = res.headers.location;
+
+        if (
+          location &&
+          [301, 302, 303, 307, 308].includes(statusCode) &&
+          redirectCount < 5
+        ) {
+          res.resume();
+          resolve(
+            fetchTextViaHttps(new URL(location, parsedUrl).toString(), {
+              timeoutMs,
+              headers,
+              forceIpv4,
+              redirectCount: redirectCount + 1,
+            })
+          );
+          return;
+        }
+
+        const chunks = [];
+        res.setEncoding("utf8");
+        res.on("data", (chunk) => chunks.push(chunk));
+        res.on("end", () => {
+          const body = chunks.join("");
+
+          if (statusCode < 200 || statusCode >= 300) {
+            reject(
+              new Error(
+                `HTTP ${statusCode}${body ? `: ${body.slice(0, 160)}` : ""}`
+              )
+            );
+            return;
+          }
+
+          resolve(body);
+        });
+      }
+    );
+
+    req.setTimeout(timeoutMs, () => {
+      req.destroy(new Error(`timeout after ${timeoutMs}ms`));
+    });
+
+    req.on("error", reject);
+    req.end();
+  });
 }
 
 function decodeHtmlEntities(value) {
