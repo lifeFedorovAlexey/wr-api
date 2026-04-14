@@ -1,8 +1,9 @@
 import "dotenv/config";
 import { pathToFileURL } from "node:url";
+import { and, eq, ne } from "drizzle-orm";
 
 import { db, client } from "../db/client.js";
-import { champions, championStatsHistory } from "../db/schema.js";
+import { championStatsSnapshots, champions, championStatsHistory } from "../db/schema.js";
 import {
   createChampionStatsSnapshot,
   determineChampionStatsSnapshotStatus,
@@ -144,17 +145,14 @@ async function ensureCnHistoryInsertCompatibility() {
   `;
 }
 
-async function resetCurrentCnHistoryDay(statsDate) {
-  await client`
-    delete from champion_stats_history
-    where date = ${statsDate};
-  `;
+function chunkRows(rows, size = 200) {
+  const chunks = [];
 
-  await client`
-    delete from champion_stats_snapshots
-    where source = 'cnHistory'
-      and stats_date = ${statsDate};
-  `;
+  for (let index = 0; index < rows.length; index += size) {
+    chunks.push(rows.slice(index, index + size));
+  }
+
+  return chunks;
 }
 
 export async function runCnHistoryImport() {
@@ -163,7 +161,6 @@ export async function runCnHistoryImport() {
   log(`[cn-history] start -> date=${today}`);
 
   await ensureCnHistoryInsertCompatibility();
-  await resetCurrentCnHistoryDay(today);
 
   const snapshot = await createChampionStatsSnapshot({
     statsDate: today,
@@ -181,6 +178,7 @@ export async function runCnHistoryImport() {
     let upserted = 0;
     let skippedNoStats = 0;
     const skippedNoStatsChampions = [];
+    const preparedRows = [];
     let championsProcessed = 0;
     const totalChampions = championRows.length;
 
@@ -220,18 +218,7 @@ export async function runCnHistoryImport() {
             createdAt: runStartedAt,
           };
 
-          await db
-            .insert(championStatsHistory)
-            .values(row)
-            .onConflictDoUpdate({
-              target: [
-                championStatsHistory.snapshotId,
-                championStatsHistory.slug,
-                championStatsHistory.rank,
-                championStatsHistory.lane,
-              ],
-              set: row,
-            });
+          preparedRows.push(row);
 
           upserted += 1;
 
@@ -269,22 +256,47 @@ export async function runCnHistoryImport() {
       matchedChampionCount: coverage.matchedCount,
     });
 
-    await updateChampionStatsSnapshot(snapshot.id, {
-      status: snapshotStatus,
-      completedAt: new Date(),
-      championCount: championRows.length,
-      matchedChampionCount: coverage.matchedCount,
-      rowCount: upserted,
-      missingChampionCount: coverage.missingInApi.length,
-      metadata: {
-        kind: "cn-history",
-        missingInApi: coverage.missingInApi.map((champion) => ({
-          slug: champion.slug,
-          cnHeroId: champion.cnHeroId,
-        })),
-        extraInApi: coverage.extraInApi,
-        skippedNoStatsChampions,
-      },
+    const snapshotMetadata = {
+      kind: "cn-history",
+      missingInApi: coverage.missingInApi.map((champion) => ({
+        slug: champion.slug,
+        cnHeroId: champion.cnHeroId,
+      })),
+      extraInApi: coverage.extraInApi,
+      skippedNoStatsChampions,
+    };
+
+    await db.transaction(async (tx) => {
+      await tx
+        .delete(championStatsHistory)
+        .where(eq(championStatsHistory.date, today));
+
+      await tx
+        .delete(championStatsSnapshots)
+        .where(
+          and(
+            eq(championStatsSnapshots.source, "cnHistory"),
+            eq(championStatsSnapshots.statsDate, today),
+            ne(championStatsSnapshots.id, snapshot.id),
+          ),
+        );
+
+      for (const rowsChunk of chunkRows(preparedRows)) {
+        await tx.insert(championStatsHistory).values(rowsChunk);
+      }
+
+      await tx
+        .update(championStatsSnapshots)
+        .set({
+          status: snapshotStatus,
+          completedAt: new Date(),
+          championCount: championRows.length,
+          matchedChampionCount: coverage.matchedCount,
+          rowCount: upserted,
+          missingChampionCount: coverage.missingInApi.length,
+          metadata: snapshotMetadata,
+        })
+        .where(eq(championStatsSnapshots.id, snapshot.id));
     });
 
     console.log(
