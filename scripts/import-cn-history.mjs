@@ -144,12 +144,26 @@ async function ensureCnHistoryInsertCompatibility() {
   `;
 }
 
+async function resetCurrentCnHistoryDay(statsDate) {
+  await client`
+    delete from champion_stats_history
+    where date = ${statsDate};
+  `;
+
+  await client`
+    delete from champion_stats_snapshots
+    where source = 'cnHistory'
+      and stats_date = ${statsDate};
+  `;
+}
+
 export async function runCnHistoryImport() {
   const today = new Date().toISOString().slice(0, 10);
   const runStartedAt = new Date();
   log(`[cn-history] start -> date=${today}`);
 
   await ensureCnHistoryInsertCompatibility();
+  await resetCurrentCnHistoryDay(today);
 
   const snapshot = await createChampionStatsSnapshot({
     statsDate: today,
