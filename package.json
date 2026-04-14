@@ -34,9 +34,9 @@
     "basic-ftp": "5.2.2"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1024.0",
+    "@aws-sdk/client-s3": "^3.1029.0",
     "basic-ftp": "5.2.2",
-    "dotenv": "^16.4.5",
+    "dotenv": "^17.4.1",
     "drizzle-orm": "^0.45.2",
     "postgres": "^3.4.9",
     "puppeteer": "^24.40.0",
@@ -46,8 +46,8 @@
     "@eslint/js": "^10.0.1",
     "c8": "^11.0.0",
     "eslint": "^10.2.0",
-    "globals": "^17.4.0",
-    "jscpd": "^4.0.8",
+    "globals": "^17.5.0",
+    "jscpd": "^4.0.9",
     "tsx": "^4.21.0"
   }
 }
