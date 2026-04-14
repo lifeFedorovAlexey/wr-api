@@ -1,6 +1,10 @@
 import { db } from "../db/client.js";
 import { championStatsHistory } from "../db/schema.js";
 import { setCors } from "./utils/cors.js";
+import {
+  getLatestCompletedChampionStatsSnapshot,
+  listCompletedChampionStatsSnapshotsByDateRange,
+} from "../lib/statsSnapshots.mjs";
 
 import { and, asc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 
@@ -90,6 +94,7 @@ export default async function handler(req, res) {
 
     let fromDate = null;
     let toDate = null;
+    let snapshotIds = null;
 
     const dateOne = parseDateParam(date);
     if (dateOne) {
@@ -111,37 +116,52 @@ export default async function handler(req, res) {
       baseConditions.push(inArray(championStatsHistory.lane, laneList));
     }
 
-    const baseWhere = baseConditions.length
-      ? and(...baseConditions)
-      : undefined;
-
-    // ✅ latest=1: если даты не заданы — берём максимальную дату и режем по ней
     const wantLatest = String(latest) === "1" || String(latest) === "true";
     if (wantLatest && !fromDate && !toDate) {
-      const maxRow = await db
-        .select({
-          maxDate: sql`max(${championStatsHistory.date})`.as("maxDate"),
-        })
-        .from(championStatsHistory)
-        .where(baseWhere);
-
-      const maxDateRaw = maxRow?.[0]?.maxDate ?? null;
-      const maxDateStr = toDateString(maxDateRaw);
-
-      if (maxDateStr) {
-        fromDate = maxDateStr;
-        toDate = maxDateStr;
+      const latestSnapshot = await getLatestCompletedChampionStatsSnapshot();
+      if (latestSnapshot?.id) {
+        fromDate = toDateString(latestSnapshot.statsDate);
+        toDate = fromDate;
+        snapshotIds = [latestSnapshot.id];
       }
+    }
+
+    if (!snapshotIds && (fromDate || toDate)) {
+      const snapshots = await listCompletedChampionStatsSnapshotsByDateRange({
+        fromDate,
+        toDate,
+      });
+      snapshotIds = snapshots.map((snapshot) => snapshot.id);
     }
 
     // WHERE с датами
     const conditions = [...baseConditions];
 
-    if (fromDate) {
-      conditions.push(gte(championStatsHistory.date, sql`${fromDate}::date`));
-    }
-    if (toDate) {
-      conditions.push(lte(championStatsHistory.date, sql`${toDate}::date`));
+    if (snapshotIds) {
+      if (snapshotIds.length === 0) {
+        setPublicCache(res, { sMaxAge: 300, swr: 1800 });
+        return res.status(200).json({
+          filters: {
+            slug: safeSlug || null,
+            rank: rankList,
+            lane: laneList,
+            from: fromDate,
+            to: toDate || (fromDate && !toDate ? fromDate : toDate),
+            latest: wantLatest || null,
+          },
+          count: 0,
+          items: [],
+        });
+      }
+
+      conditions.push(inArray(championStatsHistory.snapshotId, snapshotIds));
+    } else {
+      if (fromDate) {
+        conditions.push(gte(championStatsHistory.date, sql`${fromDate}::date`));
+      }
+      if (toDate) {
+        conditions.push(lte(championStatsHistory.date, sql`${toDate}::date`));
+      }
     }
 
     const whereClause = conditions.length ? and(...conditions) : undefined;

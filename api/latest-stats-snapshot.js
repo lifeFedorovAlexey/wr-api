@@ -1,9 +1,12 @@
 import { db } from "../db/client.js";
 import { championStatsHistory, champions } from "../db/schema.js";
-import { buildDateInFilter } from "./utils/dateFilters.js";
 import { setCors } from "./utils/cors.js";
+import {
+  getLatestCompletedChampionStatsSnapshot,
+  listRecentCompletedChampionStatsSnapshotsByDate,
+} from "../lib/statsSnapshots.mjs";
 
-import { desc, eq, sql } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import {
   buildPublicChampionSlugSet,
   filterChampionsForPublicPool,
@@ -155,28 +158,21 @@ export default async function handler(req, res) {
   }
 
   try {
-    const [latestRow, recentDatesRows] = await Promise.all([
-      db
-        .select({ date: championStatsHistory.date })
-        .from(championStatsHistory)
-        .orderBy(desc(championStatsHistory.date))
-        .limit(1),
-      db
-        .selectDistinct({ date: championStatsHistory.date })
-        .from(championStatsHistory)
-        .orderBy(desc(championStatsHistory.date))
-        .limit(30),
+    const [latestSnapshot, recentSnapshots] = await Promise.all([
+      getLatestCompletedChampionStatsSnapshot(),
+      listRecentCompletedChampionStatsSnapshotsByDate(30),
     ]);
 
-    const latestDate = latestRow.length
-      ? toDateString(latestRow[0].date)
-      : null;
-    const recentDates = recentDatesRows
-      .map((row) => toDateString(row.date))
+    const latestDate = toDateString(latestSnapshot?.statsDate);
+    const recentDates = recentSnapshots
+      .map((snapshot) => toDateString(snapshot.statsDate))
       .filter(Boolean)
       .sort();
+    const latestSnapshotKey = latestSnapshot
+      ? `${latestSnapshot.id}:${latestDate}`
+      : null;
 
-    if (cachedSnapshot && cachedSnapshot.latestDate === latestDate) {
+    if (cachedSnapshot && cachedSnapshot.latestSnapshotKey === latestSnapshotKey) {
       setPublicCache(res);
       return res.status(200).json(cachedSnapshot.payload);
     }
@@ -191,7 +187,7 @@ export default async function handler(req, res) {
           byRange: { low: {}, high: {}, all: {} },
         },
       };
-      cachedSnapshot = { latestDate: null, payload: emptyPayload };
+      cachedSnapshot = { latestSnapshotKey: null, payload: emptyPayload };
       setPublicCache(res);
       return res.status(200).json(emptyPayload);
     }
@@ -208,16 +204,19 @@ export default async function handler(req, res) {
       strengthLevel: championStatsHistory.strengthLevel,
     };
 
+    const recentSnapshotIds = recentSnapshots.map((snapshot) => snapshot.id);
     const [latestRows, recentRows, championRows] = await Promise.all([
-      db
-        .select(rowShape)
-        .from(championStatsHistory)
-        .where(eq(championStatsHistory.date, sql`${latestDate}::date`)),
-      recentDates.length
+      latestSnapshot
         ? db
             .select(rowShape)
             .from(championStatsHistory)
-            .where(buildDateInFilter(championStatsHistory.date, recentDates))
+            .where(eq(championStatsHistory.snapshotId, latestSnapshot.id))
+        : Promise.resolve([]),
+      recentSnapshotIds.length
+        ? db
+            .select(rowShape)
+            .from(championStatsHistory)
+            .where(inArray(championStatsHistory.snapshotId, recentSnapshotIds))
         : Promise.resolve([]),
       db.select().from(champions),
     ]);
@@ -245,7 +244,7 @@ export default async function handler(req, res) {
     };
 
     cachedSnapshot = {
-      latestDate,
+      latestSnapshotKey,
       payload,
     };
 

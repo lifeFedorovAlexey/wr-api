@@ -6,7 +6,8 @@ import {
   buildPublicChampionSlugSet,
   filterChampionsForPublicPool,
 } from "../lib/championPublicPool.mjs";
-import { desc, eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
+import { getLatestCompletedChampionStatsSnapshot } from "../lib/statsSnapshots.mjs";
 
 function setPublicCache(res, { sMaxAge = 300, swr = 1800 } = {}) {
   res.setHeader(
@@ -62,16 +63,8 @@ export default async function handler(req, res) {
     typeof lang === "string" && lang.trim() ? lang.trim() : "ru_ru";
 
   try {
-    // 1) Одна общая последняя дата по всей истории
-    const latestRow = await db
-      .select({ date: championStatsHistory.date })
-      .from(championStatsHistory)
-      .orderBy(desc(championStatsHistory.date))
-      .limit(1);
-
-    const latestDate = latestRow.length
-      ? toDateString(latestRow[0].date)
-      : null;
+    const latestSnapshot = await getLatestCompletedChampionStatsSnapshot();
+    const latestDate = toDateString(latestSnapshot?.statsDate);
 
     if (!latestDate) {
       setPublicCache(res, { sMaxAge: 60, swr: 300 });
@@ -82,11 +75,11 @@ export default async function handler(req, res) {
       });
     }
 
-    // 2) Все строки только за latestDate
+    // 2) Все строки только за latest completed snapshot
     const historyRows = await db
       .select()
       .from(championStatsHistory)
-      .where(eq(championStatsHistory.date, sql`${latestDate}::date`));
+      .where(eq(championStatsHistory.snapshotId, latestSnapshot.id));
 
     // 3) Чемпионы
     const championsRows = filterChampionsForPublicPool(

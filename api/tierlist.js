@@ -7,8 +7,9 @@ import {
   buildPublicChampionSlugSet,
   filterChampionsForPublicPool,
 } from "../lib/championPublicPool.mjs";
+import { getLatestCompletedChampionStatsSnapshot } from "../lib/statsSnapshots.mjs";
 
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 function setPublicCache(res, { sMaxAge = 300, swr = 1800 } = {}) {
   // Общий CDN-кеш. Ключ кеша = полный URL (path + query).
@@ -78,24 +79,8 @@ export default async function handler(req, res) {
     typeof lang === "string" && lang.trim() ? lang.trim() : "ru_ru";
 
   try {
-    // 1) Узнаём последнюю дату ТОЛЬКО для нужных rank+lane
-    const latestRow = await db
-      .select({
-        date: championStatsHistory.date,
-      })
-      .from(championStatsHistory)
-      .where(
-        and(
-          eq(championStatsHistory.rank, rankKey),
-          eq(championStatsHistory.lane, laneKey)
-        )
-      )
-      .orderBy(desc(championStatsHistory.date))
-      .limit(1);
-
-    const latestDate = latestRow.length
-      ? toDateString(latestRow[0].date)
-      : null;
+    const latestSnapshot = await getLatestCompletedChampionStatsSnapshot();
+    const latestDate = toDateString(latestSnapshot?.statsDate);
 
     if (!latestDate) {
       setPublicCache(res, { sMaxAge: 60, swr: 300 });
@@ -118,15 +103,15 @@ export default async function handler(req, res) {
       });
     }
 
-    // 2) Берём ТОЛЬКО нужные строки истории (rank+lane+date)
+    // 2) Берём ТОЛЬКО нужные строки истории (rank+lane+completed snapshot)
     const historyRows = await db
       .select()
       .from(championStatsHistory)
       .where(
         and(
+          eq(championStatsHistory.snapshotId, latestSnapshot.id),
           eq(championStatsHistory.rank, rankKey),
-          eq(championStatsHistory.lane, laneKey),
-          eq(championStatsHistory.date, sql`${latestDate}::date`)
+          eq(championStatsHistory.lane, laneKey)
         )
       );
 

@@ -31,6 +31,7 @@ export const championStatsHistory = pgTable(
   "champion_stats_history",
   {
     id: serial("id").primaryKey(),
+    snapshotId: integer("snapshot_id"),
     date: pgDate("date").notNull(),
     slug: text("slug").notNull(),
     cnHeroId: text("cn_hero_id").notNull(),
@@ -46,13 +47,16 @@ export const championStatsHistory = pgTable(
       .notNull(),
   },
   (table) => ({
-    dateSlugRankLaneUidx: uniqueIndex("champion_stats_history_date_slug_rank_lane_uidx").on(
-      table.date,
+    snapshotSlugRankLaneUidx: uniqueIndex(
+      "champion_stats_history_snapshot_slug_rank_lane_uidx",
+    ).on(
+      table.snapshotId,
       table.slug,
       table.rank,
       table.lane,
     ),
     dateIdx: index("champion_stats_history_date_idx").on(table.date),
+    snapshotIdx: index("champion_stats_history_snapshot_idx").on(table.snapshotId),
     rankLaneDateIdx: index("champion_stats_history_rank_lane_date_idx").on(
       table.rank,
       table.lane,
@@ -581,6 +585,35 @@ export const siteSessions = pgTable(
   }),
 );
 
+export const championStatsSnapshots = pgTable(
+  "champion_stats_snapshots",
+  {
+    id: serial("id").primaryKey(),
+    source: text("source").notNull(),
+    statsDate: pgDate("stats_date").notNull(),
+    status: text("status").notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    championCount: integer("champion_count"),
+    matchedChampionCount: integer("matched_champion_count"),
+    rowCount: integer("row_count"),
+    missingChampionCount: integer("missing_champion_count"),
+    metadata: jsonb("metadata"),
+  },
+  (table) => ({
+    sourceDateIdx: index("champion_stats_snapshots_source_date_idx").on(
+      table.source,
+      table.statsDate,
+    ),
+    sourceStatusDateIdx: index("champion_stats_snapshots_source_status_date_idx").on(
+      table.source,
+      table.status,
+      table.statsDate,
+    ),
+  }),
+);
 export const chatGroups = pgTable(
   "chat_groups",
   {
