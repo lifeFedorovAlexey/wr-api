@@ -2,7 +2,7 @@ import "dotenv/config";
 
 import { client } from "../db/client.js";
 
-async function main() {
+async function setupChampionStatsSnapshotTables() {
   await client`
     create table if not exists champion_stats_snapshots (
       id serial primary key,
@@ -33,7 +33,9 @@ async function main() {
     create index if not exists champion_stats_snapshots_source_status_date_idx
     on champion_stats_snapshots (source, status, stats_date);
   `;
+}
 
+async function backfillChampionStatsSnapshots() {
   await client`
     with per_date as (
       select
@@ -44,10 +46,6 @@ async function main() {
         count(distinct h.slug)::integer as champion_count
       from champion_stats_history h
       group by h.date
-    ),
-    max_rows as (
-      select coalesce(max(row_count), 0)::integer as value
-      from per_date
     )
     insert into champion_stats_snapshots (
       source,
@@ -66,8 +64,7 @@ async function main() {
       p.stats_date,
       case
         when p.row_count <= 0 then 'failed'
-        when p.row_count >= greatest(100, floor(m.value * 0.85)) then 'completed'
-        else 'partial'
+        else 'completed'
       end,
       p.started_at,
       p.completed_at,
@@ -77,13 +74,22 @@ async function main() {
       0,
       jsonb_build_object('legacyBackfill', true)
     from per_date p
-    cross join max_rows m
     where not exists (
       select 1
       from champion_stats_snapshots s
       where s.source = 'cnHistory'
         and s.stats_date = p.stats_date
     );
+  `;
+
+  await client`
+    update champion_stats_snapshots
+    set status = case
+      when coalesce(row_count, 0) <= 0 then 'failed'
+      else 'completed'
+    end
+    where source = 'cnHistory'
+      and coalesce(metadata->>'legacyBackfill', 'false') = 'true';
   `;
 
   await client`
@@ -101,7 +107,9 @@ async function main() {
     where h.snapshot_id is null
       and h.date = c.stats_date;
   `;
+}
 
+async function ensureChampionStatsIndexes() {
   await client`
     drop index if exists champion_stats_history_date_slug_rank_lane_uidx;
   `;
@@ -130,6 +138,12 @@ async function main() {
     create index if not exists champion_stats_history_slug_date_idx
     on champion_stats_history (slug, date);
   `;
+}
+
+async function main() {
+  await setupChampionStatsSnapshotTables();
+  await backfillChampionStatsSnapshots();
+  await ensureChampionStatsIndexes();
 
   console.log("stats tables and snapshot indexes are ready");
 }

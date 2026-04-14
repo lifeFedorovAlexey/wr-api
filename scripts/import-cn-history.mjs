@@ -6,7 +6,6 @@ import { champions, championStatsHistory } from "../db/schema.js";
 import {
   createChampionStatsSnapshot,
   determineChampionStatsSnapshotStatus,
-  getLatestCompletedChampionStatsSnapshot,
   SNAPSHOT_STATUS_FAILED,
   updateChampionStatsSnapshot,
 } from "../lib/statsSnapshots.mjs";
@@ -134,7 +133,6 @@ export async function runCnHistoryImport() {
   const runStartedAt = new Date();
   log(`[cn-history] start -> date=${today}`);
 
-  const previousCompletedSnapshot = await getLatestCompletedChampionStatsSnapshot();
   const snapshot = await createChampionStatsSnapshot({
     statsDate: today,
     startedAt: runStartedAt,
@@ -235,7 +233,8 @@ export async function runCnHistoryImport() {
 
     const snapshotStatus = determineChampionStatsSnapshotStatus({
       rowCount: upserted,
-      previousCompletedRowCount: previousCompletedSnapshot?.rowCount ?? 0,
+      championCount: championRows.length,
+      matchedChampionCount: coverage.matchedCount,
     });
 
     await updateChampionStatsSnapshot(snapshot.id, {
