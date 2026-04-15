@@ -16,7 +16,7 @@ const {
   respondToChatInvite,
 } = await import("../lib/chatModeration.mjs");
 
-function stubDb(overrides, fn) {
+async function stubDb(overrides, fn) {
   const originals = {};
 
   for (const [key, value] of Object.entries(overrides)) {
@@ -25,7 +25,7 @@ function stubDb(overrides, fn) {
   }
 
   try {
-    return fn();
+    return await fn();
   } finally {
     for (const [key, value] of Object.entries(originals)) {
       db[key] = value;
@@ -226,6 +226,7 @@ test("createChatInvite blocks inviting existing members", async () => {
 
 test("respondToChatInvite adds membership on accept", async () => {
   const insertCalls = [];
+  let selectCall = 0;
 
   await stubDb(
     {
@@ -234,17 +235,22 @@ test("respondToChatInvite adds membership on accept", async () => {
           from() {
             return {
               where() {
+                selectCall += 1;
                 return {
                   limit() {
-                    return Promise.resolve([
-                      {
-                        id: 14,
-                        groupId: 4,
-                        inviterUserId: 2,
-                        inviteeUserId: 8,
-                        status: "pending",
-                      },
-                    ]);
+                    if (selectCall === 1) {
+                      return Promise.resolve([
+                        {
+                          id: 14,
+                          groupId: 4,
+                          inviterUserId: 2,
+                          inviteeUserId: 8,
+                          status: "pending",
+                        },
+                      ]);
+                    }
+
+                    return Promise.resolve([]);
                   },
                 };
               },
