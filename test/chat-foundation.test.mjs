@@ -8,6 +8,7 @@ const {
   buildChatGroupSlug,
   createChatGroup,
   createChatMessage,
+  listChatGroupsForUser,
 } = await import("../lib/chatGroups.mjs");
 const {
   banChatMember,
@@ -156,6 +157,129 @@ test("createChatMessage rejects users outside the channel group", async () => {
         () => createChatMessage(12, { channelId: 50, body: "hello" }),
         /chat_channel_forbidden/,
       );
+    },
+  );
+});
+
+test("listChatGroupsForUser auto-provisions the shared general group", async () => {
+  const insertCalls = [];
+  let selectCall = 0;
+
+  await stubDb(
+    {
+      select() {
+        return {
+          from() {
+            return {
+              innerJoin() {
+                return {
+                  where() {
+                    return {
+                      orderBy() {
+                        return Promise.resolve([
+                          {
+                            id: 301,
+                            slug: "general",
+                            name: "General",
+                            description: "Общий чат по умолчанию",
+                            isPrivate: false,
+                            ownerUserId: 7,
+                            createdAt: new Date(),
+                            updatedAt: new Date(),
+                            membershipRole: "member",
+                          },
+                        ]);
+                      },
+                    };
+                  },
+                };
+              },
+              where() {
+                selectCall += 1;
+
+                if (selectCall === 1) {
+                  return {
+                    limit() {
+                      return Promise.resolve([]);
+                    },
+                  };
+                }
+
+                if (selectCall === 2) {
+                  return {
+                    limit() {
+                      return Promise.resolve([]);
+                    },
+                  };
+                }
+
+                if (selectCall === 3) {
+                  return {
+                    limit() {
+                      return Promise.resolve([]);
+                    },
+                  };
+                }
+
+                if (selectCall === 4) {
+                  return {
+                    limit() {
+                      return Promise.resolve([]);
+                    },
+                  };
+                }
+
+                return Promise.resolve([]);
+              },
+            };
+          },
+        };
+      },
+      insert() {
+        return {
+          values(payload) {
+            insertCalls.push(payload);
+            return {
+              returning() {
+                if (payload.ownerUserId) {
+                  return Promise.resolve([{ id: 301, ...payload }]);
+                }
+
+                if (payload.groupId && payload.slug === "general") {
+                  return Promise.resolve([{ id: 302, ...payload }]);
+                }
+
+                return Promise.resolve([payload]);
+              },
+            };
+          },
+        };
+      },
+    },
+    async () => {
+      const groups = await listChatGroupsForUser(7);
+
+      assert.equal(groups.length, 1);
+      assert.equal(groups[0].slug, "general");
+      assert.deepEqual(insertCalls[0], {
+        ownerUserId: 7,
+        slug: "general",
+        name: "General",
+        description: "Общий чат по умолчанию",
+        isPrivate: false,
+      });
+      assert.deepEqual(insertCalls[1], {
+        groupId: 301,
+        slug: "general",
+        name: "general",
+        kind: "text",
+        position: 0,
+      });
+      assert.deepEqual(insertCalls[2], {
+        groupId: 301,
+        userId: 7,
+        role: "member",
+      });
     },
   );
 });
