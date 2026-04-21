@@ -833,20 +833,13 @@ async function importChampionStats({ slug, index, total }) {
   queueRiftDictionaryAssets(normalized.dictionaries);
 
   await db.transaction(async (tx) => {
-    const matchupDateFilter = buildDataDateFilter(riftggCnMatchups.dataDate, normalized.matchups);
-    const buildDateFilter = buildDataDateFilter(riftggCnBuilds.dataDate, normalized.builds);
+    await tx
+      .delete(riftggCnMatchups)
+      .where(eq(riftggCnMatchups.championSlug, slug));
 
-    if (matchupDateFilter) {
-      await tx
-        .delete(riftggCnMatchups)
-        .where(and(eq(riftggCnMatchups.championSlug, slug), matchupDateFilter));
-    }
-
-    if (buildDateFilter) {
-      await tx
-        .delete(riftggCnBuilds)
-        .where(and(eq(riftggCnBuilds.championSlug, slug), buildDateFilter));
-    }
+    await tx
+      .delete(riftggCnBuilds)
+      .where(eq(riftggCnBuilds.championSlug, slug));
 
     if (normalized.matchups.length) {
       await tx.insert(riftggCnMatchups).values(
