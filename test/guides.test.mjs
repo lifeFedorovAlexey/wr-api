@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  collectGuideAssetTasks,
   collectGuideEntityRefs,
   localizeRole,
   shouldSkipGuideImport,
@@ -113,6 +114,53 @@ test("collectGuideEntityRefs keeps entity kinds so equal slugs do not collide", 
     { kind: "ability", slug: "ignite" },
     { kind: "item", slug: "ignite" },
     { kind: "champion", slug: "lux" },
+  ]);
+});
+
+test("collectGuideAssetTasks includes entity and ability assets with stable keys", () => {
+  const tasks = collectGuideAssetTasks({
+    summary: { slug: "ksante" },
+    entities: [
+      {
+        kind: "item",
+        slug: "iceborn-gauntlet",
+        imageUrl: "https://assets.riftgg.app/items/iceborn-gauntlet.webp",
+        tooltipImageUrl: "https://assets.riftgg.app/items/iceborn-gauntlet-detail.webp",
+      },
+    ],
+    abilities: [
+      {
+        abilitySlug: "passive",
+        iconUrl:
+          "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/passive-icon.png?accountingTag=WR",
+      },
+    ],
+  });
+
+  assert.deepEqual(tasks, [
+    {
+      kind: "item",
+      slug: "iceborn-gauntlet",
+      field: "image",
+      assetKey: "guide-item-iceborn-gauntlet-image",
+      sourceUrl: "https://assets.riftgg.app/items/iceborn-gauntlet.webp",
+    },
+    {
+      kind: "item",
+      slug: "iceborn-gauntlet",
+      field: "tooltip",
+      assetKey: "guide-item-iceborn-gauntlet-tooltip",
+      sourceUrl: "https://assets.riftgg.app/items/iceborn-gauntlet-detail.webp",
+    },
+    {
+      kind: "ability",
+      slug: "passive",
+      field: "abilityIcon",
+      guideSlug: "ksante",
+      assetKey: "guide-ksante-passive-ability",
+      sourceUrl:
+        "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/passive-icon.png?accountingTag=WR",
+    },
   ]);
 });
 

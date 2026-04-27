@@ -1,7 +1,7 @@
 import "dotenv/config";
 
 import { client, db } from "../db/client.js";
-import { guideEntities } from "../db/schema.js";
+import { guideAbilities, guideEntities } from "../db/schema.js";
 import {
   buildGuideAssetKey,
   buildGuideAssetStorageKey,
@@ -11,10 +11,10 @@ import {
 import { createObjectStorageClient, shouldUseS3PublicUrls } from "../lib/objectStorage.mjs";
 import { attachBackfillShutdown, parseBackfillCliArgs } from "./backfillShared.mjs";
 
-function buildTasks(rows, options) {
+function buildTasks({ entityRows, abilityRows, options }) {
   const tasks = [];
 
-  for (const row of rows) {
+  for (const row of entityRows) {
     const slug = String(row?.slug || "").trim().toLowerCase();
     if (!slug) continue;
     if (options.slugs.length && !options.slugs.includes(slug)) continue;
@@ -42,6 +42,22 @@ function buildTasks(rows, options) {
     }
   }
 
+  for (const row of abilityRows) {
+    const guideSlug = String(row?.guideSlug || "").trim().toLowerCase();
+    const abilitySlug = String(row?.abilitySlug || "").trim().toLowerCase();
+    if (!guideSlug || !abilitySlug || !row?.iconUrl) continue;
+    if (options.slugs.length && !options.slugs.includes(guideSlug)) continue;
+
+    tasks.push({
+      kind: "ability",
+      slug: abilitySlug,
+      guideSlug,
+      field: "abilityIcon",
+      sourceUrl: String(row.iconUrl).trim(),
+      assetKey: buildGuideAssetKey("guide", guideSlug, abilitySlug, "ability"),
+    });
+  }
+
   return tasks;
 }
 
@@ -54,17 +70,24 @@ function logProgress({ index, total, task, outcome, mirrored, skipped, failed })
 async function main() {
   const options = parseBackfillCliArgs(process.argv);
   const objectStorage = createObjectStorageClient(process.env);
-  const guideAssetStore = await createGuideAssetStore(process.env);
+  const guideAssetStore = await createGuideAssetStore(process.env, {
+    throwOnMirrorError: true,
+    objectStorage,
+  });
   const useS3 = Boolean(objectStorage);
 
   if (options.requireS3 && !useS3) {
     throw new Error("S3 env is not configured");
   }
 
-  const rows = await db.select().from(guideEntities);
-  const tasks = buildTasks(rows, options);
+  const [entityRows, abilityRows] = await Promise.all([
+    db.select().from(guideEntities),
+    db.select().from(guideAbilities),
+  ]);
+  const tasks = buildTasks({ entityRows, abilityRows, options });
   const summary = {
-    totalRows: rows.length,
+    totalEntityRows: entityRows.length,
+    totalAbilityRows: abilityRows.length,
     totalTasks: tasks.length,
     mirrored: [],
     skipped: [],
@@ -74,7 +97,7 @@ async function main() {
   };
 
   console.log(
-    `[backfill-guide-entity-assets] start: rows=${rows.length}, tasks=${tasks.length}, storageMode=${summary.storageMode}, s3PublicMode=${summary.s3PublicMode}`,
+    `[backfill-guide-entity-assets] start: entityRows=${entityRows.length}, abilityRows=${abilityRows.length}, tasks=${tasks.length}, storageMode=${summary.storageMode}, s3PublicMode=${summary.s3PublicMode}`,
   );
 
   for (const [index, task] of tasks.entries()) {

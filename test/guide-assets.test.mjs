@@ -75,3 +75,85 @@ test("createGuideAssetStore uploads cached assets to S3 when the object is missi
     await rm(assetsDir, { recursive: true, force: true });
   }
 });
+
+test("createGuideAssetStore can surface mirror failures in strict mode", async () => {
+  const assetsDir = await mkdtemp(path.join(os.tmpdir(), "wr-guide-assets-"));
+  const assetKey = buildGuideAssetKey("guide", "ksante", "passive", "ability");
+  const sourceUrl =
+    "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/89738e4f1a418a2abe780849077b92e661315aa4-256x256.png?accountingTag=WR";
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async () => {
+    throw new Error("fetch failed");
+  };
+
+  try {
+    const guideAssetStore = await createGuideAssetStore(
+      {
+        GUIDE_ASSETS_DIR: assetsDir,
+      },
+      {
+        throwOnMirrorError: true,
+      },
+    );
+
+    await assert.rejects(
+      guideAssetStore.mirror(assetKey, sourceUrl),
+      /fetch failed/,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    await rm(assetsDir, { recursive: true, force: true });
+  }
+});
+
+test("createGuideAssetStore ignores retry cooldown in strict mode", async () => {
+  const assetsDir = await mkdtemp(path.join(os.tmpdir(), "wr-guide-assets-"));
+  const assetKey = buildGuideAssetKey("guide", "ksante", "passive", "ability");
+  const sourceUrl =
+    "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/89738e4f1a418a2abe780849077b92e661315aa4-256x256.png?accountingTag=WR";
+  const manifestPath = path.join(assetsDir, "manifest.json");
+  const originalFetch = globalThis.fetch;
+  let fetchCalls = 0;
+
+  await writeFile(
+    manifestPath,
+    JSON.stringify(
+      {
+        [assetKey]: {
+          sourceUrl,
+          fileName: null,
+          lastFailedAt: new Date().toISOString(),
+          lastError: "fetch failed",
+        },
+      },
+      null,
+      2,
+    ),
+  );
+
+  globalThis.fetch = async () => {
+    fetchCalls += 1;
+    throw new Error("fetch failed again");
+  };
+
+  try {
+    const guideAssetStore = await createGuideAssetStore(
+      {
+        GUIDE_ASSETS_DIR: assetsDir,
+      },
+      {
+        throwOnMirrorError: true,
+      },
+    );
+
+    await assert.rejects(
+      guideAssetStore.mirror(assetKey, sourceUrl),
+      /fetch failed again/,
+    );
+    assert.equal(fetchCalls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+    await rm(assetsDir, { recursive: true, force: true });
+  }
+});
