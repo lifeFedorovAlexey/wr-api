@@ -127,6 +127,14 @@ test("collectGuideAssetTasks includes entity and ability assets with stable keys
         imageUrl: "https://assets.riftgg.app/items/iceborn-gauntlet.webp",
         tooltipImageUrl: "https://assets.riftgg.app/items/iceborn-gauntlet-detail.webp",
       },
+      {
+        kind: "ability",
+        slug: "ntofo-strikes",
+        imageUrl:
+          "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/ntofo-strikes.png?accountingTag=WR",
+        tooltipImageUrl:
+          "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/ntofo-strikes.png?accountingTag=WR",
+      },
     ],
     abilities: [
       {
