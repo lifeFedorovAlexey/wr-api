@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { pathToFileURL } from "node:url";
+import { request as httpsRequest } from "node:https";
 import { and, eq, ne } from "drizzle-orm";
 
 import { db, client } from "../db/client.js";
@@ -59,27 +60,83 @@ function toFloat(value) {
 }
 
 async function fetchCnHeroRankOnce() {
-  const controller = new AbortController();
-  const timeout = setTimeout(
-    () => controller.abort(new Error(`timeout after ${CN_FETCH_TIMEOUT_MS}ms`)),
-    CN_FETCH_TIMEOUT_MS,
-  );
+  const text = await fetchTextViaHttps(HERO_RANK_URL, {
+    timeoutMs: CN_FETCH_TIMEOUT_MS,
+    headers: CN_FETCH_HEADERS,
+    forceIpv4: true,
+  });
 
   try {
-    const response = await fetch(HERO_RANK_URL, {
-      headers: CN_FETCH_HEADERS,
-      signal: controller.signal,
+    return JSON.parse(text);
+  } catch (error) {
+    throw new Error(`hero_rank_list_v2 invalid json: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+function fetchTextViaHttps(
+  url,
+  { timeoutMs, headers, forceIpv4 = false, redirectCount = 0 },
+) {
+  return new Promise((resolve, reject) => {
+    const parsedUrl = new URL(url);
+    const req = httpsRequest(
+      {
+        protocol: parsedUrl.protocol,
+        hostname: parsedUrl.hostname,
+        port: parsedUrl.port || 443,
+        path: `${parsedUrl.pathname}${parsedUrl.search}`,
+        method: "GET",
+        headers,
+        family: forceIpv4 ? 4 : undefined,
+      },
+      (res) => {
+        const statusCode = res.statusCode || 0;
+        const location = res.headers.location;
+
+        if (
+          location &&
+          [301, 302, 303, 307, 308].includes(statusCode) &&
+          redirectCount < 5
+        ) {
+          res.resume();
+          resolve(
+            fetchTextViaHttps(new URL(location, parsedUrl).toString(), {
+              timeoutMs,
+              headers,
+              forceIpv4,
+              redirectCount: redirectCount + 1,
+            }),
+          );
+          return;
+        }
+
+        const chunks = [];
+        res.setEncoding("utf8");
+        res.on("data", (chunk) => chunks.push(chunk));
+        res.on("end", () => {
+          const body = chunks.join("");
+
+          if (statusCode < 200 || statusCode >= 300) {
+            reject(
+              new Error(
+                `hero_rank_list_v2 error ${statusCode}: ${body.slice(0, 200)}`,
+              ),
+            );
+            return;
+          }
+
+          resolve(body);
+        });
+      },
+    );
+
+    req.setTimeout(timeoutMs, () => {
+      req.destroy(new Error(`timeout after ${timeoutMs}ms`));
     });
 
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`hero_rank_list_v2 error ${response.status}: ${text.slice(0, 200)}`);
-    }
-
-    return await response.json();
-  } finally {
-    clearTimeout(timeout);
-  }
+    req.on("error", reject);
+    req.end();
+  });
 }
 
 export async function fetchCnHeroRank() {
