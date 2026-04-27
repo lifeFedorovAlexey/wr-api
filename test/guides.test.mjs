@@ -135,6 +135,11 @@ test("collectGuideAssetTasks includes entity and ability assets with stable keys
         tooltipImageUrl:
           "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/ntofo-strikes.png?accountingTag=WR",
       },
+      {
+        kind: "champion",
+        slug: "vayne",
+        imageUrl: "https://www.mobafire.com/images/champion/square/vayne.png",
+      },
     ],
     abilities: [
       {
