@@ -69,7 +69,10 @@ async function fetchCnHeroRankOnce() {
   try {
     return JSON.parse(text);
   } catch (error) {
-    throw new Error(`hero_rank_list_v2 invalid json: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(
+      `hero_rank_list_v2 invalid json: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
   }
 }
 

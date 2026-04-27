@@ -11,51 +11,77 @@ import {
 import { createObjectStorageClient, shouldUseS3PublicUrls } from "../lib/objectStorage.mjs";
 import { attachBackfillShutdown, parseBackfillCliArgs } from "./backfillShared.mjs";
 
+function shouldIncludeSlug(slug, options) {
+  return !options.slugs.length || options.slugs.includes(slug);
+}
+
+function buildEntityTasks(row) {
+  const kind = String(row?.kind || "").trim();
+  const slug = String(row?.slug || "").trim().toLowerCase();
+
+  if (!kind || !slug) {
+    return [];
+  }
+
+  const tasks = [];
+
+  if (row?.imageUrl) {
+    tasks.push({
+      kind,
+      slug,
+      field: "image",
+      sourceUrl: String(row.imageUrl).trim(),
+      assetKey: buildGuideAssetKey("guide", kind, slug, "image"),
+    });
+  }
+
+  if (row?.tooltipImageUrl) {
+    tasks.push({
+      kind,
+      slug,
+      field: "tooltip",
+      sourceUrl: String(row.tooltipImageUrl).trim(),
+      assetKey: buildGuideAssetKey("guide", kind, slug, "tooltip"),
+    });
+  }
+
+  return tasks;
+}
+
+function buildAbilityTask(row) {
+  const guideSlug = String(row?.guideSlug || "").trim().toLowerCase();
+  const abilitySlug = String(row?.abilitySlug || "").trim().toLowerCase();
+  const sourceUrl = String(row?.iconUrl || "").trim();
+
+  if (!guideSlug || !abilitySlug || !sourceUrl) {
+    return null;
+  }
+
+  return {
+    kind: "ability",
+    slug: abilitySlug,
+    guideSlug,
+    field: "abilityIcon",
+    sourceUrl,
+    assetKey: buildGuideAssetKey("guide", guideSlug, abilitySlug, "ability"),
+  };
+}
+
 function buildTasks({ entityRows, abilityRows, options }) {
   const tasks = [];
 
   for (const row of entityRows) {
     const slug = String(row?.slug || "").trim().toLowerCase();
-    if (!slug) continue;
-    if (options.slugs.length && !options.slugs.includes(slug)) continue;
-
-    const kind = String(row?.kind || "").trim();
-
-    if (row?.imageUrl) {
-      tasks.push({
-        kind,
-        slug,
-        field: "image",
-        sourceUrl: String(row.imageUrl).trim(),
-        assetKey: buildGuideAssetKey("guide", kind, slug, "image"),
-      });
-    }
-
-    if (row?.tooltipImageUrl) {
-      tasks.push({
-        kind,
-        slug,
-        field: "tooltip",
-        sourceUrl: String(row.tooltipImageUrl).trim(),
-        assetKey: buildGuideAssetKey("guide", kind, slug, "tooltip"),
-      });
+    if (shouldIncludeSlug(slug, options)) {
+      tasks.push(...buildEntityTasks(row));
     }
   }
 
   for (const row of abilityRows) {
-    const guideSlug = String(row?.guideSlug || "").trim().toLowerCase();
-    const abilitySlug = String(row?.abilitySlug || "").trim().toLowerCase();
-    if (!guideSlug || !abilitySlug || !row?.iconUrl) continue;
-    if (options.slugs.length && !options.slugs.includes(guideSlug)) continue;
-
-    tasks.push({
-      kind: "ability",
-      slug: abilitySlug,
-      guideSlug,
-      field: "abilityIcon",
-      sourceUrl: String(row.iconUrl).trim(),
-      assetKey: buildGuideAssetKey("guide", guideSlug, abilitySlug, "ability"),
-    });
+    const task = buildAbilityTask(row);
+    if (task && shouldIncludeSlug(task.guideSlug, options)) {
+      tasks.push(task);
+    }
   }
 
   return tasks;
