@@ -15,6 +15,7 @@ on:
         options:
           - champions-history
           - champions-history-riftgg
+          - guides
           - full
       slugs:
         description: Optional champion slugs separated by spaces
@@ -127,6 +128,9 @@ jobs:
               ;;
             champions-history-riftgg)
               flags="--skip-guides"
+              ;;
+            guides)
+              flags="--skip-cn-history --skip-riftgg"
               ;;
             full)
               flags=""

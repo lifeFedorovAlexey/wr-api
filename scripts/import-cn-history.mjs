@@ -13,6 +13,20 @@ import {
 
 const HERO_RANK_URL =
   "https://mlol.qt.qq.com/go/lgame_battle_info/hero_rank_list_v2";
+const CN_FETCH_TIMEOUT_MS = Math.max(
+  5_000,
+  Number(process.env.CN_FETCH_TIMEOUT_MS || 20_000),
+);
+const CN_FETCH_RETRIES = Math.max(
+  1,
+  Number(process.env.CN_FETCH_RETRIES || 3),
+);
+const CN_FETCH_HEADERS = {
+  "user-agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
+  accept: "application/json,text/plain,*/*",
+  referer: "https://lolm.qq.com/",
+};
 
 const RANK_MAP = {
   0: "overall",
@@ -34,53 +48,94 @@ function log(...args) {
   console.log(...args);
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function toFloat(value) {
   if (value === undefined || value === null || value === "") return null;
   const numericValue = Number(value);
   return Number.isFinite(numericValue) ? numericValue : null;
 }
 
-export async function fetchCnHeroRank() {
-  log("[cn-history] fetch hero_rank_list_v2:", HERO_RANK_URL);
-  const response = await fetch(HERO_RANK_URL);
+async function fetchCnHeroRankOnce() {
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () => controller.abort(new Error(`timeout after ${CN_FETCH_TIMEOUT_MS}ms`)),
+    CN_FETCH_TIMEOUT_MS,
+  );
 
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`hero_rank_list_v2 error ${response.status}: ${text.slice(0, 200)}`);
+  try {
+    const response = await fetch(HERO_RANK_URL, {
+      headers: CN_FETCH_HEADERS,
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`hero_rank_list_v2 error ${response.status}: ${text.slice(0, 200)}`);
+    }
+
+    return await response.json();
+  } finally {
+    clearTimeout(timeout);
   }
+}
 
-  const json = await response.json();
-  const data = json.data || {};
-  const statsByHero = {};
+export async function fetchCnHeroRank() {
+  log(
+    `[cn-history] fetch hero_rank_list_v2: ${HERO_RANK_URL} timeout=${CN_FETCH_TIMEOUT_MS} retries=${CN_FETCH_RETRIES}`,
+  );
 
-  for (const rankKey of Object.keys(data)) {
-    const rankName = RANK_MAP[rankKey] || `rank_${rankKey}`;
-    const lanes = data[rankKey] || {};
+  let lastError = null;
 
-    for (const laneKey of Object.keys(lanes)) {
-      const laneName = LANE_MAP[laneKey] || `lane_${laneKey}`;
-      const rows = Array.isArray(lanes[laneKey]) ? lanes[laneKey] : [];
+  for (let attempt = 1; attempt <= CN_FETCH_RETRIES; attempt += 1) {
+    try {
+      const json = await fetchCnHeroRankOnce();
+      const data = json.data || {};
+      const statsByHero = {};
 
-      for (const item of rows) {
-        const heroId = String(item.hero_id || "").trim();
-        if (!heroId) continue;
+      for (const rankKey of Object.keys(data)) {
+        const rankName = RANK_MAP[rankKey] || `rank_${rankKey}`;
+        const lanes = data[rankKey] || {};
 
-        if (!statsByHero[heroId]) statsByHero[heroId] = {};
-        if (!statsByHero[heroId][rankName]) statsByHero[heroId][rankName] = {};
+        for (const laneKey of Object.keys(lanes)) {
+          const laneName = LANE_MAP[laneKey] || `lane_${laneKey}`;
+          const rows = Array.isArray(lanes[laneKey]) ? lanes[laneKey] : [];
 
-        statsByHero[heroId][rankName][laneName] = {
-          position: item.position ? Number(item.position) : null,
-          winRate: toFloat(item.win_rate_percent ?? item.win_rate),
-          pickRate: toFloat(item.appear_rate_percent ?? item.appear_rate),
-          banRate: toFloat(item.forbid_rate_percent ?? item.forbid_rate),
-          strengthLevel: item.strength_level ? Number(item.strength_level) : null,
-        };
+          for (const item of rows) {
+            const heroId = String(item.hero_id || "").trim();
+            if (!heroId) continue;
+
+            if (!statsByHero[heroId]) statsByHero[heroId] = {};
+            if (!statsByHero[heroId][rankName]) statsByHero[heroId][rankName] = {};
+
+            statsByHero[heroId][rankName][laneName] = {
+              position: item.position ? Number(item.position) : null,
+              winRate: toFloat(item.win_rate_percent ?? item.win_rate),
+              pickRate: toFloat(item.appear_rate_percent ?? item.appear_rate),
+              banRate: toFloat(item.forbid_rate_percent ?? item.forbid_rate),
+              strengthLevel: item.strength_level ? Number(item.strength_level) : null,
+            };
+          }
+        }
+      }
+
+      log(`[cn-history] hero_rank_list_v2 -> heroIds=${Object.keys(statsByHero).length}`);
+      return statsByHero;
+    } catch (error) {
+      lastError = error;
+
+      if (attempt < CN_FETCH_RETRIES) {
+        console.warn(
+          `[cn-history] retry ${attempt}/${CN_FETCH_RETRIES - 1} after ${error?.message || String(error)}`,
+        );
+        await sleep(1_000 * attempt);
       }
     }
   }
 
-  log(`[cn-history] hero_rank_list_v2 -> heroIds=${Object.keys(statsByHero).length}`);
-  return statsByHero;
+  throw lastError;
 }
 
 export async function loadCnHistoryChampionsFromDb() {
