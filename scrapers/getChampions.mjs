@@ -633,6 +633,12 @@ function logChampionCatalogReport(report) {
     `[getChampions] cn catalog -> heroList=${cnDiagnostics.heroListCount || 0} detailed=${cnDiagnostics.detailCount || 0} detailFailures=${cnDiagnostics.detailFailures || 0}`,
   );
 
+  if (cnDiagnostics.fallbackUsed) {
+    console.warn(
+      `[getChampions] CN enrichment fallback active: ${cnDiagnostics.fallbackError || "hero list unavailable"}`,
+    );
+  }
+
   console.log(
     `[getChampions] merge -> riot=${mergeDiagnostics.riotChampionCount || 0} cn=${mergeDiagnostics.cnChampionCount || 0} merged=${report?.champions?.length || 0}`,
   );
@@ -669,15 +675,29 @@ function logChampionCatalogReport(report) {
 }
 
 export async function runChampionCatalogScrape() {
+  let cnFallbackError = null;
   const riotLocaleNames = await scrapeRiotNames();
   const { riotNames, diagnostics: riotDiagnostics } = buildRiotChampionCatalog({
     ruNames: riotLocaleNames.get("ru_ru"),
     enNames: riotLocaleNames.get("en_us"),
   });
 
-  const heroList = await fetchHeroList();
-  const heroListItems = buildCnHeroListItems(heroList);
-  const cnDetails = await fetchCnChampionDetails(heroListItems);
+  let heroListItems = [];
+  let cnDetails = {
+    champions: [],
+    failed: [],
+  };
+
+  try {
+    const heroList = await fetchHeroList();
+    heroListItems = buildCnHeroListItems(heroList);
+    cnDetails = await fetchCnChampionDetails(heroListItems);
+  } catch (error) {
+    cnFallbackError = error instanceof Error ? error : new Error(String(error));
+    console.warn(
+      `[getChampions] CN hero list unavailable, continuing with Riot-only catalog: ${cnFallbackError.message}`,
+    );
+  }
 
   const { champions, diagnostics } = buildChampionCatalogFromSources({
     riotNames,
@@ -696,6 +716,8 @@ export async function runChampionCatalogScrape() {
         detailCount: cnDetails.champions.length,
         detailFailures: cnDetails.failed.length,
         failedSamples: cnDetails.failed.slice(0, 10),
+        fallbackUsed: Boolean(cnFallbackError),
+        fallbackError: cnFallbackError?.message || null,
       },
       merge: diagnostics,
     },
