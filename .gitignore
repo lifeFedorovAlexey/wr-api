@@ -10,3 +10,4 @@ debug-getChampions.mjs
 .runtime*.log
 .runtime*.err.log
 db-backups/
+wr-api-preview.log
