@@ -515,6 +515,7 @@ export const siteUsers = pgTable(
   {
     id: serial("id").primaryKey(),
     displayName: text("display_name"),
+    streamerDisplayName: text("streamer_display_name"),
     avatarUrl: text("avatar_url"),
     wildRiftHandle: text("wild_rift_handle"),
     peakRank: text("peak_rank"),
@@ -582,6 +583,29 @@ export const siteSessions = pgTable(
     sessionHashUidx: uniqueIndex("site_sessions_session_hash_uidx").on(table.sessionHash),
     userIdx: index("site_sessions_user_idx").on(table.userId),
     expiresIdx: index("site_sessions_expires_idx").on(table.expiresAt),
+  }),
+);
+
+export const streamerTierlistPublications = pgTable(
+  "streamer_tierlist_publications",
+  {
+    id: serial("id").primaryKey(),
+    siteUserId: integer("site_user_id").notNull(),
+    sourceStatsSnapshotId: integer("source_stats_snapshot_id"),
+    sourceStatsDate: pgDate("source_stats_date"),
+    payload: jsonb("payload").notNull(),
+    editedAt: timestamp("edited_at", { withTimezone: true }),
+    publishedAt: timestamp("published_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    siteUserPublishedIdx: index("streamer_tierlists_site_user_published_idx").on(
+      table.siteUserId,
+      table.publishedAt,
+    ),
+    publishedAtIdx: index("streamer_tierlists_published_at_idx").on(table.publishedAt),
+    snapshotIdx: index("streamer_tierlists_snapshot_idx").on(table.sourceStatsSnapshotId),
   }),
 );
 

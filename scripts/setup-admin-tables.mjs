@@ -116,6 +116,7 @@ async function main() {
     create table if not exists site_users (
       id serial primary key,
       display_name text,
+      streamer_display_name text,
       avatar_url text,
       wild_rift_handle text,
       peak_rank text,
@@ -125,6 +126,11 @@ async function main() {
       updated_at timestamptz not null default now(),
       last_login_at timestamptz
     );
+  `;
+
+  await client`
+    alter table site_users
+    add column if not exists streamer_display_name text;
   `;
 
   await client`
@@ -204,6 +210,38 @@ async function main() {
   await client`
     create index if not exists site_sessions_expires_idx
     on site_sessions (expires_at);
+  `;
+
+  await client`
+    create table if not exists streamer_tierlist_publications (
+      id serial primary key,
+      site_user_id integer not null,
+      source_stats_snapshot_id integer,
+      source_stats_date date,
+      payload jsonb not null,
+      edited_at timestamptz,
+      published_at timestamptz not null default now()
+    );
+  `;
+
+  await client`
+    alter table streamer_tierlist_publications
+    add column if not exists edited_at timestamptz;
+  `;
+
+  await client`
+    create index if not exists streamer_tierlists_site_user_published_idx
+    on streamer_tierlist_publications (site_user_id, published_at);
+  `;
+
+  await client`
+    create index if not exists streamer_tierlists_published_at_idx
+    on streamer_tierlist_publications (published_at);
+  `;
+
+  await client`
+    create index if not exists streamer_tierlists_snapshot_idx
+    on streamer_tierlist_publications (source_stats_snapshot_id);
   `;
 
   await client`

@@ -39,7 +39,11 @@ export default async function handler(req, res) {
   } catch (error) {
     const code = error instanceof Error ? error.message : "profile_update_failed";
 
-    if (code === "invalid_wild_rift_handle" || code === "invalid_peak_rank") {
+    if (
+      code === "invalid_wild_rift_handle" ||
+      code === "invalid_peak_rank" ||
+      code === "invalid_avatar_url"
+    ) {
       return res.status(400).json({ error: code });
     }
 

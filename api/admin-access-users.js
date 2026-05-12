@@ -51,7 +51,10 @@ export default async function handler(req, res) {
   try {
     const siteUserId = req.body?.siteUserId;
     const roleKeys = req.body?.roleKeys;
-    const user = await updateSiteUserAccessRoles(siteUserId, roleKeys);
+    const streamerDisplayName = req.body?.streamerDisplayName;
+    const user = await updateSiteUserAccessRoles(siteUserId, roleKeys, {
+      streamerDisplayName,
+    });
     return res.status(200).json({ ok: true, user });
   } catch (error) {
     const errorCode = error?.code || "access_update_failed";
