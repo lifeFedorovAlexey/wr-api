@@ -31,6 +31,8 @@ on:
         required: false
       GUIDES_SYNC_SECRET:
         required: false
+      WR_CHAT_SHARED_SECRET:
+        required: false
       TIMEWEB_HOST:
         required: true
       TIMEWEB_USER:
@@ -58,6 +60,7 @@ jobs:
       ASSET_PUBLIC_MODE: ${{ secrets.ASSET_PUBLIC_MODE }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       GUIDES_SYNC_SECRET: ${{ secrets.GUIDES_SYNC_SECRET }}
+      WR_CHAT_SHARED_SECRET: ${{ secrets.WR_CHAT_SHARED_SECRET }}
 
     steps:
       - name: Deploy over SSH
@@ -75,13 +78,14 @@ jobs:
           ASSET_PUBLIC_MODE: ${{ secrets.ASSET_PUBLIC_MODE }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           GUIDES_SYNC_SECRET: ${{ secrets.GUIDES_SYNC_SECRET }}
+          WR_CHAT_SHARED_SECRET: ${{ secrets.WR_CHAT_SHARED_SECRET }}
           S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
           S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
         with:
           host: ${{ secrets.TIMEWEB_HOST }}
           username: ${{ secrets.TIMEWEB_USER }}
           password: ${{ secrets.TIMEWEB_PASSWORD }}
-          envs: ADMIN_SESSION_SECRET,USER_SESSION_SECRET,ADMIN_BOOTSTRAP_EMAILS,ADMIN_BOOTSTRAP_TELEGRAM_IDS,ADMIN_BOOTSTRAP_TELEGRAM_USERNAMES,S3_ENDPOINT,S3_BUCKET,S3_PUBLIC_BASE_URL,S3_FORCE_PATH_STYLE,ASSET_PUBLIC_MODE,DATABASE_URL,GUIDES_SYNC_SECRET,S3_ACCESS_KEY_ID,S3_SECRET_ACCESS_KEY
+          envs: ADMIN_SESSION_SECRET,USER_SESSION_SECRET,ADMIN_BOOTSTRAP_EMAILS,ADMIN_BOOTSTRAP_TELEGRAM_IDS,ADMIN_BOOTSTRAP_TELEGRAM_USERNAMES,S3_ENDPOINT,S3_BUCKET,S3_PUBLIC_BASE_URL,S3_FORCE_PATH_STYLE,ASSET_PUBLIC_MODE,DATABASE_URL,GUIDES_SYNC_SECRET,WR_CHAT_SHARED_SECRET,S3_ACCESS_KEY_ID,S3_SECRET_ACCESS_KEY
           script: |
             set -e
             APP_ROOT="/var/www/wr-api"
@@ -184,6 +188,7 @@ jobs:
             upsert_env ASSET_PUBLIC_MODE "${ASSET_PUBLIC_MODE}" "${RELEASE_DIR}/.env"
             upsert_env DATABASE_URL "${DATABASE_URL}" "${RELEASE_DIR}/.env"
             upsert_env GUIDES_SYNC_SECRET "${GUIDES_SYNC_SECRET}" "${RELEASE_DIR}/.env"
+            upsert_env WR_CHAT_SHARED_SECRET "${WR_CHAT_SHARED_SECRET}" "${RELEASE_DIR}/.env"
 
             log_step "install dependencies and setup schema"
             cd "${RELEASE_DIR}"

@@ -78,6 +78,10 @@ Optional unfinished user-auth env:
 
 - `USER_SESSION_SECRET`
 
+Chat handoff env:
+
+- `WR_CHAT_SHARED_SECRET` - shared secret with `wr-chat`; required before deploying chat MVP
+
 Current wr-api repo secret inventory:
 
 - `ADMIN_BOOTSTRAP_EMAILS`
@@ -94,6 +98,7 @@ Current wr-api repo secret inventory:
 - `TIMEWEB_HOST`
 - `TIMEWEB_PASSWORD`
 - `TIMEWEB_USER`
+- `WR_CHAT_SHARED_SECRET`
 
 Bootstrap env for the very first owner only:
 
@@ -111,6 +116,8 @@ but they are not part of the current approved production secret inventory:
 - `NEWS_SYNC_TOKEN`
 - `TELEGRAM_BOT_TOKEN`
 - `USER_SESSION_SECRET`
+
+`WR_CHAT_SHARED_SECRET` is approved for the chat MVP handoff between `wr-api` and `wr-chat`.
 
 Setup:
 
