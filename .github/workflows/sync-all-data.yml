@@ -52,14 +52,14 @@ jobs:
 
     steps:
       - name: Checkout UI repo
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: lifeFedorovAlexey/wildriftchampionsData
           ref: main
           path: wildriftchampionsData
 
       - name: Checkout WR API repo
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           path: wildriftchampionsData/wr-api
 
