@@ -25,15 +25,63 @@ const curatedTips = [
     sourceLabel: "ОХОТНИЧИЙ АЗАРТ",
     evidenceText: "Ренгар увеличивает свою скорость передвижения и на некоторое время раскрывает ближайшего вражеского чемпиона. Через несколько секунд Ренгар маскируется, а его следующая атака временно уменьшает броню цели.",
   },
+  {
+    championSlug: "brand",
+    lane: null,
+    tipText: "Сначала наложи «Поджог», а затем попади «Выгоранием», чтобы ненадолго оглушить цель.",
+    sourceLabel: "ВЫГОРАНИЕ",
+    evidenceText: "Выпускает снаряд, который взрывается при столкновении с первым врагом на пути, нанося урон и добавляя заряд Поджога. Цель, которая ранее получила урон от пассивного умения Брэнда, ненадолго оглушается.",
+    sourceUrl: "https://wildrift.leagueoflegends.com/ru-ru/champions/brand/",
+  },
+  {
+    championSlug: "brand",
+    lane: null,
+    tipText: "Применяй «Воспламенение» к уже горящей цели, чтобы вдвое увеличить дальность распространения пламени.",
+    sourceLabel: "ВОСПЛАМЕНЕНИЕ",
+    evidenceText: "Брэнд воспламеняет цель, после чего пламя распространяется на ближайших врагов, нанося магический урон. Если цель в огне, дальность распространения Воспламенения увеличивается вдвое.",
+    sourceUrl: "https://wildrift.leagueoflegends.com/ru-ru/champions/brand/",
+  },
+  {
+    championSlug: "brand",
+    lane: null,
+    tipText: "Учитывай небольшую задержку «Столба пламени», выбирая область для нанесения урона нескольким врагам.",
+    sourceLabel: "СТОЛБ ПЛАМЕНИ",
+    evidenceText: "После небольшой задержки Брэнд создает в указанной точке огненный столб, который наносит магический урон всем врагам в зоне поражения.",
+    sourceUrl: "https://wildrift.leagueoflegends.com/ru-ru/champions/brand/",
+  },
+  {
+    championSlug: "vladimir",
+    lane: null,
+    tipText: "Используй усиленное «Переливание» при заполненном ресурсе, чтобы нанести большой урон и восстановить здоровье.",
+    sourceLabel: "МАГИЯ КРОВИ",
+    evidenceText: "Владимир высасывает жизненную силу врага. Когда ресурс Владимира заполнится, Переливание нанесет огромный урон и восстановит здоровье Владимиру.",
+    sourceUrl: "https://wildrift.leagueoflegends.com/ru-ru/champions/vladimir/",
+  },
+  {
+    championSlug: "vladimir",
+    lane: null,
+    tipText: "Применяй «Алый омут», чтобы на 2 секунды стать недосягаемым, замедлить врагов над собой и вытянуть их здоровье.",
+    sourceLabel: "АЛЫЙ ОМУТ",
+    evidenceText: "Владимир погружается в омут крови и становится недосягаемым на 2 сек., замедляя врагов над собой и вытягивая у них здоровье.",
+    sourceUrl: "https://wildrift.leagueoflegends.com/ru-ru/champions/vladimir/",
+  },
+  {
+    championSlug: "vladimir",
+    lane: null,
+    tipText: "Накрой врагов «Заражением крови», чтобы они получали увеличенный урон во время действия умения.",
+    sourceLabel: "ЗАРАЖЕНИЕ КРОВИ",
+    evidenceText: "Владимир заражает всех противников в выбранной области. В течение действия умения пораженные враги получают увеличенный урон; кроме того, по окончании действия умения им наносится дополнительный магический урон.",
+    sourceUrl: "https://wildrift.leagueoflegends.com/ru-ru/champions/vladimir/",
+  },
 ];
 
-const sourceUrl = "https://wildrift.leagueoflegends.com/ru-ru/champions/rengar/";
+const defaultSourceUrl = "https://wildrift.leagueoflegends.com/ru-ru/champions/rengar/";
 
 for (const tip of curatedTips) {
   const record = {
     ...tip,
     sourceKind: "riot-wild-rift-champion-page-curated",
-    sourceUrl,
+    sourceUrl: tip.sourceUrl || defaultSourceUrl,
     patchDependent: false,
     reviewStatus: "approved",
   };
