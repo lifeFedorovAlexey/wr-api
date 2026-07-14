@@ -197,6 +197,7 @@ jobs:
             npm run setup:champion-lore
             npm run import:champion-lore -- --missing-only --concurrency 3
             npm run setup:assistant
+            npm run setup:stable-tips
             npm run setup:guides
             npm run setup:admin
             npm run setup:chat

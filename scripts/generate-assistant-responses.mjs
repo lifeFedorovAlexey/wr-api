@@ -5,6 +5,7 @@ const ollamaOrigin = String(process.env.OLLAMA_ORIGIN || "http://127.0.0.1:11434
 const model = process.env.OLLAMA_MODEL || "qwen3:8b";
 const slugArgIndex = process.argv.indexOf("--slug");
 const requestedSlug = slugArgIndex >= 0 ? String(process.argv[slugArgIndex + 1] || "").trim().toLowerCase() : "";
+const dryRun = process.argv.includes("--dry-run");
 const secret = process.env.GUIDES_SYNC_SECRET;
 if (!secret) throw new Error("GUIDES_SYNC_SECRET is required");
 
@@ -15,16 +16,12 @@ async function api(path, options = {}) {
 }
 
 function prompt(task, rank, stats) {
-  return `Ты — Люкс из League of Legends. Напиши одну короткую практическую рекомендацию игроку, максимум 130 символов, одним предложением. Обязательно дай конкретное действие: брать или не брать чемпиона, учитывать бан, ждать удобный матчап, держать дистанцию или играть осторожнее. Говори живо от лица Люкс. Допускается одна короткая узнаваемая метафора, мотив или сила оцениваемого чемпиона, только если она помогает совету.
-Вердикт уже рассчитан: ${getVerdict(stats.winRate)}. Для слабого или ситуативного выбора советуй не брать вслепую, выбирать только знакомый матчап и играть осторожнее. Для среднего или сильного — учитывать драфт и банрейт. Не придумывай свойства вражеского или союзного состава.
-Запрещены мотивационные и пафосные призывы вроде «сияй», «разгони тьму», «поверь в себя». Запрещено упоминать position или место в таблице. Запрещено пересказывать биографию, называть даты, возраст, родственников, места и случайные события. Не говори «из лора». Не выдумывай тренд по одному срезу. Не путай роль с выбранной линией. Называй чемпиона по имени, не используй «он», «она» или «с ним».
-Хороший стиль: «Бери Люкс только в знакомый матчап и держи дистанцию — мой свет не спасёт от плохой позиции.»
-Верни только JSON вида {"flavor":"одно предложение"}.
+  return `Выбери один наиболее полезный устойчивый совет для указанной линии и статистического среза. Не переписывай совет и не создавай новый. Верни только JSON {"tipIndex":0}, где tipIndex — индекс в массиве. Если массив пуст, верни {"tipIndex":null}.
 
 Чемпион: ${task.championName} (${task.championSlug})
 Линия: ${task.lane}
 Ранг: ${rank}
-Официальный лор: ${task.lore.officialLore}
+Проверенные советы: ${JSON.stringify(task.stableTips || [])}
 Статистика: ${JSON.stringify(stats)}`;
 }
 
@@ -44,14 +41,15 @@ async function generateComplete(task, rank, stats) {
   for (let attempt = 1; attempt <= 4; attempt += 1) {
     try {
       const payload = await generate(task, rank, stats);
-      if (typeof payload.flavor === "string" && payload.flavor.trim().length >= 45 && payload.flavor.trim().length <= 160) {
-        return payload.flavor.trim();
-      }
+      if (payload.tipIndex == null) return null;
+      const tipIndex = Number(payload.tipIndex);
+      if (Number.isInteger(tipIndex) && task.stableTips?.[tipIndex]) return tipIndex;
     } catch (error) {
       lastError = error;
     }
   }
-  throw lastError || new Error("Ollama returned a short or invalid response");
+  if (lastError) throw lastError;
+  return null;
 }
 
 function formatMetric(value) {
@@ -71,12 +69,27 @@ function buildAssessment(task, stats) {
   return `${task.championName} — ${verdict}: ${formatMetric(stats.winRate)}% WR при ${formatMetric(stats.pickRate)}% PR и ${formatMetric(stats.banRate)}% BR.`;
 }
 
+function buildAdvice(stats) {
+  const verdict = getVerdict(stats.winRate);
+  const banRate = Number(stats.banRate);
+  const pickRate = Number(stats.pickRate);
+  if (verdict === "слабый выбор") return "Не бери вслепую: выбирай только при уверенной игре на чемпионе.";
+  if (verdict === "ситуативный выбор") return "Выбор рабочий, но статистического перевеса нет — полагайся на свой опыт.";
+  if (banRate >= 15) return "Можно ставить в приоритет, но подготовь замену из-за высокого банрейта.";
+  if (pickRate < 2) return "Результат сильный, но выбор редкий — относись к цифрам осторожно.";
+  return "Можно ставить в приоритет, если чемпион входит в твой уверенный пул.";
+}
+
 const bundle = await api("/api/assistant/tasks");
 if (requestedSlug) bundle.tasks = bundle.tasks.filter((task) => task.championSlug === requestedSlug);
 const results = [];
 async function flush() {
   if (!results.length) return;
   const items = results.splice(0, results.length);
+  if (dryRun) {
+    for (const item of items) console.log(`[dry-run] ${item.championSlug} ${item.lane} ${item.rank}: ${item.response}`);
+    return;
+  }
   await api("/api/assistant/sync", { method: "POST", body: JSON.stringify({ items }) });
 }
 let completed = 0;
@@ -84,8 +97,9 @@ for (const task of bundle.tasks) {
   let completedRanks = 0;
   for (const [rank, stats] of Object.entries(task.statsByRank)) {
     try {
-      const flavor = await generateComplete(task, rank, stats);
-      const response = `${buildAssessment(task, stats)} ${flavor}`;
+      const tipIndex = task.stableTips?.length ? await generateComplete(task, rank, stats) : null;
+      const stableTip = tipIndex == null ? "" : ` ${task.stableTips[tipIndex].text}`;
+      const response = `${buildAssessment(task, stats)} ${buildAdvice(stats)}${stableTip}`;
       results.push({ championSlug: task.championSlug, lane: task.lane, rank, response, statsSnapshotId: bundle.snapshotId, loreContentHash: task.lore.contentHash, model });
       completedRanks += 1;
     } catch (error) {

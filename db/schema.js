@@ -74,6 +74,29 @@ export const assistantResponses = pgTable(
   }),
 );
 
+export const championStableTips = pgTable(
+  "champion_stable_tips",
+  {
+    id: serial("id").primaryKey(),
+    championSlug: text("champion_slug").notNull(),
+    lane: text("lane"),
+    tipText: text("tip_text").notNull(),
+    sourceKind: text("source_kind").notNull(),
+    sourceUrl: text("source_url").notNull(),
+    sourceLabel: text("source_label"),
+    evidenceText: text("evidence_text").notNull(),
+    patchDependent: boolean("patch_dependent").default(false).notNull(),
+    reviewStatus: text("review_status").default("pending").notNull(),
+    contentHash: text("content_hash").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    hashUidx: uniqueIndex("champion_stable_tips_hash_uidx").on(table.championSlug, table.contentHash),
+    lookupIdx: index("champion_stable_tips_lookup_idx").on(table.championSlug, table.reviewStatus),
+  }),
+);
+
 export const championStatsHistory = pgTable(
   "champion_stats_history",
   {

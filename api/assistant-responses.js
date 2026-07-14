@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "../db/client.js";
-import { assistantResponses, championLore, championStatsHistory, champions } from "../db/schema.js";
+import { assistantResponses, championLore, championStableTips, championStatsHistory, champions } from "../db/schema.js";
 import { getLatestCompletedChampionStatsSnapshot } from "../lib/statsSnapshots.mjs";
 import { ensureAuthorized } from "./utils/adminAuth.js";
 import { setCors } from "./utils/cors.js";
@@ -20,23 +20,60 @@ export default async function handler(req, res) {
   const pathname = new URL(req.url, "http://localhost").pathname;
 
   try {
+    if (pathname.endsWith("/tips/sync")) {
+      if (req.method !== "POST") return res.status(405).json({ error: "Method Not Allowed" });
+      if (!ensureAuthorized(req, res, auth)) return;
+      const items = Array.isArray(req.body?.items) ? req.body.items : [];
+      if (!items.length || items.length > 500) return res.status(400).json({ error: "Invalid items" });
+      let accepted = 0;
+      for (const item of items) {
+        if (!item.championSlug || !item.tipText || !item.sourceUrl || !item.evidenceText || !item.contentHash) continue;
+        await db.insert(championStableTips).values({ ...item, reviewStatus: "approved", updatedAt: new Date() }).onConflictDoUpdate({
+          target: [championStableTips.championSlug, championStableTips.contentHash],
+          set: { tipText: item.tipText, lane: item.lane || null, sourceKind: item.sourceKind, sourceUrl: item.sourceUrl, sourceLabel: item.sourceLabel || null, evidenceText: item.evidenceText, patchDependent: Boolean(item.patchDependent), reviewStatus: "approved", updatedAt: new Date() },
+        });
+        accepted += 1;
+      }
+      return res.status(200).json({ accepted });
+    }
+
+    if (pathname.endsWith("/tips/sync")) {
+      if (req.method !== "POST") return res.status(405).json({ error: "Method Not Allowed" });
+      if (!ensureAuthorized(req, res, auth)) return;
+      const items = Array.isArray(req.body?.items) ? req.body.items : [];
+      if (!items.length || items.length > 500) return res.status(400).json({ error: "Invalid items" });
+      let accepted = 0;
+      for (const item of items) {
+        if (!item.championSlug || !item.tipText || !item.sourceUrl || !item.evidenceText || !item.contentHash) continue;
+        await db.insert(championStableTips).values({ ...item, reviewStatus: "approved", updatedAt: new Date() }).onConflictDoUpdate({
+          target: [championStableTips.championSlug, championStableTips.contentHash],
+          set: { tipText: item.tipText, lane: item.lane || null, sourceKind: item.sourceKind, sourceUrl: item.sourceUrl, sourceLabel: item.sourceLabel || null, evidenceText: item.evidenceText, patchDependent: Boolean(item.patchDependent), reviewStatus: "approved", updatedAt: new Date() },
+        });
+        accepted += 1;
+      }
+      return res.status(200).json({ accepted });
+    }
+
     if (pathname.endsWith("/tasks")) {
       if (req.method !== "GET") return res.status(405).json({ error: "Method Not Allowed" });
       if (!ensureAuthorized(req, res, auth)) return;
       const snapshot = await getLatestCompletedChampionStatsSnapshot();
       if (!snapshot) return res.status(409).json({ error: "No completed stats snapshot" });
-      const [stats, lore, names] = await Promise.all([
+      const [stats, lore, names, tips] = await Promise.all([
         db.select().from(championStatsHistory).where(eq(championStatsHistory.snapshotId, snapshot.id)),
         db.select().from(championLore).where(eq(championLore.locale, "ru_ru")),
         db.select({ slug: champions.slug, name: champions.nameLocalizations }).from(champions),
+        db.select().from(championStableTips).where(eq(championStableTips.reviewStatus, "approved")),
       ]);
       const loreMap = new Map(lore.map((row) => [row.championSlug, row]));
       const nameMap = new Map(names.map((row) => [row.slug, row.name?.ru_ru || row.slug]));
+      const tipMap = new Map();
+      for (const tip of tips) tipMap.set(tip.championSlug, [...(tipMap.get(tip.championSlug) || []), { text: tip.tipText, lane: tip.lane, sourceUrl: tip.sourceUrl }]);
       const grouped = new Map();
       for (const row of stats) {
         if (!allowedRanks.has(row.rank) || !allowedLanes.has(row.lane) || !loreMap.has(row.slug)) continue;
         const key = `${row.slug}|${row.lane}`;
-        if (!grouped.has(key)) grouped.set(key, { championSlug: row.slug, championName: nameMap.get(row.slug), lane: row.lane, lore: loreMap.get(row.slug), statsByRank: {} });
+        if (!grouped.has(key)) grouped.set(key, { championSlug: row.slug, championName: nameMap.get(row.slug), lane: row.lane, lore: loreMap.get(row.slug), stableTips: (tipMap.get(row.slug) || []).filter((tip) => !tip.lane || tip.lane === row.lane), statsByRank: {} });
         grouped.get(key).statsByRank[row.rank] = { position: row.position, winRate: row.winRate, pickRate: row.pickRate, banRate: row.banRate, strengthLevel: row.strengthLevel };
       }
       return res.status(200).json({ snapshotId: snapshot.id, statsDate: snapshot.statsDate, tasks: [...grouped.values()] });
