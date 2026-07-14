@@ -14,7 +14,7 @@
 2. Verify local health on `GET /api/health`
 3. Confirm `GUIDES_SYNC_SECRET` matches the value used by the frontend workflow
 4. Check `GET /api/guides`
-5. If schema or import logic changed, run the relevant `setup:*` scripts locally or in staging
+5. If schema or import logic changed, run the relevant `setup:*` scripts locally or in staging; champion lore changes require `npm run setup:champion-lore`
 
 ## Deploy flow
 

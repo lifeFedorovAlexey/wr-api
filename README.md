@@ -18,12 +18,58 @@ npm run start:auth
 npm run start:gateway
 npm run test
 npm run setup:admin
+npm run setup:champion-lore
 npm run import:champions
+npm run import:champion-lore
 npm run import:riftgg-cn-stats
 npm run setup:guides
 npm run setup:riftgg-cn-stats
 npm run setup:news
 ```
+
+## Champion lore import
+
+Champion lore is stored in `champion_lore` and imported from rendered official
+Riot Universe pages. Wild Rift-exclusive champions use an official Wild Rift
+champion release page when Universe has no biography.
+`generation_facts` contains source sentences only; the importer does not use an
+LLM or invent summaries.
+
+```bash
+npm run setup:champion-lore
+npm run import:champion-lore
+npm run import:champion-lore -- --slug ahri
+npm run import:champion-lore -- --slug lux --force
+npm run import:champion-lore -- --dry-run
+npm run import:champion-lore -- --concurrency 3
+npm run import:champion-lore -- --missing-only
+```
+
+The importer uses a headless browser because Riot Universe renders biographies
+client-side. It is idempotent: unchanged source hashes are skipped, and a changed
+official biography resets `review_status` to `pending` before generated dialogue
+
+## Daily virtual-assistant generation
+
+The production API owns the fresh stats and lore. A trusted home worker fetches
+`GET /api/assistant/tasks`, generates responses through local Ollama, and sends
+them to `POST /api/assistant/sync`. The UI reads a prepared response from
+`GET /api/assistant/responses?champion=lux&lane=mid&rank=masterPlus`.
+
+The worker reuses the existing `GUIDES_SYNC_SECRET`; no additional secret is required.
+The home `.env` also needs:
+
+```env
+WR_API_ORIGIN=https://your-domain.example/wr-api
+GUIDES_SYNC_SECRET=the-same-existing-value-as-on-the-api-server
+OLLAMA_ORIGIN=http://127.0.0.1:11434
+OLLAMA_MODEL=qwen3:8b
+```
+
+Manual run: `npm run generate:assistant`. Install the Windows daily task from
+PowerShell with `./scripts/install-assistant-scheduler.ps1 -Time "06:30"`.
+The task uses fresh server data; it does not scrape statistics on the home PC.
+may consume it.
 
 ## Main endpoints
 

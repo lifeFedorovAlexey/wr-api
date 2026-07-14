@@ -27,6 +27,53 @@ export const champions = pgTable("champions", {
   icon: text("icon"),
 });
 
+export const championLore = pgTable(
+  "champion_lore",
+  {
+    championSlug: text("champion_slug").notNull(),
+    locale: text("locale").notNull(),
+    title: text("title"),
+    shortLore: text("short_lore"),
+    officialLore: text("official_lore").notNull(),
+    generationFacts: jsonb("generation_facts").notNull(),
+    sourceKind: text("source_kind").default("riot-universe-page").notNull(),
+    sourceUrl: text("source_url").notNull(),
+    canonicalUrl: text("canonical_url").notNull(),
+    contentHash: text("content_hash").notNull(),
+    reviewStatus: text("review_status").default("pending").notNull(),
+    importedAt: timestamp("imported_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.championSlug, table.locale] }),
+    reviewStatusIdx: index("champion_lore_review_status_idx").on(table.reviewStatus),
+    contentHashIdx: index("champion_lore_content_hash_idx").on(table.contentHash),
+  }),
+);
+
+export const assistantResponses = pgTable(
+  "assistant_responses",
+  {
+    championSlug: text("champion_slug").notNull(),
+    lane: text("lane").notNull(),
+    rank: text("rank").notNull(),
+    response: text("response").notNull(),
+    statsSnapshotId: integer("stats_snapshot_id").notNull(),
+    loreContentHash: text("lore_content_hash").notNull(),
+    model: text("model").notNull(),
+    generatedAt: timestamp("generated_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.championSlug, table.lane, table.rank] }),
+    snapshotIdx: index("assistant_responses_snapshot_idx").on(table.statsSnapshotId),
+  }),
+);
+
 export const championStatsHistory = pgTable(
   "champion_stats_history",
   {

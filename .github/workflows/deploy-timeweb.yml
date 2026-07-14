@@ -194,6 +194,8 @@ jobs:
             cd "${RELEASE_DIR}"
             npm ci
             npm run setup:stats
+            npm run setup:champion-lore
+            npm run setup:assistant
             npm run setup:guides
             npm run setup:admin
             npm run setup:chat

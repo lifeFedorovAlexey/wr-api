@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- added normalized champion lore storage backed by rendered official Riot Universe and Wild Rift pages
+- added an idempotent lore importer with public-pool filtering, source hashing, review invalidation, dry-run and per-champion modes
+- added deterministic extraction of generation facts from source sentences without LLM rewriting
+
 ## 1.2.2 - 2026-04-08
 
 - centralized champion slug normalization and removed the dead `champion_guides` schema remnant from the active guide model
