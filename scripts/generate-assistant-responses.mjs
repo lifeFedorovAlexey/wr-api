@@ -14,35 +14,61 @@ async function api(path, options = {}) {
   return response.json();
 }
 
-function prompt(task) {
-  return `Ты — Люкс из League of Legends и оцениваешь чемпиона Wild Rift по статистике. Для каждого ранга напиши ровно 2 коротких предложения, максимум 300 символов. Первое предложение — прямой практический вердикт и минимум две точные цифры из данных (WR, PR или BR). Второе — рекомендация игроку с одним естественным штрихом характера или биографии чемпиона. Оценка важнее украшений. Не говори о росте, падении или стабильности: передан только один срез. Не называй position лидерством без сравнения. Не выдумывай способности и факты. Не пиши слова «из лора». Не путай роль чемпиона с выбранной линией. Проценты в данных уже даны как проценты. Верни только JSON-объект: ключи — точные ключи рангов, значения — строки.
+function prompt(task, rank, stats) {
+  return `Ты — Люкс из League of Legends. Напиши одну короткую практическую рекомендацию игроку, максимум 130 символов, одним предложением. Обязательно дай конкретное действие: брать или не брать чемпиона, учитывать бан, ждать удобный матчап, держать дистанцию или играть осторожнее. Говори живо от лица Люкс. Допускается одна короткая узнаваемая метафора, мотив или сила оцениваемого чемпиона, только если она помогает совету.
+Вердикт уже рассчитан: ${getVerdict(stats.winRate)}. Для слабого или ситуативного выбора советуй не брать вслепую, выбирать только знакомый матчап и играть осторожнее. Для среднего или сильного — учитывать драфт и банрейт. Не придумывай свойства вражеского или союзного состава.
+Запрещены мотивационные и пафосные призывы вроде «сияй», «разгони тьму», «поверь в себя». Запрещено упоминать position или место в таблице. Запрещено пересказывать биографию, называть даты, возраст, родственников, места и случайные события. Не говори «из лора». Не выдумывай тренд по одному срезу. Не путай роль с выбранной линией. Называй чемпиона по имени, не используй «он», «она» или «с ним».
+Хороший стиль: «Бери Люкс только в знакомый матчап и держи дистанцию — мой свет не спасёт от плохой позиции.»
+Верни только JSON вида {"flavor":"одно предложение"}.
 
 Чемпион: ${task.championName} (${task.championSlug})
 Линия: ${task.lane}
+Ранг: ${rank}
 Официальный лор: ${task.lore.officialLore}
-Статистика по рангам: ${JSON.stringify(task.statsByRank)}`;
+Статистика: ${JSON.stringify(stats)}`;
 }
 
-async function generate(task) {
+async function generate(task, rank, stats) {
   const response = await fetch(`${ollamaOrigin}/api/generate`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ model, prompt: prompt(task), stream: false, format: "json", options: { temperature: 0.75, top_p: 0.9 } }),
+    body: JSON.stringify({ model, prompt: prompt(task, rank, stats), stream: false, format: "json", options: { temperature: 0.45, top_p: 0.85, num_predict: 400 } }),
   });
   if (!response.ok) throw new Error(`Ollama ${response.status}: ${await response.text()}`);
   const payload = await response.json();
   return JSON.parse(payload.response);
 }
 
-async function generateComplete(task) {
-  const expectedRanks = Object.keys(task.statsByRank);
-  let lastMissing = expectedRanks;
-  for (let attempt = 1; attempt <= 2; attempt += 1) {
-    const responses = await generate(task);
-    lastMissing = expectedRanks.filter((rank) => typeof responses[rank] !== "string" || !responses[rank].trim());
-    if (!lastMissing.length) return responses;
+async function generateComplete(task, rank, stats) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    try {
+      const payload = await generate(task, rank, stats);
+      if (typeof payload.flavor === "string" && payload.flavor.trim().length >= 45 && payload.flavor.trim().length <= 160) {
+        return payload.flavor.trim();
+      }
+    } catch (error) {
+      lastError = error;
+    }
   }
-  throw new Error(`Ollama omitted ranks: ${lastMissing.join(", ")}`);
+  throw lastError || new Error("Ollama returned a short or invalid response");
+}
+
+function formatMetric(value) {
+  return Number.isFinite(Number(value)) ? Number(value).toFixed(2).replace(".", ",") : "нет данных";
+}
+
+function getVerdict(value) {
+  const winRate = Number(value);
+  return winRate >= 52 ? "сильный выбор"
+    : winRate >= 50.5 ? "средний выбор"
+      : winRate >= 49 ? "ситуативный выбор"
+        : "слабый выбор";
+}
+
+function buildAssessment(task, stats) {
+  const verdict = getVerdict(stats.winRate);
+  return `${task.championName} — ${verdict}: ${formatMetric(stats.winRate)}% WR при ${formatMetric(stats.pickRate)}% PR и ${formatMetric(stats.banRate)}% BR.`;
 }
 
 const bundle = await api("/api/assistant/tasks");
@@ -55,16 +81,20 @@ async function flush() {
 }
 let completed = 0;
 for (const task of bundle.tasks) {
-  try {
-    const responses = await generateComplete(task);
-    for (const [rank, response] of Object.entries(responses)) {
-      if (!task.statsByRank[rank] || typeof response !== "string") continue;
+  let completedRanks = 0;
+  for (const [rank, stats] of Object.entries(task.statsByRank)) {
+    try {
+      const flavor = await generateComplete(task, rank, stats);
+      const response = `${buildAssessment(task, stats)} ${flavor}`;
       results.push({ championSlug: task.championSlug, lane: task.lane, rank, response, statsSnapshotId: bundle.snapshotId, loreContentHash: task.lore.contentHash, model });
+      completedRanks += 1;
+    } catch (error) {
+      console.error(`[assistant] failed ${task.championSlug} ${task.lane} ${rank}:`, error.message);
     }
+  }
+  if (completedRanks === Object.keys(task.statsByRank).length) {
     completed += 1;
     console.log(`[assistant] ${completed}/${bundle.tasks.length} ${task.championSlug} ${task.lane}`);
-  } catch (error) {
-    console.error(`[assistant] failed ${task.championSlug} ${task.lane}:`, error.message);
   }
   if (results.length >= 100) await flush();
 }
