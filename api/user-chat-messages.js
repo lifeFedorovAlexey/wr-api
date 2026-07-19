@@ -1,7 +1,9 @@
 import {
   createChatMessage,
+  deleteChatMessage,
   listChatMessagesForUser,
 } from "../lib/chatGroups.mjs";
+import { getChatErrorResponse } from "../lib/chatErrors.mjs";
 import { getSiteUserSessionFromRequest } from "../lib/siteUserAuth.mjs";
 import { setCors } from "./utils/cors.js";
 
@@ -32,7 +34,7 @@ export default async function handler(req, res) {
     }
 
     try {
-      const messages = await listChatMessagesForUser(session.user.id, channelId, { limit });
+      const messages = await listChatMessagesForUser(session.user, channelId, { limit });
       return res.status(200).json({ messages });
     } catch (error) {
       return res.status(403).json({
@@ -43,12 +45,21 @@ export default async function handler(req, res) {
 
   if (req.method === "POST") {
     try {
-      const message = await createChatMessage(session.user.id, req.body || {});
+      const message = await createChatMessage(session.user, req.body || {});
       return res.status(201).json({ message });
     } catch (error) {
-      const code = error instanceof Error ? error.message : "chat_message_create_failed";
-      const status = code === "chat_channel_forbidden" ? 403 : 400;
-      return res.status(status).json({ error: code });
+      const response = getChatErrorResponse(error, "chat_message_create_failed");
+      return res.status(response.status).json(response.payload);
+    }
+  }
+
+  if (req.method === "DELETE") {
+    try {
+      const deleted = await deleteChatMessage(session.user, req.body || {});
+      return res.status(200).json({ deleted });
+    } catch (error) {
+      const response = getChatErrorResponse(error, "chat_message_delete_failed");
+      return res.status(response.status).json(response.payload);
     }
   }
 

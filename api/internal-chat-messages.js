@@ -1,5 +1,6 @@
-import { createChatMessage } from "../lib/chatGroups.mjs";
+import { createChatMessage, deleteChatMessage } from "../lib/chatGroups.mjs";
 import { normalizeChatSharedSecret } from "../lib/chatAuth.mjs";
+import { getChatErrorResponse } from "../lib/chatErrors.mjs";
 
 function setNoStore(res) {
   res.setHeader("Cache-Control", "no-store");
@@ -24,12 +25,25 @@ export default async function handler(req, res) {
 
   try {
     const userId = Number(req.body?.userId || 0);
-    const message = await createChatMessage(userId, req.body || {});
+    if (req.body?.action === "delete") {
+      const deleted = await deleteChatMessage(
+        {
+          id: userId,
+          roles: Array.isArray(req.body?.roles) ? req.body.roles : [],
+        },
+        req.body || {},
+      );
+      return res.status(200).json({ deleted });
+    }
+
+    const message = await createChatMessage(
+      { id: userId, roles: Array.isArray(req.body?.roles) ? req.body.roles : [] },
+      req.body || {},
+    );
     return res.status(201).json({ message });
   } catch (error) {
-    const code = error instanceof Error ? error.message : "chat_message_create_failed";
-    const status = code === "chat_channel_forbidden" ? 403 : 400;
-    return res.status(status).json({ error: code });
+    const response = getChatErrorResponse(error, "chat_message_create_failed");
+    return res.status(response.status).json(response.payload);
   }
 }
 

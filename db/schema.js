@@ -815,6 +815,8 @@ export const chatMessages = pgTable(
     body: text("body").notNull(),
     editedAt: timestamp("edited_at", { withTimezone: true }),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    deletedByUserId: integer("deleted_by_user_id"),
+    deletionReason: text("deletion_reason"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -825,6 +827,99 @@ export const chatMessages = pgTable(
       table.createdAt,
     ),
     authorIdx: index("chat_messages_author_idx").on(table.authorUserId),
+  }),
+);
+
+export const chatMessageAttachments = pgTable(
+  "chat_message_attachments",
+  {
+    id: serial("id").primaryKey(),
+    messageId: integer("message_id"),
+    channelId: integer("channel_id").notNull(),
+    uploaderUserId: integer("uploader_user_id").notNull(),
+    objectKey: text("object_key").notNull(),
+    fileName: text("file_name").notNull(),
+    mimeType: text("mime_type").notNull(),
+    mediaKind: text("media_kind").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    status: text("status").notNull().default("pending"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    attachedAt: timestamp("attached_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => ({
+    objectKeyUidx: uniqueIndex("chat_message_attachments_object_key_uidx").on(table.objectKey),
+    messageIdx: index("chat_message_attachments_message_idx").on(table.messageId),
+    uploaderStatusIdx: index("chat_message_attachments_uploader_status_idx").on(
+      table.uploaderUserId,
+      table.status,
+    ),
+    expiresIdx: index("chat_message_attachments_expires_idx").on(table.expiresAt),
+  }),
+);
+
+export const chatMutes = pgTable(
+  "chat_mutes",
+  {
+    id: serial("id").primaryKey(),
+    groupId: integer("group_id").notNull(),
+    userId: integer("user_id").notNull(),
+    mutedByUserId: integer("muted_by_user_id"),
+    source: text("source").notNull().default("manual"),
+    reason: text("reason"),
+    startsAt: timestamp("starts_at", { withTimezone: true }).defaultNow().notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    groupUserIdx: index("chat_mutes_group_user_idx").on(table.groupId, table.userId),
+    activeIdx: index("chat_mutes_active_idx").on(table.expiresAt, table.revokedAt),
+  }),
+);
+
+export const chatAntispamStates = pgTable(
+  "chat_antispam_states",
+  {
+    groupId: integer("group_id").notNull(),
+    userId: integer("user_id").notNull(),
+    escalationLevel: integer("escalation_level").notNull().default(0),
+    lastViolationAt: timestamp("last_violation_at", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.groupId, table.userId], name: "chat_antispam_states_pk" }),
+    lastViolationIdx: index("chat_antispam_states_last_violation_idx").on(table.lastViolationAt),
+  }),
+);
+
+export const chatModerationActions = pgTable(
+  "chat_moderation_actions",
+  {
+    id: serial("id").primaryKey(),
+    action: text("action").notNull(),
+    actorUserId: integer("actor_user_id"),
+    targetUserId: integer("target_user_id"),
+    groupId: integer("group_id"),
+    channelId: integer("channel_id"),
+    messageId: integer("message_id"),
+    reason: text("reason"),
+    durationSeconds: integer("duration_seconds"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    groupCreatedIdx: index("chat_moderation_actions_group_created_idx").on(
+      table.groupId,
+      table.createdAt,
+    ),
+    targetCreatedIdx: index("chat_moderation_actions_target_created_idx").on(
+      table.targetUserId,
+      table.createdAt,
+    ),
   }),
 );
 

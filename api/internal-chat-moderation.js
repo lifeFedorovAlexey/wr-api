@@ -1,9 +1,6 @@
-import { getChatChannelAccessForUser } from "../lib/chatGroups.mjs";
+import { applyChatModerationAction } from "../lib/chatAdminModeration.mjs";
 import { normalizeChatSharedSecret } from "../lib/chatAuth.mjs";
-
-function setNoStore(res) {
-  res.setHeader("Cache-Control", "no-store");
-}
+import { getChatErrorResponse } from "../lib/chatErrors.mjs";
 
 function isAuthorized(req, env = process.env) {
   const expected = normalizeChatSharedSecret(env);
@@ -12,7 +9,7 @@ function isAuthorized(req, env = process.env) {
 }
 
 export default async function handler(req, res) {
-  setNoStore(res);
+  res.setHeader("Cache-Control", "no-store");
 
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method Not Allowed" });
@@ -23,18 +20,16 @@ export default async function handler(req, res) {
   }
 
   try {
-    const access = await getChatChannelAccessForUser(
-      { id: req.body?.userId, roles: req.body?.roles },
-      req.body?.channelId,
+    const result = await applyChatModerationAction(
+      {
+        id: Number(req.body?.actorUserId || 0),
+        roles: Array.isArray(req.body?.actorRoles) ? req.body.actorRoles : [],
+      },
+      req.body || {},
     );
-    return res.status(200).json({
-      ok: true,
-      channel: access.channel,
-      membership: access.membership,
-    });
+    return res.status(200).json({ result });
   } catch (error) {
-    return res.status(403).json({
-      error: error instanceof Error ? error.message : "chat_channel_forbidden",
-    });
+    const response = getChatErrorResponse(error, "chat_moderation_failed");
+    return res.status(response.status).json(response.payload);
   }
 }

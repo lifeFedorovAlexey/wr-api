@@ -30,7 +30,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const channels = await listChatChannelsForUser(session.user.id, groupId);
+    const channels = await listChatChannelsForUser(session.user, groupId);
     return res.status(200).json({ channels });
   } catch (error) {
     return res.status(403).json({

@@ -165,6 +165,8 @@ async function setupChatMessages() {
       body text not null,
       edited_at timestamptz,
       deleted_at timestamptz,
+      deleted_by_user_id integer,
+      deletion_reason text,
       created_at timestamptz not null default now()
     );
   `;
@@ -172,6 +174,8 @@ async function setupChatMessages() {
   await client`alter table chat_messages drop column if exists group_id;`;
   await client`alter table chat_messages drop column if exists metadata;`;
   await client`alter table chat_messages drop column if exists updated_at;`;
+  await client`alter table chat_messages add column if not exists deleted_by_user_id integer;`;
+  await client`alter table chat_messages add column if not exists deletion_reason text;`;
 
   await client`
     create index if not exists chat_messages_channel_created_idx
@@ -200,11 +204,123 @@ async function setupChatMessages() {
   `;
 }
 
+async function setupChatModeration() {
+  await client`
+    create table if not exists chat_mutes (
+      id serial primary key,
+      group_id integer not null,
+      user_id integer not null,
+      muted_by_user_id integer,
+      source text not null default 'manual',
+      reason text,
+      starts_at timestamptz not null default now(),
+      expires_at timestamptz not null,
+      revoked_at timestamptz,
+      created_at timestamptz not null default now()
+    );
+  `;
+
+  await client`
+    create index if not exists chat_mutes_group_user_idx
+    on chat_mutes (group_id, user_id);
+  `;
+
+  await client`
+    create index if not exists chat_mutes_active_idx
+    on chat_mutes (expires_at, revoked_at);
+  `;
+
+  await client`
+    create table if not exists chat_antispam_states (
+      group_id integer not null,
+      user_id integer not null,
+      escalation_level integer not null default 0,
+      last_violation_at timestamptz,
+      updated_at timestamptz not null default now(),
+      primary key (group_id, user_id)
+    );
+  `;
+
+  await client`
+    create index if not exists chat_antispam_states_last_violation_idx
+    on chat_antispam_states (last_violation_at);
+  `;
+
+  await client`
+    create table if not exists chat_moderation_actions (
+      id serial primary key,
+      action text not null,
+      actor_user_id integer,
+      target_user_id integer,
+      group_id integer,
+      channel_id integer,
+      message_id integer,
+      reason text,
+      duration_seconds integer,
+      metadata jsonb,
+      created_at timestamptz not null default now()
+    );
+  `;
+
+  await client`
+    create index if not exists chat_moderation_actions_group_created_idx
+    on chat_moderation_actions (group_id, created_at);
+  `;
+
+  await client`
+    create index if not exists chat_moderation_actions_target_created_idx
+    on chat_moderation_actions (target_user_id, created_at);
+  `;
+}
+
+async function setupChatAttachments() {
+  await client`
+    create table if not exists chat_message_attachments (
+      id serial primary key,
+      message_id integer,
+      channel_id integer not null,
+      uploader_user_id integer not null,
+      object_key text not null,
+      file_name text not null,
+      mime_type text not null,
+      media_kind text not null,
+      size_bytes integer not null,
+      status text not null default 'pending',
+      created_at timestamptz not null default now(),
+      attached_at timestamptz,
+      expires_at timestamptz not null,
+      deleted_at timestamptz
+    );
+  `;
+
+  await client`
+    create unique index if not exists chat_message_attachments_object_key_uidx
+    on chat_message_attachments (object_key);
+  `;
+
+  await client`
+    create index if not exists chat_message_attachments_message_idx
+    on chat_message_attachments (message_id);
+  `;
+
+  await client`
+    create index if not exists chat_message_attachments_uploader_status_idx
+    on chat_message_attachments (uploader_user_id, status);
+  `;
+
+  await client`
+    create index if not exists chat_message_attachments_expires_idx
+    on chat_message_attachments (expires_at);
+  `;
+}
+
 async function main() {
   await setupChatGroups();
   await setupChatMembership();
   await setupChatChannels();
   await setupChatMessages();
+  await setupChatModeration();
+  await setupChatAttachments();
 
   console.log("chat tables are ready");
 }

@@ -21,13 +21,13 @@ export default async function handler(req, res) {
   }
 
   if (req.method === "GET") {
-    const groups = await listChatGroupsForUser(session.user.id);
+    const groups = await listChatGroupsForUser(session.user);
     return res.status(200).json({ groups });
   }
 
   if (req.method === "POST") {
     try {
-      const result = await createChatGroup(session.user.id, req.body || {});
+      const result = await createChatGroup(session.user, req.body || {});
       return res.status(201).json(result);
     } catch (error) {
       return res.status(400).json({
