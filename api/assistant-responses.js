@@ -13,6 +13,15 @@ const auth = {
 const allowedRanks = new Set(["overall", "diamondPlus", "masterPlus", "king", "peak"]);
 const allowedLanes = new Set(["mid", "top", "adc", "support", "jungle"]);
 
+export function buildAssistantResponsePayload(row, latestSnapshot) {
+  const isStale = !latestSnapshot || row.statsSnapshotId !== latestSnapshot.id;
+  return {
+    ...row,
+    isStale,
+    latestStatsSnapshotId: latestSnapshot?.id || null,
+  };
+}
+
 export default async function handler(req, res) {
   setCors(req, res);
   res.setHeader("Cache-Control", "no-store");
@@ -101,11 +110,11 @@ export default async function handler(req, res) {
     if (!rows[0]) return res.status(404).json({ error: "Response not generated" });
 
     const latestSnapshot = await getLatestCompletedChampionStatsSnapshot();
-    if (!latestSnapshot || rows[0].statsSnapshotId !== latestSnapshot.id) {
-      return res.status(409).json({ error: "Response is stale" });
-    }
-
-    return res.status(200).json(rows[0]);
+    // Assistant texts are generated daily, while stats snapshots may be created
+    // every hour. A strict snapshot-id check made every valid daily response
+    // disappear after the next ingestion run. Keep the latest prepared text
+    // available until the scheduler replaces it and expose freshness explicitly.
+    return res.status(200).json(buildAssistantResponsePayload(rows[0], latestSnapshot));
   } catch (error) {
     console.error("[assistant-responses]", error);
     return res.status(500).json({ error: "Internal Server Error" });
