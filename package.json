@@ -31,6 +31,8 @@
     "cleanup:chat": "node ./workers/cleanup-chat-history.mjs",
     "setup:riftgg-cn-stats": "node ./scripts/setup-riftgg-cn-stats-table.mjs",
     "setup:news": "node ./scripts/setup-news-tables.mjs",
+    "setup:quizzes": "node ./scripts/setup-quiz-tables.mjs",
+    "setup:quiz-media-storage": "node ./scripts/setup-quiz-media-storage.mjs",
     "export:news-mapper": "node ./scripts/export-news-entity-mapper.mjs",
     "audit:guides:ui": "node ./scripts/audit-guides-ui-e2e.mjs",
     "audit:guides:live": "node ./scripts/audit-guides-ui-e2e.mjs --ui-origin https://wildriftallstats.ru --api-origin https://wildriftallstats.ru/wr-api",
@@ -46,6 +48,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1048.0",
+    "@aws-sdk/s3-presigned-post": "^3.1093.0",
     "@aws-sdk/s3-request-presigner": "^3.1090.0",
     "basic-ftp": "6.0.1",
     "dotenv": "^17.4.2",

@@ -25,6 +25,8 @@ npm run import:riftgg-cn-stats
 npm run setup:guides
 npm run setup:riftgg-cn-stats
 npm run setup:news
+npm run setup:quizzes
+npm run setup:quiz-media-storage
 ```
 
 ## Champion lore import
@@ -84,6 +86,9 @@ may consume it.
 - `GET /api/guides`
 - `GET /api/guides/:slug`
 - `POST /api/guides/import`
+- `GET /api/quizzes`
+- `GET /api/quizzes/:id`
+- `POST /api/quizzes/media-upload`
 - `GET /api/health`
 
 Static asset endpoints served by the API:
@@ -120,9 +125,18 @@ Required env:
 - `DATABASE_URL`
 - `ADMIN_SESSION_SECRET`
 
-Optional unfinished user-auth env:
+Public user-auth env required by the private quiz module:
 
 - `USER_SESSION_SECRET`
+
+The UI must use the same dedicated `USER_SESSION_SECRET` and set
+`USER_AUTH_ENABLED=true`. Quiz media uploads also require `S3_ENDPOINT`,
+`S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, and
+`S3_PUBLIC_BASE_URL`. The API fails closed with `503` when object storage is not
+configured; it does not write quiz media to local public directories. Run
+`npm run setup:quiz-media-storage` once per bucket to allow signed browser POST
+uploads from `QUIZ_MEDIA_ALLOWED_ORIGINS`. The signed policy enforces the 5 MB
+file-size limit in S3.
 
 Chat handoff env:
 
@@ -215,4 +229,3 @@ Deploys to Timeweb run from GitHub Actions on pushes to `main`.
 
 - `.github/workflows/update-champions.yml` refreshes champion stats
 - `.github/workflows/update-riftgg-cn-stats.yml` imports daily RiftGG CN data
-

@@ -12,6 +12,10 @@ test("isAuthGatewayPath keeps admin, user and webapp routes on auth upstream", (
   assert.equal(isAuthGatewayPath("/api/internal/chat/channels/access"), true);
   assert.equal(isAuthGatewayPath("/api/internal/chat/messages"), true);
   assert.equal(isAuthGatewayPath("/api/webapp-open"), true);
+  assert.equal(isAuthGatewayPath("/api/quizzes"), true);
+  assert.equal(isAuthGatewayPath("/api/quizzes/42/attempts"), true);
+  assert.equal(isAuthGatewayPath("/api/quiz-attempts/7/answers"), true);
+  assert.equal(isAuthGatewayPath("/api/users/me/quiz-attempts"), true);
 });
 
 test("isAuthGatewayPath keeps public and asset routes on public upstream", () => {
@@ -27,6 +31,7 @@ test("pickGatewayUpstream maps pathnames to the expected internal app", () => {
   assert.equal(pickGatewayUpstream("/api/user/session"), "auth");
   assert.equal(pickGatewayUpstream("/api/internal/chat/channels/access"), "auth");
   assert.equal(pickGatewayUpstream("/api/webapp-open"), "auth");
+  assert.equal(pickGatewayUpstream("/api/quizzes/42"), "auth");
   assert.equal(pickGatewayUpstream("/api/guides"), "public");
   assert.equal(pickGatewayUpstream("/api/champions"), "public");
 });
