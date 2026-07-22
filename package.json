@@ -52,7 +52,7 @@
     "drizzle-orm": "^0.45.2",
     "postgres": "^3.4.9",
     "puppeteer": "^24.43.0",
-    "sharp": "^0.34.5"
+    "sharp": "^0.35.3"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -44,7 +44,7 @@ let localizeGuideLane = fallbackLocalizeGuideLane;
 let repairGuideText = fallbackRepairGuideText;
 
 try {
-  const uiGuideParser = require("../../ui/scripts/parse-wildriftfire-guide.js");
+  const uiGuideParser = require("../../ui/scripts/parse-wildriftfire-guide.cjs");
   const guideShared = require("../../ui/shared/guides-shared.js");
 
   scrapeGuide = uiGuideParser?.scrapeGuide || fallbackScrapeGuide;

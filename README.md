@@ -4,9 +4,9 @@ Public Wild Rift API used by `wildriftallstats.ru`.
 
 ## Version
 
-- Current version: `1.2.2`
+- Current version: `1.2.3`
 - Release branch format: `release/x.y.z`
-- Stable tag format: `v1.2.2`
+- Stable tag format: `v1.2.3`
 
 ## Commands
 
@@ -97,7 +97,7 @@ Static asset endpoints served by the API:
 - Production champion icons are expected to resolve to public S3 URLs when `ASSET_PUBLIC_MODE=s3` and `S3_PUBLIC_BASE_URL` is configured
 - Client-facing champion icon payloads should not rely on donor-host URLs or `/wr-api/icons/:slug?src=...` in production
 - `/icons/:slug` remains as a runtime mirror/local-cache fallback and for non-S3 environments
-- Remaining legacy fallback cleanup work is tracked in [../TECHDEBT.md](/d:/wildRiftChampions/TECHDEBT.md)
+- Remaining legacy fallback cleanup work is tracked in the workspace [Master Plan](https://github.com/lifeFedorovAlexey/wildriftchampionsData/blob/main/MASTER_PLAN.md) and [Architecture Status](https://github.com/lifeFedorovAlexey/wildriftchampionsData/blob/main/ARCHITECTURE_TASKS.md)
 
 ## Guide import auth
 
@@ -167,7 +167,7 @@ but they are not part of the current approved production secret inventory:
 
 Setup:
 
-1. Copy [wr-api/.env.example](/d:/wildRiftChampions/wr-api/.env.example) to your local `.env`
+1. Copy [`.env.example`](./.env.example) to your local `.env`
 2. Fill `DATABASE_URL` and `ADMIN_SESSION_SECRET`
 3. Add one bootstrap account for the first owner
 4. Run `npm run setup:admin`
