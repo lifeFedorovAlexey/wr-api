@@ -939,3 +939,5 @@ export const chatChannelReads = pgTable(
     userIdx: index("chat_channel_reads_user_idx").on(table.userId),
   }),
 );
+
+export * from "./schema-quizzes.js";
