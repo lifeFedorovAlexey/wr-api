@@ -201,6 +201,8 @@ jobs:
             npm run setup:guides
             npm run setup:admin
             npm run setup:chat
+            npm run setup:quizzes
+            npm run setup:quiz-media-storage
             npm run setup:riftgg-cn-stats
             npm run setup:news
 
