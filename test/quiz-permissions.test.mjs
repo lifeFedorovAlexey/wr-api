@@ -5,6 +5,7 @@ import {
   QUIZ_CAPABILITIES,
   hasQuizCapability,
   canManageQuiz,
+  canDeleteQuiz,
 } from "../lib/quizPermissions.mjs";
 
 test("quiz capabilities allow authors and deny ordinary users", () => {
@@ -47,5 +48,31 @@ test("only administrators receive destructive quiz capabilities", () => {
   assert.equal(
     hasQuizCapability({ roles: ["admin"] }, QUIZ_CAPABILITIES.DELETE_ANY),
     true,
+  );
+});
+
+test("administrators can delete any quiz", () => {
+  const foreignQuiz = { authorId: 7 };
+  assert.equal(canDeleteQuiz({ id: 9, roles: ["admin"] }, foreignQuiz), true);
+  assert.equal(canDeleteQuiz({ id: 9, roles: ["owner"] }, foreignQuiz), true);
+});
+
+test("patrons and streamers can delete only their own quizzes", () => {
+  for (const role of ["patron", "streamer"]) {
+    assert.equal(
+      canDeleteQuiz({ id: 7, roles: [role] }, { authorId: 7 }),
+      true,
+    );
+    assert.equal(
+      canDeleteQuiz({ id: 8, roles: [role] }, { authorId: 7 }),
+      false,
+    );
+  }
+});
+
+test("ordinary users cannot delete quizzes, including their own", () => {
+  assert.equal(
+    canDeleteQuiz({ id: 7, roles: ["user"] }, { authorId: 7 }),
+    false,
   );
 });
