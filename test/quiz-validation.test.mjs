@@ -63,6 +63,28 @@ test("valid quiz definition passes publication validation", () => {
   assert.deepEqual(result.errors, []);
 });
 
+test("choice answers only allow automatic zero or preset correct scores", () => {
+  const invalidCorrect = validQuiz();
+  invalidCorrect.version.questions[0].options[0].score = 2;
+  const correctResult = validateQuizDefinition(invalidCorrect);
+  assert.ok(
+    correctResult.errors.some((error) => error.code === "option_score_invalid"),
+  );
+
+  const invalidWrong = validQuiz();
+  invalidWrong.version.questions[0].options[1].score = 1;
+  const wrongResult = validateQuizDefinition(invalidWrong);
+  assert.ok(
+    wrongResult.errors.some((error) => error.code === "option_score_invalid"),
+  );
+
+  for (const score of [1, 3, 5]) {
+    const quiz = validQuiz();
+    quiz.version.questions[0].options[0].score = score;
+    assert.equal(validateQuizDefinition(quiz).valid, true);
+  }
+});
+
 test("publication validation rejects missing default result and deleted targets", () => {
   const quiz = validQuiz();
   quiz.version.results = quiz.version.results.filter(
