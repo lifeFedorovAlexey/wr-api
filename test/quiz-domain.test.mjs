@@ -64,6 +64,20 @@ test("prepareQuizDraft uses authenticated author and normalizes content", () => 
   assert.equal(draft.version.questions[0].position, 0);
 });
 
+test("prepareQuizDraft preserves absent optional numeric limits as null", () => {
+  const draft = prepareQuizDraft(
+    {
+      ...draftInput,
+      attemptLimit: null,
+      participantLimit: null,
+    },
+    { id: 7 },
+  );
+
+  assert.equal(draft.attemptLimit, null);
+  assert.equal(draft.participantLimit, null);
+});
+
 test("prepareQuizDraft preserves editor node positions", () => {
   const draft = prepareQuizDraft(
     {
