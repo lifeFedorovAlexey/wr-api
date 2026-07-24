@@ -6,12 +6,21 @@ process.env.DATABASE_URL ||= "postgres://local:local@127.0.0.1:5432/local";
 const {
   createPublicTierlistCredentials,
   hashPublicTierlistEditToken,
+  normalizeRequiredPublicTierlistAuthorName,
   sanitizeStreamerTierlistSubmission,
   siteUserCanAppearInStreamerCatalog,
   STREAMER_TIERLIST_LANE_KEYS,
   STREAMER_TIERLIST_TIERS,
   verifyPublicTierlistEditToken,
 } = await import("../lib/streamerTierlists.mjs");
+
+test("public tierlist author name is required and normalized", () => {
+  assert.equal(normalizeRequiredPublicTierlistAuthorName("  Игрок  "), "Игрок");
+  assert.throws(
+    () => normalizeRequiredPublicTierlistAuthorName("   "),
+    /missing_author_name/,
+  );
+});
 
 test("sanitizeStreamerTierlistSubmission keeps known champions and dedupes them per lane", () => {
   const championMap = new Map([
