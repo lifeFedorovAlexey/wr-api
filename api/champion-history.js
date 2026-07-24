@@ -5,6 +5,7 @@ import {
   getLatestCompletedChampionStatsSnapshot,
   listCompletedChampionStatsSnapshotsByDateRange,
 } from "../lib/statsSnapshots.mjs";
+import { buildChampionHistoryAvailability } from "../lib/championHistoryAvailability.mjs";
 
 import { and, asc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 
@@ -78,7 +79,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method Not Allowed" });
   }
 
-  const { slug, rank, lane, date, from, to, latest } = req.query;
+  const { slug, rank, lane, date, from, to, latest, availability } = req.query;
 
   try {
     const safeSlug =
@@ -166,16 +167,29 @@ export default async function handler(req, res) {
 
     const whereClause = conditions.length ? and(...conditions) : undefined;
 
-    const rows = await db
-      .select()
-      .from(championStatsHistory)
-      .where(whereClause)
-      .orderBy(
-        asc(championStatsHistory.date),
-        asc(championStatsHistory.slug),
-        asc(championStatsHistory.rank),
-        asc(championStatsHistory.lane)
-      );
+    const wantAvailability =
+      Boolean(safeSlug) && (String(availability) === "1" || String(availability) === "true");
+    const [rows, availabilityRows] = await Promise.all([
+      db
+        .select()
+        .from(championStatsHistory)
+        .where(whereClause)
+        .orderBy(
+          asc(championStatsHistory.date),
+          asc(championStatsHistory.slug),
+          asc(championStatsHistory.rank),
+          asc(championStatsHistory.lane)
+        ),
+      wantAvailability
+        ? db
+            .selectDistinct({
+              rank: championStatsHistory.rank,
+              lane: championStatsHistory.lane,
+            })
+            .from(championStatsHistory)
+            .where(eq(championStatsHistory.slug, safeSlug))
+        : Promise.resolve([]),
+    ]);
 
     const items = rows.map((row) => ({
       date: toDateString(row.date),
@@ -205,6 +219,9 @@ export default async function handler(req, res) {
       },
       count: items.length,
       items,
+      availability: wantAvailability
+        ? buildChampionHistoryAvailability(availabilityRows)
+        : undefined,
     });
   } catch (e) {
     const status =

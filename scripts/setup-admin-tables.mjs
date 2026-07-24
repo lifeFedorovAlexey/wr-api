@@ -215,7 +215,10 @@ async function main() {
   await client`
     create table if not exists streamer_tierlist_publications (
       id serial primary key,
-      site_user_id integer not null,
+      site_user_id integer,
+      public_id text not null,
+      edit_token_hash text,
+      author_name text,
       source_stats_snapshot_id integer,
       source_stats_date date,
       payload jsonb not null,
@@ -230,6 +233,47 @@ async function main() {
   `;
 
   await client`
+    alter table streamer_tierlist_publications
+    add column if not exists public_id text;
+  `;
+
+  await client`
+    alter table streamer_tierlist_publications
+    add column if not exists edit_token_hash text;
+  `;
+
+  await client`
+    alter table streamer_tierlist_publications
+    add column if not exists author_name text;
+  `;
+
+  await client`
+    alter table streamer_tierlist_publications
+    alter column site_user_id drop not null;
+  `;
+
+  await client`
+    update streamer_tierlist_publications
+    set public_id = 'streamer-' || site_user_id::text
+    where public_id is null and site_user_id is not null;
+  `;
+
+  await client`
+    update streamer_tierlist_publications publication
+    set author_name = coalesce(
+      nullif(trim(site_user.streamer_display_name), ''),
+      nullif(trim(site_user.display_name), '')
+    )
+    from site_users site_user
+    where publication.site_user_id = site_user.id and publication.author_name is null;
+  `;
+
+  await client`
+    alter table streamer_tierlist_publications
+    alter column public_id set not null;
+  `;
+
+  await client`
     create index if not exists streamer_tierlists_site_user_published_idx
     on streamer_tierlist_publications (site_user_id, published_at);
   `;
@@ -237,6 +281,11 @@ async function main() {
   await client`
     create index if not exists streamer_tierlists_published_at_idx
     on streamer_tierlist_publications (published_at);
+  `;
+
+  await client`
+    create index if not exists streamer_tierlists_public_id_published_idx
+    on streamer_tierlist_publications (public_id, published_at);
   `;
 
   await client`
