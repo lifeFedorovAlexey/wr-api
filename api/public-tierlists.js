@@ -1,5 +1,7 @@
 import { setCors } from "./utils/cors.js";
 import { getSiteUserSessionFromRequest } from "../lib/siteUserAuth.mjs";
+import { consumePublicTierlistCreateAttempt } from "../lib/publicTierlistRateLimit.mjs";
+import { getRequestIp } from "../lib/sessionAuthShared.mjs";
 import {
   getPublicTierlistById,
   loadPublicTierlistEditor,
@@ -47,6 +49,15 @@ export default async function handler(req, res) {
 
     if (req.method === "POST") {
       const session = await getSiteUserSessionFromRequest(req);
+      const isAnonymousCreate = !session?.user && !String(req.body?.publicId || "").trim();
+      if (isAnonymousCreate) {
+        const rateLimit = consumePublicTierlistCreateAttempt(getRequestIp(req));
+        if (!rateLimit.allowed) {
+          res.setHeader("Retry-After", String(rateLimit.retryAfterSeconds));
+          return res.status(429).json({ error: "public_tierlist_create_rate_limited" });
+        }
+      }
+
       const result = await publishPublicTierlist(req.body || {}, {
         siteUser: session?.user || null,
         editToken: readHeader(req, "x-tierlist-edit-token"),
