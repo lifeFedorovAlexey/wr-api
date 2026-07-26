@@ -26,6 +26,7 @@ test("setCors reflects only allowlisted origins", () => {
     "https://wildriftallstats.ru",
   );
   assert.equal(res.getHeader("Vary"), "Origin");
+  assert.match(res.getHeader("Access-Control-Allow-Headers"), /x-tierlist-edit-token/);
 });
 
 test("setCors does not emit wildcard origin for null or missing origin", () => {

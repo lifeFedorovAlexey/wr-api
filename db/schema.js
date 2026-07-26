@@ -660,7 +660,10 @@ export const streamerTierlistPublications = pgTable(
   "streamer_tierlist_publications",
   {
     id: serial("id").primaryKey(),
-    siteUserId: integer("site_user_id").notNull(),
+    siteUserId: integer("site_user_id"),
+    publicId: text("public_id").notNull(),
+    editTokenHash: text("edit_token_hash"),
+    authorName: text("author_name"),
     sourceStatsSnapshotId: integer("source_stats_snapshot_id"),
     sourceStatsDate: pgDate("source_stats_date"),
     payload: jsonb("payload").notNull(),
@@ -675,6 +678,10 @@ export const streamerTierlistPublications = pgTable(
       table.publishedAt,
     ),
     publishedAtIdx: index("streamer_tierlists_published_at_idx").on(table.publishedAt),
+    publicIdPublishedIdx: index("streamer_tierlists_public_id_published_idx").on(
+      table.publicId,
+      table.publishedAt,
+    ),
     snapshotIdx: index("streamer_tierlists_snapshot_idx").on(table.sourceStatsSnapshotId),
   }),
 );

@@ -1,6 +1,7 @@
 import { setCors } from "./utils/cors.js";
 import { getSiteUserSessionFromRequest } from "../lib/siteUserAuth.mjs";
 import {
+  deleteStreamerTierlist,
   loadStreamerTierlistEditor,
   publishStreamerTierlist,
   streamerUserHasAccess,
@@ -65,6 +66,26 @@ export default async function handler(req, res) {
           : code === "site_user_not_found"
             ? 404
             : 500;
+      return res.status(status).json({ error: code });
+    }
+  }
+
+  if (req.method === "DELETE") {
+    try {
+      const result = await deleteStreamerTierlist(session.user, req.body || {});
+      return res.status(200).json({ ok: true, ...result });
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "streamer_tierlist_delete_failed";
+      const status =
+        code === "invalid_public_id" || code === "invalid_site_user"
+          ? 400
+          : code === "unauthorized"
+            ? 401
+            : code === "forbidden"
+              ? 403
+              : code === "tierlist_not_found"
+                ? 404
+                : 500;
       return res.status(status).json({ error: code });
     }
   }
