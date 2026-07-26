@@ -6,11 +6,13 @@ process.env.DATABASE_URL ||= "postgres://local:local@127.0.0.1:5432/local";
 const {
   createPublicTierlistCredentials,
   hashPublicTierlistEditToken,
+  isAnonymousPublicTierlistExpired,
   normalizeRequiredPublicTierlistAuthorName,
   sanitizeStreamerTierlistSubmission,
   siteUserCanAppearInStreamerCatalog,
   STREAMER_TIERLIST_LANE_KEYS,
   STREAMER_TIERLIST_TIERS,
+  userCanDeleteStreamerTierlist,
   verifyPublicTierlistEditToken,
 } = await import("../lib/streamerTierlists.mjs");
 
@@ -20,6 +22,42 @@ test("public tierlist author name is required and normalized", () => {
     () => normalizeRequiredPublicTierlistAuthorName("   "),
     /missing_author_name/,
   );
+});
+
+test("anonymous public tierlists expire after one month", () => {
+  const now = new Date("2026-07-24T12:00:00Z");
+
+  assert.equal(
+    isAnonymousPublicTierlistExpired(
+      { siteUserId: null, publishedAt: "2026-06-23T11:59:59Z" },
+      now,
+    ),
+    true,
+  );
+  assert.equal(
+    isAnonymousPublicTierlistExpired(
+      { siteUserId: null, publishedAt: "2026-07-01T12:00:00Z" },
+      now,
+    ),
+    false,
+  );
+  assert.equal(
+    isAnonymousPublicTierlistExpired(
+      { siteUserId: 7, publishedAt: "2026-06-01T12:00:00Z" },
+      now,
+    ),
+    false,
+  );
+});
+
+test("tierlist deletion is limited to author or admin roles", () => {
+  const row = { siteUserId: 7 };
+
+  assert.equal(userCanDeleteStreamerTierlist({ id: 7, roles: ["streamer"] }, row), true);
+  assert.equal(userCanDeleteStreamerTierlist({ id: 8, roles: ["streamer"] }, row), false);
+  assert.equal(userCanDeleteStreamerTierlist({ id: 8, roles: ["admin"] }, row), true);
+  assert.equal(userCanDeleteStreamerTierlist({ id: 8, roles: ["owner"] }, row), true);
+  assert.equal(userCanDeleteStreamerTierlist({ id: 8, roles: ["user"] }, { siteUserId: null }), false);
 });
 
 test("sanitizeStreamerTierlistSubmission keeps known champions and dedupes them per lane", () => {

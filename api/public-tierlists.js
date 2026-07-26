@@ -1,8 +1,8 @@
 import { setCors } from "./utils/cors.js";
-import { getSiteUserSessionFromRequest } from "../lib/siteUserAuth.mjs";
 import { consumePublicTierlistCreateAttempt } from "../lib/publicTierlistRateLimit.mjs";
 import { getRequestIp } from "../lib/sessionAuthShared.mjs";
 import {
+  cleanupExpiredAnonymousPublicTierlists,
   getPublicTierlistById,
   loadPublicTierlistEditor,
   publishPublicTierlist,
@@ -18,8 +18,8 @@ function readHeader(req, name) {
 }
 
 function statusForError(code) {
-  if (["invalid_public_id"].includes(code)) return 400;
-  if (["invalid_edit_token"].includes(code)) return 403;
+  if (["invalid_public_id", "missing_author_name"].includes(code)) return 400;
+  if (["invalid_edit_token", "public_tierlist_edit_forbidden"].includes(code)) return 403;
   if (["tierlist_not_found"].includes(code)) return 404;
   return 500;
 }
@@ -31,6 +31,8 @@ export default async function handler(req, res) {
   setNoStore(res);
 
   try {
+    await cleanupExpiredAnonymousPublicTierlists();
+
     if (req.method === "GET") {
       const publicId = String(req.query?.publicId || "").trim() || null;
       if (String(req.query?.editor || "") === "1") {
@@ -48,9 +50,8 @@ export default async function handler(req, res) {
     }
 
     if (req.method === "POST") {
-      const session = await getSiteUserSessionFromRequest(req);
-      const isAnonymousCreate = !session?.user && !String(req.body?.publicId || "").trim();
-      if (isAnonymousCreate) {
+      const isPublicCreate = !String(req.body?.publicId || "").trim();
+      if (isPublicCreate) {
         const rateLimit = consumePublicTierlistCreateAttempt(getRequestIp(req));
         if (!rateLimit.allowed) {
           res.setHeader("Retry-After", String(rateLimit.retryAfterSeconds));
@@ -59,7 +60,7 @@ export default async function handler(req, res) {
       }
 
       const result = await publishPublicTierlist(req.body || {}, {
-        siteUser: session?.user || null,
+        siteUser: null,
         editToken: readHeader(req, "x-tierlist-edit-token"),
       });
       return res.status(result.publishAction === "created" ? 201 : 200).json(result);
