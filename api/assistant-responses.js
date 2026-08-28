@@ -13,6 +13,36 @@ const auth = {
 const allowedRanks = new Set(["overall", "diamondPlus", "masterPlus", "king", "peak"]);
 const allowedLanes = new Set(["mid", "top", "adc", "support", "jungle"]);
 
+export function normalizeAssistantResponseForSync(item, context) {
+  const championSlug = String(item?.championSlug || "").trim();
+  const lane = String(item?.lane || "").trim();
+  const rank = String(item?.rank || "").trim();
+  const response = String(item?.response || "").trim();
+  const statsSnapshotId = Number(context?.statsSnapshotId);
+  const loreContentHash = String(context?.loreContentHash || "").trim();
+  const model = String(item?.actualModel || item?.requestedModel || item?.model || "").trim();
+  if (!championSlug || !allowedLanes.has(lane) || !allowedRanks.has(rank) || !response) return null;
+  if (!Number.isInteger(statsSnapshotId) || !loreContentHash || !model) return null;
+  return { championSlug, lane, rank, response, statsSnapshotId, loreContentHash, model };
+}
+
+export function getSyncSnapshotMismatch(items, latestSnapshotId) {
+  const expected = Number(latestSnapshotId);
+  const received = [...new Set(items.map((item) => Number(item?.statsSnapshotId)))];
+  if (received.length !== 1 || received[0] !== expected) return { expected, received };
+  return null;
+}
+
+export function getSyncLoreMismatch(items, loreMap) {
+  const mismatches = items.flatMap((item) => {
+    const championSlug = String(item?.championSlug || "").trim();
+    const expected = String(loreMap.get(championSlug) || "").trim();
+    const received = String(item?.loreContentHash || "").trim();
+    return expected && received === expected ? [] : [{ championSlug, expected, received }];
+  });
+  return mismatches.length ? mismatches : null;
+}
+
 export function buildAssistantResponsePayload(row, latestSnapshot) {
   const isStale = !latestSnapshot || row.statsSnapshotId !== latestSnapshot.id;
   return {
@@ -93,14 +123,25 @@ export default async function handler(req, res) {
       if (!ensureAuthorized(req, res, auth)) return;
       const items = Array.isArray(req.body?.items) ? req.body.items : [];
       if (!items.length || items.length > 1000) return res.status(400).json({ error: "Invalid items" });
+      const latestSnapshot = await getLatestCompletedChampionStatsSnapshot();
+      if (!latestSnapshot) return res.status(409).json({ error: "No completed stats snapshot" });
+      const snapshotMismatch = getSyncSnapshotMismatch(items, latestSnapshot.id);
+      if (snapshotMismatch) return res.status(409).json({ error: "Stale stats snapshot", ...snapshotMismatch });
+      const loreRows = await db.select({ championSlug: championLore.championSlug, contentHash: championLore.contentHash }).from(championLore).where(eq(championLore.locale, "ru_ru"));
+      const loreMap = new Map(loreRows.map((row) => [row.championSlug, row.contentHash]));
+      const loreMismatch = getSyncLoreMismatch(items, loreMap);
+      if (loreMismatch) return res.status(409).json({ error: "Stale champion lore", mismatches: loreMismatch });
+      let accepted = 0;
       for (const item of items) {
-        if (!item.championSlug || !allowedLanes.has(item.lane) || !allowedRanks.has(item.rank) || !String(item.response || "").trim()) continue;
-        await db.insert(assistantResponses).values({ ...item, response: String(item.response).trim(), generatedAt: new Date(), updatedAt: new Date() }).onConflictDoUpdate({
+        const normalized = normalizeAssistantResponseForSync(item, { statsSnapshotId: Number(item.statsSnapshotId), loreContentHash: loreMap.get(String(item?.championSlug || "")) });
+        if (!normalized) continue;
+        await db.insert(assistantResponses).values({ ...normalized, generatedAt: new Date(), updatedAt: new Date() }).onConflictDoUpdate({
           target: [assistantResponses.championSlug, assistantResponses.lane, assistantResponses.rank],
-          set: { response: String(item.response).trim(), statsSnapshotId: item.statsSnapshotId, loreContentHash: item.loreContentHash, model: item.model, generatedAt: new Date(), updatedAt: new Date() },
+          set: { response: normalized.response, statsSnapshotId: normalized.statsSnapshotId, loreContentHash: normalized.loreContentHash, model: normalized.model, generatedAt: new Date(), updatedAt: new Date() },
         });
+        accepted += 1;
       }
-      return res.status(200).json({ accepted: items.length });
+      return res.status(200).json({ accepted });
     }
 
     if (req.method !== "GET") return res.status(405).json({ error: "Method Not Allowed" });

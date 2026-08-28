@@ -3,7 +3,12 @@ import assert from "node:assert/strict";
 
 process.env.DATABASE_URL ||= "postgres://localhost:5432/test";
 
-const { buildAssistantResponsePayload } = await import("../api/assistant-responses.js");
+const {
+  buildAssistantResponsePayload,
+  getSyncLoreMismatch,
+  getSyncSnapshotMismatch,
+  normalizeAssistantResponseForSync,
+} = await import("../api/assistant-responses.js");
 
 test("daily assistant response remains available after an hourly stats snapshot", () => {
   const row = {
@@ -29,4 +34,50 @@ test("assistant response reports matching snapshot as current", () => {
     isStale: false,
     latestStatsSnapshotId: 1229,
   });
+});
+
+test("sync mapping emits only the assistant_responses columns", () => {
+  assert.deepEqual(normalizeAssistantResponseForSync({
+    championSlug: "aatrox",
+    lane: "top",
+    rank: "diamondPlus",
+    tipIndex: 2,
+    response: "Prepared response",
+    requestedModel: "gpt-oss:20b",
+    actualModel: "gpt-oss:20b",
+  }, { statsSnapshotId: 1234, loreContentHash: "lore-hash" }), {
+    championSlug: "aatrox",
+    lane: "top",
+    rank: "diamondPlus",
+    response: "Prepared response",
+    statsSnapshotId: 1234,
+    loreContentHash: "lore-hash",
+    model: "gpt-oss:20b",
+  });
+});
+
+test("sync rejects a package generated from a stale stats snapshot", () => {
+  assert.deepEqual(getSyncSnapshotMismatch([
+    { statsSnapshotId: 1228 },
+  ], 1229), {
+    expected: 1229,
+    received: [1228],
+  });
+  assert.equal(getSyncSnapshotMismatch([
+    { statsSnapshotId: 1229 },
+  ], 1229), null);
+});
+
+test("sync rejects a package generated from stale champion lore", () => {
+  const loreMap = new Map([["aatrox", "current-hash"]]);
+  assert.deepEqual(getSyncLoreMismatch([
+    { championSlug: "aatrox", loreContentHash: "old-hash" },
+  ], loreMap), [{
+    championSlug: "aatrox",
+    expected: "current-hash",
+    received: "old-hash",
+  }]);
+  assert.equal(getSyncLoreMismatch([
+    { championSlug: "aatrox", loreContentHash: "current-hash" },
+  ], loreMap), null);
 });
