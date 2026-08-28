@@ -27,6 +27,33 @@ function getDockerDesktopCandidates({ platform, env }) {
   return [...new Set(candidates)];
 }
 
+function getNativePlans({ configuredExecutable, platform }) {
+  if (configuredExecutable) {
+    return [{ executable: configuredExecutable, args: ["serve"], detached: true, waitForExit: false, label: configuredExecutable }];
+  }
+  if (platform === "win32") return null;
+  return [{ executable: "ollama", args: ["serve"], detached: true, waitForExit: false, label: "ollama" }];
+}
+
+async function probeOllama(origin, fetchImpl) {
+  const response = await fetchImpl(`${origin}/api/tags`, { signal: AbortSignal.timeout(2000) });
+  if (!response.ok) throw new Error(`Ollama health HTTP ${response.status}`);
+  return true;
+}
+
+async function findDocker({ dockerCandidates, platform, env, spawnImpl }) {
+  const errors = [];
+  for (const docker of dockerCandidates) {
+    try {
+      await launch({ executable: docker, args: ["info"], detached: false, waitForExit: true, label: `${docker} info` }, { platform, env, spawnImpl });
+      return docker;
+    } catch (error) {
+      errors.push(`${docker}: ${describeError(error)}`);
+    }
+  }
+  return { errors };
+}
+
 function launch(plan, { platform, env, spawnImpl }) {
   return new Promise((resolve, reject) => {
     let child;
@@ -77,11 +104,7 @@ export function createOllamaRuntime({
 } = {}) {
   if (!origin) throw new Error("Ollama origin is required");
   const configuredExecutable = executable || env.OLLAMA_EXE;
-  const nativePlans = configuredExecutable
-    ? [{ executable: configuredExecutable, args: ["serve"], detached: true, waitForExit: false, label: configuredExecutable }]
-    : platform !== "win32"
-      ? [{ executable: "ollama", args: ["serve"], detached: true, waitForExit: false, label: "ollama" }]
-      : null;
+  const nativePlans = getNativePlans({ configuredExecutable, platform });
   const dockerCandidates = getDockerCandidates({ platform, env });
   const composeFile = env.OLLAMA_DOCKER_COMPOSE_FILE || "D:\\ai-stack\\docker-compose.yml";
   const desktopCandidates = getDockerDesktopCandidates({ platform, env });
@@ -90,32 +113,12 @@ export function createOllamaRuntime({
   let lastFailure = null;
 
   async function probe() {
-    const response = await fetchImpl(`${origin}/api/tags`, { signal: AbortSignal.timeout(2000) });
-    if (!response.ok) throw new Error(`Ollama health HTTP ${response.status}`);
-    return true;
-  }
-
-  async function findDocker() {
-    const errors = [];
-    for (const docker of dockerCandidates) {
-      try {
-        await launch({
-          executable: docker,
-          args: ["info"],
-          detached: false,
-          waitForExit: true,
-          label: `${docker} info`,
-        }, { platform, env, spawnImpl });
-        return docker;
-      } catch (error) {
-        errors.push(`${docker}: ${describeError(error)}`);
-      }
-    }
-    return { errors };
+    return probeOllama(origin, fetchImpl);
   }
 
   async function startDockerOllama() {
-    let docker = await findDocker();
+    const dockerContext = { dockerCandidates, platform, env, spawnImpl };
+    let docker = await findDocker(dockerContext);
     if (typeof docker !== "string") {
       let desktopStarted = false;
       for (const desktop of desktopCandidates) {
@@ -132,7 +135,7 @@ export function createOllamaRuntime({
       }
       for (let attempt = 0; attempt < maxWaitAttempts; attempt += 1) {
         if (attempt > 0) await sleep(pollMs);
-        const result = await findDocker();
+        const result = await findDocker(dockerContext);
         if (typeof result === "string") {
           docker = result;
           break;
