@@ -42,3 +42,19 @@ test('node params override legacy top-level settings for a graph snapshot', () =
   assert.equal(config.assistant.userPromptTemplate, 'node {{rank}}');
   assert.equal(config.assistant.retries, 3);
 });
+
+test('workflow config emits canonical selection IDs while reading legacy aliases', () => {
+  const config = parseWorkflowConfig({ input: {
+    scope: 'selected',
+    championIds: ['heimerdinger'],
+    laneIds: ['mid'],
+    rankIds: ['diamondPlus'],
+    champions: ['legacy-champion'],
+  } });
+  assert.deepEqual(config.input, {
+    scope: 'selected',
+    championIds: ['heimerdinger'],
+    laneIds: ['mid'],
+    rankIds: ['diamondPlus'],
+  });
+});

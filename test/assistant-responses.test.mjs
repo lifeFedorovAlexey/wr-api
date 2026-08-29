@@ -56,7 +56,7 @@ test("sync mapping emits only the assistant_responses columns", () => {
   });
 });
 
-test("sync rejects a package generated from a stale stats snapshot", () => {
+test("sync accepts a completed older snapshot but rejects an unknown snapshot", () => {
   assert.deepEqual(getSyncSnapshotMismatch([
     { statsSnapshotId: 1228 },
   ], 1229), {
@@ -66,6 +66,15 @@ test("sync rejects a package generated from a stale stats snapshot", () => {
   assert.equal(getSyncSnapshotMismatch([
     { statsSnapshotId: 1229 },
   ], 1229), null);
+  assert.equal(getSyncSnapshotMismatch([
+    { statsSnapshotId: 1228 },
+  ], 1229, [1228]), null);
+  assert.deepEqual(getSyncSnapshotMismatch([
+    { statsSnapshotId: 1227 },
+  ], 1229, [1228]), {
+    expected: 1229,
+    received: [1227],
+  });
 });
 
 test("sync rejects a package generated from stale champion lore", () => {

@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "../db/client.js";
-import { assistantResponses, championLore, championStableTips, championStatsHistory, champions } from "../db/schema.js";
-import { getLatestCompletedChampionStatsSnapshot } from "../lib/statsSnapshots.mjs";
+import { assistantResponses, championLore, championStableTips, championStatsHistory, championStatsSnapshots, champions } from "../db/schema.js";
+import { CHAMPION_STATS_SNAPSHOT_SOURCE, SNAPSHOT_STATUS_COMPLETED, getLatestCompletedChampionStatsSnapshot } from "../lib/statsSnapshots.mjs";
 import { ensureAuthorized } from "./utils/adminAuth.js";
 import { setCors } from "./utils/cors.js";
 
@@ -26,10 +26,11 @@ export function normalizeAssistantResponseForSync(item, context) {
   return { championSlug, lane, rank, response, statsSnapshotId, loreContentHash, model };
 }
 
-export function getSyncSnapshotMismatch(items, latestSnapshotId) {
+export function getSyncSnapshotMismatch(items, latestSnapshotId, validSnapshotIds = []) {
   const expected = Number(latestSnapshotId);
   const received = [...new Set(items.map((item) => Number(item?.statsSnapshotId)))];
-  if (received.length !== 1 || received[0] !== expected) return { expected, received };
+  const valid = new Set([expected, ...validSnapshotIds].map(Number));
+  if (received.length !== 1 || !valid.has(received[0])) return { expected, received };
   return null;
 }
 
@@ -125,8 +126,16 @@ export default async function handler(req, res) {
       if (!items.length || items.length > 1000) return res.status(400).json({ error: "Invalid items" });
       const latestSnapshot = await getLatestCompletedChampionStatsSnapshot();
       if (!latestSnapshot) return res.status(409).json({ error: "No completed stats snapshot" });
-      const snapshotMismatch = getSyncSnapshotMismatch(items, latestSnapshot.id);
-      if (snapshotMismatch) return res.status(409).json({ error: "Stale stats snapshot", ...snapshotMismatch });
+      const receivedSnapshotIds = [...new Set(items.map((item) => Number(item?.statsSnapshotId)))];
+      const [receivedSnapshot] = receivedSnapshotIds.length === 1 && Number.isInteger(receivedSnapshotIds[0])
+        ? await db.select({ id: championStatsSnapshots.id }).from(championStatsSnapshots).where(and(
+          eq(championStatsSnapshots.id, receivedSnapshotIds[0]),
+          eq(championStatsSnapshots.source, CHAMPION_STATS_SNAPSHOT_SOURCE),
+          eq(championStatsSnapshots.status, SNAPSHOT_STATUS_COMPLETED),
+        )).limit(1)
+        : [];
+      const snapshotMismatch = getSyncSnapshotMismatch(items, latestSnapshot.id, receivedSnapshot ? [receivedSnapshot.id] : []);
+      if (snapshotMismatch) return res.status(409).json({ error: "Unknown or incomplete stats snapshot", ...snapshotMismatch });
       const loreRows = await db.select({ championSlug: championLore.championSlug, contentHash: championLore.contentHash }).from(championLore).where(eq(championLore.locale, "ru_ru"));
       const loreMap = new Map(loreRows.map((row) => [row.championSlug, row.contentHash]));
       const loreMismatch = getSyncLoreMismatch(items, loreMap);

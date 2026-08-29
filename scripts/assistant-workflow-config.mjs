@@ -31,14 +31,17 @@ export function parseWorkflowConfig(raw) {
   const ollama = { ...record(value.ollama), ...nodeParams('ollama') };
   const prompt = nodeParams('prompt');
   const assistant = { ...record(value.assistant), ...nodeParams('generate') };
+  const championIds = list(input.championIds ?? input.champions);
+  const laneIds = list(input.laneIds ?? input.lanes);
+  const rankIds = list(input.rankIds ?? input.ranks);
   if (prompt.systemPrompt !== undefined) assistant.systemPrompt = prompt.systemPrompt;
   if (prompt.userPromptTemplate !== undefined) assistant.userPromptTemplate = prompt.userPromptTemplate;
   return {
     input: {
       scope: input.scope === 'selected' ? 'selected' : 'all',
-      champions: list(input.champions),
-      lanes: list(input.lanes),
-      ranks: list(input.ranks),
+      championIds,
+      laneIds,
+      rankIds,
     },
     ollama: {
       model: text(ollama.model, 'gpt-oss:20b', 120),

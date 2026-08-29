@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
+import fs from "node:fs/promises";
 import { once } from "node:events";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
@@ -107,4 +109,36 @@ test("generator records requested and actual Ollama model separately", async (t)
   assert.match(result.output, /\[assistant\] model requested=fixture-requested-model/);
   assert.match(result.output, /"requestedModel":"fixture-requested-model"/);
   assert.match(result.output, /"actualModel":"fixture-actual-model"/);
+  assert.match(result.output, /"statsSnapshotId":1/);
+  assert.match(result.output, /"loreContentHash":"fixture"/);
+});
+
+test("generator consumes the worker-owned stats context file", async (t) => {
+  const server = startTasksApi();
+  t.after(() => server.close());
+  await once(server, "listening");
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+  const file = path.join(os.tmpdir(), `repka-stats-fixture-${process.pid}.json`);
+  await fs.writeFile(file, JSON.stringify({
+    source: "wr-api",
+    scope: "selected",
+    championIds: ["amumu"],
+    laneIds: ["jungle"],
+    rankIds: ["king"],
+    snapshotId: 99,
+    tasks: [{ championName: "Amumu", championSlug: "amumu", lane: "jungle", statsByRank: { king: { winRate: 51, pickRate: 3, banRate: 1 } }, stableTips: [{ text: "Use your engage with follow-up." }], lore: { contentHash: "file-fixture" } }],
+  }), "utf8");
+  t.after(() => fs.rm(file, { force: true }));
+  const result = await runGenerator({
+    REPKA_STATS_CONTEXT_FILE: file,
+    REPKA_JOB_CONFIG_JSON: JSON.stringify({ input: { scope: "selected", championIds: ["amumu"], laneIds: ["jungle"], rankIds: ["king"] }, sync: { enabled: false, mode: "preview" } }),
+    WR_API_ORIGIN: "http://127.0.0.1:1",
+    OLLAMA_ORIGIN: `http://127.0.0.1:${address.port}`,
+    OLLAMA_AUTO_START: "false",
+    GUIDES_SYNC_SECRET: "test-secret",
+  });
+  assert.equal(result.code, 0, result.output);
+  assert.match(result.output, /"statsSnapshotId":99/);
+  assert.match(result.output, /"loreContentHash":"file-fixture"/);
 });

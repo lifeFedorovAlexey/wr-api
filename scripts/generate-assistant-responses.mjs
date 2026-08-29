@@ -1,4 +1,5 @@
 import "dotenv/config";
+import fs from "node:fs/promises";
 import { createOllamaRuntime, describeError } from "./ollama-runtime.mjs";
 import { parseAssistantTipResponse } from "./assistant-tip-parser.mjs";
 import { runInferenceWithRecovery } from "./assistant-retry.mjs";
@@ -126,11 +127,12 @@ function buildAdvice(stats) {
   return "Можно ставить в приоритет, если чемпион входит в твой уверенный пул.";
 }
 
-const bundle = await api("/api/assistant/tasks");
+const statsContextFile = String(process.env.REPKA_STATS_CONTEXT_FILE || '').trim();
+const bundle = statsContextFile ? JSON.parse(await fs.readFile(statsContextFile, 'utf8')) : await api("/api/assistant/tasks");
 const inputSelection = workflowConfig.input || {};
-const selectedChampions = new Set((inputSelection.champions || []).map((value) => String(value).trim().toLowerCase()).filter(Boolean));
-const selectedLanes = new Set((inputSelection.lanes || []).map((value) => String(value).trim().toLowerCase()).filter(Boolean));
-const selectedRanks = new Set((inputSelection.ranks || []).map((value) => String(value).trim().toLowerCase()).filter(Boolean));
+const selectedChampions = new Set((inputSelection.championIds || []).map((value) => String(value).trim().toLowerCase()).filter(Boolean));
+const selectedLanes = new Set((inputSelection.laneIds || []).map((value) => String(value).trim().toLowerCase()).filter(Boolean));
+const selectedRanks = new Set((inputSelection.rankIds || []).map((value) => String(value).trim().toLowerCase()).filter(Boolean));
 if (requestedSlug) selectedChampions.add(requestedSlug);
 if (inputSelection.scope === "selected") bundle.tasks = bundle.tasks.filter((task) => selectedChampions.has(String(task.championSlug || '').toLowerCase()) || selectedChampions.has(String(task.championName || '').toLowerCase()));
 if (selectedLanes.size) bundle.tasks = bundle.tasks.filter((task) => selectedLanes.has(String(task.lane || '').toLowerCase()));
@@ -168,7 +170,7 @@ for (const [index, task] of bundle.tasks.entries()) {
       const stableTip = tipIndex == null ? "" : ` ${task.stableTips[tipIndex].text}`;
       const response = `${buildAssessment(task, stats)} ${buildAdvice(stats)}${stableTip}`;
       results.push({ championSlug: task.championSlug, lane: task.lane, rank, response, statsSnapshotId: bundle.snapshotId, loreContentHash: task.lore.contentHash, model: actualModel || "unverified", requestedModel: model, actualModel });
-      console.log(`[assistant-result] ${JSON.stringify({ championSlug: task.championSlug, championName: task.championName, lane: task.lane, rank, tipIndex, response, requestedModel: model, actualModel })}`);
+      console.log(`[assistant-result] ${JSON.stringify({ championSlug: task.championSlug, championName: task.championName, lane: task.lane, rank, tipIndex, response, statsSnapshotId: bundle.snapshotId, loreContentHash: task.lore.contentHash, model: actualModel || "unverified", requestedModel: model, actualModel })}`);
       completedRanks += 1;
     } catch (error) {
       failedRanks += 1;
