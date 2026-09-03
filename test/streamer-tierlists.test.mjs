@@ -132,19 +132,23 @@ test("sanitizeStreamerTierlistSubmission supports one overall board without lane
 });
 
 test("sanitizeStreamerTierlistSubmission keeps safe custom tier labels and colors", () => {
+  const longLabel = "Очень длинное авторское название тира ".repeat(5);
   const payload = sanitizeStreamerTierlistSubmission(
     {
       mode: "overall",
       lanes: { overall: {} },
       tierStyles: {
-        "S+": { label: "Имба", color: "#12ABef" },
+        "S+": { label: longLabel, color: "#12ABef" },
         S: { label: "", color: "red" },
       },
     },
     new Map(),
   );
 
-  assert.deepEqual(payload.tierStyles["S+"], { label: "Имба", color: "#12abef" });
+  assert.deepEqual(payload.tierStyles["S+"], {
+    label: longLabel.trim().slice(0, 150),
+    color: "#12abef",
+  });
   assert.deepEqual(payload.tierStyles.S, { label: "S", color: "#f19797" });
 });
 
