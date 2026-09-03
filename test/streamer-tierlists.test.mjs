@@ -131,6 +131,23 @@ test("sanitizeStreamerTierlistSubmission supports one overall board without lane
   assert.deepEqual(payload.lanes.overall.tiers.A.map((item) => item.slug), ["lulu"]);
 });
 
+test("sanitizeStreamerTierlistSubmission keeps safe custom tier labels and colors", () => {
+  const payload = sanitizeStreamerTierlistSubmission(
+    {
+      mode: "overall",
+      lanes: { overall: {} },
+      tierStyles: {
+        "S+": { label: "Имба", color: "#12ABef" },
+        S: { label: "", color: "red" },
+      },
+    },
+    new Map(),
+  );
+
+  assert.deepEqual(payload.tierStyles["S+"], { label: "Имба", color: "#12abef" });
+  assert.deepEqual(payload.tierStyles.S, { label: "S", color: "#f19797" });
+});
+
 test("only users with the streamer role appear in the streamer catalog", () => {
   assert.equal(siteUserCanAppearInStreamerCatalog(["streamer"]), true);
   assert.equal(siteUserCanAppearInStreamerCatalog(["owner"]), false);
