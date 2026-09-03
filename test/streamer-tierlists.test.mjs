@@ -152,6 +152,27 @@ test("sanitizeStreamerTierlistSubmission keeps safe custom tier labels and color
   assert.deepEqual(payload.tierStyles.S, { label: "S", color: "#f19797" });
 });
 
+test("sanitizeStreamerTierlistSubmission preserves added and removed tier rows", () => {
+  const payload = sanitizeStreamerTierlistSubmission(
+    {
+      mode: "overall",
+      tiersOrder: ["S+", "tier_custom"],
+      lanes: { overall: { "S+": [], tier_custom: [] } },
+      tierStyles: {
+        tier_custom: { label: "Авторская строка", color: "#334455" },
+      },
+    },
+    new Map(),
+  );
+
+  assert.deepEqual(payload.tiersOrder, ["S+", "tier_custom"]);
+  assert.deepEqual(Object.keys(payload.lanes.overall.tiers), ["S+", "tier_custom"]);
+  assert.deepEqual(payload.tierStyles.tier_custom, {
+    label: "Авторская строка",
+    color: "#334455",
+  });
+});
+
 test("only users with the streamer role appear in the streamer catalog", () => {
   assert.equal(siteUserCanAppearInStreamerCatalog(["streamer"]), true);
   assert.equal(siteUserCanAppearInStreamerCatalog(["owner"]), false);
