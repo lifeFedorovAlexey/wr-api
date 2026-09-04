@@ -1,6 +1,7 @@
 import "dotenv/config";
 import fs from "node:fs/promises";
 import { requireAcceptedCount } from "./assistant-sync-contract.mjs";
+import { buildAssistantSyncBatches } from "../lib/assistant-sync-batches.mjs";
 
 const apiOrigin = String(process.env.WR_API_ORIGIN || "http://127.0.0.1:3002").replace(/\/$/, "");
 const secret = process.env.GUIDES_SYNC_SECRET;
@@ -21,15 +22,23 @@ if (!items.length) {
   process.exit(0);
 }
 
-const response = await fetch(`${apiOrigin}/api/assistant/sync`, {
-  method: "POST",
-  headers: {
-    "content-type": "application/json",
-    "x-guides-sync-secret": secret,
-  },
-  body: JSON.stringify({ items }),
-});
-if (!response.ok) throw new Error(`WR API sync ${response.status}: ${await response.text()}`);
-const payload = await response.json();
-const accepted = requireAcceptedCount(payload, items.length, "assistant sync");
-console.log(`[sync] saved=${accepted}`);
+const batches = buildAssistantSyncBatches(items);
+let accepted = 0;
+for (const [index, batch] of batches.entries()) {
+  const response = await fetch(`${apiOrigin}/api/assistant/sync`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-guides-sync-secret": secret,
+    },
+    body: JSON.stringify({ items: batch }),
+  });
+  if (!response.ok) {
+    throw new Error(
+      `WR API sync batch ${index + 1}/${batches.length} ${response.status}: ${await response.text()}`,
+    );
+  }
+  const payload = await response.json();
+  accepted += requireAcceptedCount(payload, batch.length, `assistant sync batch ${index + 1}`);
+}
+console.log(`[sync] saved=${accepted} batches=${batches.length}`);
