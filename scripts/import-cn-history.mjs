@@ -1,13 +1,14 @@
 import "dotenv/config";
 import { pathToFileURL } from "node:url";
 import { request as httpsRequest } from "node:https";
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, ne, or } from "drizzle-orm";
 
 import { db, client } from "../db/client.js";
 import { championStatsSnapshots, champions, championStatsHistory } from "../db/schema.js";
 import {
   createChampionStatsSnapshot,
   determineChampionStatsSnapshotStatus,
+  getCurrentChampionStatsSnapshot,
   SNAPSHOT_STATUS_FAILED,
   updateChampionStatsSnapshot,
 } from "../lib/statsSnapshots.mjs";
@@ -277,13 +278,18 @@ export async function runCnHistoryImport() {
 
   await ensureCnHistoryInsertCompatibility();
 
-  const snapshot = await createChampionStatsSnapshot({
-    statsDate: today,
-    startedAt: runStartedAt,
-    metadata: {
-      kind: "cn-history",
-    },
-  });
+  let snapshot = await getCurrentChampionStatsSnapshot();
+  let createdSnapshot = false;
+  if (!snapshot) {
+    snapshot = await createChampionStatsSnapshot({
+      statsDate: today,
+      startedAt: runStartedAt,
+      metadata: {
+        kind: "cn-history",
+      },
+    });
+    createdSnapshot = true;
+  }
 
   try {
     const championRows = await loadCnHistoryChampionsFromDb();
@@ -384,11 +390,20 @@ export async function runCnHistoryImport() {
     await db.transaction(async (tx) => {
       await tx
         .delete(championStatsHistory)
-        .where(eq(championStatsHistory.date, today));
+        .where(or(
+          eq(championStatsHistory.date, today),
+          eq(championStatsHistory.snapshotId, snapshot.id),
+        ));
 
-      // Keep superseded snapshots available until consumers finish syncing.
-      // The daily assistant may have already received the previous snapshot
-      // while this import is creating the next one.
+      await tx
+        .delete(championStatsSnapshots)
+        .where(
+          and(
+            eq(championStatsSnapshots.source, "cnHistory"),
+            eq(championStatsSnapshots.statsDate, today),
+            ne(championStatsSnapshots.id, snapshot.id),
+          ),
+        );
 
       for (const rowsChunk of chunkRows(preparedRows)) {
         await tx.insert(championStatsHistory).values(rowsChunk);
@@ -397,6 +412,8 @@ export async function runCnHistoryImport() {
       await tx
         .update(championStatsSnapshots)
         .set({
+          statsDate: today,
+          startedAt: runStartedAt,
           status: snapshotStatus,
           completedAt: new Date(),
           championCount: championRows.length,
@@ -414,10 +431,12 @@ export async function runCnHistoryImport() {
 
     return report;
   } catch (error) {
-    await updateChampionStatsSnapshot(snapshot.id, {
-      status: SNAPSHOT_STATUS_FAILED,
-      completedAt: new Date(),
-    });
+    if (createdSnapshot) {
+      await updateChampionStatsSnapshot(snapshot.id, {
+        status: SNAPSHOT_STATUS_FAILED,
+        completedAt: new Date(),
+      });
+    }
     throw error;
   }
 }
