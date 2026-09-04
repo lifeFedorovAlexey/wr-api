@@ -386,15 +386,9 @@ export async function runCnHistoryImport() {
         .delete(championStatsHistory)
         .where(eq(championStatsHistory.date, today));
 
-      await tx
-        .delete(championStatsSnapshots)
-        .where(
-          and(
-            eq(championStatsSnapshots.source, "cnHistory"),
-            eq(championStatsSnapshots.statsDate, today),
-            ne(championStatsSnapshots.id, snapshot.id),
-          ),
-        );
+      // Keep superseded snapshots available until consumers finish syncing.
+      // The daily assistant may have already received the previous snapshot
+      // while this import is creating the next one.
 
       for (const rowsChunk of chunkRows(preparedRows)) {
         await tx.insert(championStatsHistory).values(rowsChunk);
