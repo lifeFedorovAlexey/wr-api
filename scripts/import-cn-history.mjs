@@ -56,8 +56,25 @@ function sleep(ms) {
 
 function toFloat(value) {
   if (value === undefined || value === null || value === "") return null;
-  const numericValue = Number(value);
+  const normalizedValue = String(value).trim().replace(/%$/, "");
+  const numericValue = Number(normalizedValue);
   return Number.isFinite(numericValue) ? numericValue : null;
+}
+
+function normalizeStatsDate(value) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString().slice(0, 10);
+  }
+
+  const raw = String(value ?? "").trim();
+  const match = raw.match(/^(\d{4})[-/]?(\d{2})[-/]?(\d{2})/);
+  return match ? `${match[1]}-${match[2]}-${match[3]}` : null;
+}
+
+function readPercentValue(item, canonicalKey, percentKey) {
+  // The official page renders win_rate/appear_rate/forbid_rate. Keep those
+  // fields authoritative and only use *_percent for older API responses.
+  return toFloat(item[canonicalKey] ?? item[percentKey]);
 }
 
 async function fetchCnHeroRankOnce() {
@@ -155,16 +172,26 @@ export async function fetchCnHeroRank() {
       const json = await fetchCnHeroRankOnce();
       const data = json.data || {};
       const statsByHero = {};
+      const sourceDates = new Set();
+      const unknownRankKeys = new Set();
+      const unknownLaneKeys = new Set();
+      let sourceRowCount = 0;
 
       for (const rankKey of Object.keys(data)) {
         const rankName = RANK_MAP[rankKey] || `rank_${rankKey}`;
+        if (!RANK_MAP[rankKey]) unknownRankKeys.add(String(rankKey));
         const lanes = data[rankKey] || {};
 
         for (const laneKey of Object.keys(lanes)) {
           const laneName = LANE_MAP[laneKey] || `lane_${laneKey}`;
+          if (!LANE_MAP[laneKey]) unknownLaneKeys.add(String(laneKey));
           const rows = Array.isArray(lanes[laneKey]) ? lanes[laneKey] : [];
 
           for (const item of rows) {
+            sourceRowCount += 1;
+            const sourceDate = normalizeStatsDate(item.dtstatdate);
+            if (sourceDate) sourceDates.add(sourceDate);
+
             const heroId = String(item.hero_id || "").trim();
             if (!heroId) continue;
 
@@ -173,17 +200,25 @@ export async function fetchCnHeroRank() {
 
             statsByHero[heroId][rankName][laneName] = {
               position: item.position ? Number(item.position) : null,
-              winRate: toFloat(item.win_rate_percent ?? item.win_rate),
-              pickRate: toFloat(item.appear_rate_percent ?? item.appear_rate),
-              banRate: toFloat(item.forbid_rate_percent ?? item.forbid_rate),
+              winRate: readPercentValue(item, "win_rate", "win_rate_percent"),
+              pickRate: readPercentValue(item, "appear_rate", "appear_rate_percent"),
+              banRate: readPercentValue(item, "forbid_rate", "forbid_rate_percent"),
               strengthLevel: item.strength_level ? Number(item.strength_level) : null,
             };
           }
         }
       }
 
-      log(`[cn-history] hero_rank_list_v2 -> heroIds=${Object.keys(statsByHero).length}`);
-      return statsByHero;
+      log(
+        `[cn-history] hero_rank_list_v2 -> heroIds=${Object.keys(statsByHero).length} rows=${sourceRowCount} sourceDates=${Array.from(sourceDates).join(",") || "none"}`,
+      );
+      return {
+        statsByHero,
+        sourceDates: Array.from(sourceDates),
+        sourceRowCount,
+        unknownRankKeys: Array.from(unknownRankKeys),
+        unknownLaneKeys: Array.from(unknownLaneKeys),
+      };
     } catch (error) {
       lastError = error;
 
@@ -272,28 +307,49 @@ function chunkRows(rows, size = 200) {
 }
 
 export async function runCnHistoryImport() {
-  const today = new Date().toISOString().slice(0, 10);
+  const runDate = new Date().toISOString().slice(0, 10);
   const runStartedAt = new Date();
-  log(`[cn-history] start -> date=${today}`);
+  log(`[cn-history] start -> runDate=${runDate}`);
 
   await ensureCnHistoryInsertCompatibility();
 
-  let snapshot = await getCurrentChampionStatsSnapshot();
+  let snapshot = null;
   let createdSnapshot = false;
-  if (!snapshot) {
-    snapshot = await createChampionStatsSnapshot({
-      statsDate: today,
-      startedAt: runStartedAt,
-      metadata: {
-        kind: "cn-history",
-      },
-    });
-    createdSnapshot = true;
-  }
 
   try {
     const championRows = await loadCnHistoryChampionsFromDb();
-    const statsByHeroId = await fetchCnHeroRank();
+    const sourceSnapshot = await fetchCnHeroRank();
+    const sourceDates = sourceSnapshot.sourceDates || [];
+    const sourceDate = sourceDates.length === 1 ? sourceDates[0] : null;
+
+    if (!sourceDate) {
+      throw new Error(
+        `[cn-history] invalid source date: expected one dtstatdate, got ${sourceDates.join(",") || "none"}`,
+      );
+    }
+
+    if (sourceSnapshot.unknownRankKeys?.length || sourceSnapshot.unknownLaneKeys?.length) {
+      throw new Error(
+        `[cn-history] unknown API dimensions: ranks=${sourceSnapshot.unknownRankKeys.join(",") || "none"} lanes=${sourceSnapshot.unknownLaneKeys.join(",") || "none"}`,
+      );
+    }
+
+    const statsByHeroId = sourceSnapshot.statsByHero;
+
+    snapshot = await getCurrentChampionStatsSnapshot();
+    const currentSnapshotDate = normalizeStatsDate(snapshot?.statsDate);
+    if (!snapshot || currentSnapshotDate !== sourceDate) {
+      snapshot = await createChampionStatsSnapshot({
+        statsDate: sourceDate,
+        startedAt: runStartedAt,
+        metadata: {
+          kind: "cn-history",
+          sourceStatsDate: sourceDate,
+        },
+      });
+      createdSnapshot = true;
+    }
+
     const coverage = summarizeCnHistoryCoverage(championRows, statsByHeroId);
 
     let upserted = 0;
@@ -326,7 +382,7 @@ export async function runCnHistoryImport() {
           const cell = lanes[laneName];
           const row = {
             snapshotId: snapshot.id,
-            date: today,
+            date: sourceDate,
             slug: champion.slug,
             cnHeroId,
             rank: rankName,
@@ -361,7 +417,7 @@ export async function runCnHistoryImport() {
 
     const report = {
       snapshotId: snapshot.id,
-      date: today,
+      date: sourceDate,
       champions: championRows.length,
       matched: coverage.matchedCount,
       missingInApi: coverage.missingInApi.length,
@@ -379,6 +435,8 @@ export async function runCnHistoryImport() {
 
     const snapshotMetadata = {
       kind: "cn-history",
+      sourceStatsDate: sourceDate,
+      sourceRowCount: sourceSnapshot.sourceRowCount,
       missingInApi: coverage.missingInApi.map((champion) => ({
         slug: champion.slug,
         cnHeroId: champion.cnHeroId,
@@ -391,7 +449,7 @@ export async function runCnHistoryImport() {
       await tx
         .delete(championStatsHistory)
         .where(or(
-          eq(championStatsHistory.date, today),
+          eq(championStatsHistory.date, sourceDate),
           eq(championStatsHistory.snapshotId, snapshot.id),
         ));
 
@@ -400,7 +458,7 @@ export async function runCnHistoryImport() {
         .where(
           and(
             eq(championStatsSnapshots.source, "cnHistory"),
-            eq(championStatsSnapshots.statsDate, today),
+            eq(championStatsSnapshots.statsDate, sourceDate),
             ne(championStatsSnapshots.id, snapshot.id),
           ),
         );
@@ -412,7 +470,7 @@ export async function runCnHistoryImport() {
       await tx
         .update(championStatsSnapshots)
         .set({
-          statsDate: today,
+          statsDate: sourceDate,
           startedAt: runStartedAt,
           status: snapshotStatus,
           completedAt: new Date(),
