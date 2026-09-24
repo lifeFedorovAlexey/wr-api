@@ -144,7 +144,7 @@ async function readRowsSignature(page, reader) {
       : [...document.querySelectorAll('[class*="WinratesTable"][class*="row"]')];
     return rows
       .slice(0, 5)
-      .map((row) => (row.innerText || row.textContent || "").replace(/\s+/g, " ").trim())
+      .map((row) => (row.textContent || row.innerText || "").replace(/\s+/g, " ").trim())
       .join("||");
   }, reader);
 }
@@ -165,7 +165,7 @@ async function waitForRows(page, reader, label, previousSignature = null) {
           : pageText.includes("Нет данных");
         const signature = rows
           .slice(0, 5)
-          .map((row) => (row.innerText || row.textContent || "").replace(/\s+/g, " ").trim())
+          .map((row) => (row.textContent || row.innerText || "").replace(/\s+/g, " ").trim())
           .join("||");
         return hasEmptyState || (hasRows && (!previous || signature !== previous));
       },
@@ -188,7 +188,7 @@ async function waitForRows(page, reader, label, previousSignature = null) {
           ? document.querySelectorAll("#data-list li")
           : document.querySelectorAll(rowSelector))]
           .slice(0, 5)
-          .map((row) => (row.innerText || row.textContent || "").replace(/\s+/g, " ").trim())
+          .map((row) => (row.textContent || row.innerText || "").replace(/\s+/g, " ").trim())
           .join("||"),
         kind,
       };
