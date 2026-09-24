@@ -497,42 +497,8 @@ async function waitForRows(
   return rows;
 }
 
-async function readSourceRowsForSlice(
-  sourcePage,
-  rank,
-  lane,
-  previousSignature,
-) {
-  if (sourcePage.url().startsWith("chrome-error://") || sourceApiPromise) {
-    return {
-      rows: readSourceApiRows(await loadSourceApi(), rank, lane),
-      usedApiFallback: true,
-    };
-  }
-  try {
-    return {
-      rows: await waitForRows(
-        sourcePage,
-        "source",
-        `source ${rank.source}/${lane.source}`,
-        previousSignature,
-      ),
-      usedApiFallback: false,
-    };
-  } catch (error) {
-    const message = String(error?.message || error);
-    const canUseApiFallback =
-      sourcePage.url().startsWith("chrome-error://") ||
-      message.includes("official source API did not populate #data-list");
-    if (!canUseApiFallback) throw error;
-    return {
-      rows: readSourceApiRows(await loadSourceApi(), rank, lane),
-      usedApiFallback: true,
-    };
-  }
-}
-
 export async function verifyWebsiteStats() {
+  const sourcePayload = await loadSourceApi();
   const browser = await puppeteer.launch({
     headless: "new",
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
@@ -541,68 +507,39 @@ export async function verifyWebsiteStats() {
 
   try {
     const sitePage = await browser.newPage();
-    const sourcePage = await browser.newPage();
-    await Promise.all([
-      sitePage.setViewport({ width: 1440, height: 1200 }),
-      sourcePage.setViewport({ width: 1440, height: 1200 }),
-    ]);
+    await sitePage.setViewport({ width: 1440, height: 1200 });
 
-    await Promise.all([
-      navigatePage(sitePage, SITE_URL, "site"),
-      navigatePage(sourcePage, SOURCE_URL, "source"),
-    ]);
+    await navigatePage(sitePage, SITE_URL, "site");
 
     const errors = [];
     const samples = [];
     const skippedSlices = [];
-    const shouldUseSourcePage = () =>
-      !sourcePage.url().startsWith("chrome-error://") && !sourceApiPromise;
-
     for (const [rankIndex, rank] of RANKS.entries()) {
       const rankPreviousSignatures = rankIndex === 0
-        ? [null, null]
-        : await Promise.all([
-          readRowsSignature(sitePage, "site"),
-          shouldUseSourcePage()
-            ? readRowsSignature(sourcePage, "source")
-            : Promise.resolve(null),
-        ]);
+        ? null
+        : await readRowsSignature(sitePage, "site");
       // Both public pages open on the first rank and first lane by default.
       // Avoid clicking the already-selected SSR default before hydration.
       if (rankIndex > 0) {
         await clickVisibleText(sitePage, rank.site, { expectActive: true });
-        if (shouldUseSourcePage()) {
-          await clickVisibleText(sourcePage, rank.source);
-        }
       }
 
       for (const [laneIndex, lane] of LANES.entries()) {
         const previousSignatures = laneIndex === 0
           ? rankPreviousSignatures
-          : await Promise.all([
-            readRowsSignature(sitePage, "site"),
-            shouldUseSourcePage()
-              ? readRowsSignature(sourcePage, "source")
-              : Promise.resolve(null),
-          ]);
+          : await readRowsSignature(sitePage, "site");
         if (rankIndex > 0 || laneIndex > 0) {
           await clickVisibleText(sitePage, lane.site, { expectActive: true });
-          if (shouldUseSourcePage()) {
-            await clickVisibleText(sourcePage, lane.source);
-          }
         }
 
-        const [siteRows, sourceResult] = await Promise.all([
-          waitForRows(
-            sitePage,
-            "site",
-            `site ${rank.site}/${lane.site}`,
-            previousSignatures[0],
-            laneIndex === 0 ? rank.site : lane.site,
-          ),
-          readSourceRowsForSlice(sourcePage, rank, lane, previousSignatures[1]),
-        ]);
-        const sourceRows = sourceResult.rows;
+        const siteRows = await waitForRows(
+          sitePage,
+          "site",
+          `site ${rank.site}/${lane.site}`,
+          previousSignatures,
+          laneIndex === 0 ? rank.site : lane.site,
+        );
+        const sourceRows = readSourceApiRows(sourcePayload, rank, lane);
         if (!siteRows.length && !sourceRows.length) {
           skippedSlices.push(`${rank.site}/${lane.site}`);
           continue;
