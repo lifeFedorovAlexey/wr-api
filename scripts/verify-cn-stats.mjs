@@ -206,6 +206,7 @@ async function clickVisibleText(page, text, { expectActive = false } = {}) {
           .toLocaleLowerCase();
       return [...document.querySelectorAll('button, a, [role="button"]')].some(
         (candidate) =>
+          candidate.getClientRects().length > 0 &&
           normalize(candidate.getAttribute("aria-label") || candidate.textContent) ===
           expectedText,
       );
@@ -223,6 +224,7 @@ async function clickVisibleText(page, text, { expectActive = false } = {}) {
         .toLocaleLowerCase();
     return [...document.querySelectorAll('button, a, [role="button"]')].findIndex(
       (candidate) =>
+        candidate.getClientRects().length > 0 &&
         normalize(candidate.getAttribute("aria-label") || candidate.textContent) ===
         expectedText,
     );
@@ -244,6 +246,7 @@ async function clickVisibleText(page, text, { expectActive = false } = {}) {
             .toLocaleLowerCase();
         const candidate = [...document.querySelectorAll("button")].find(
           (button) =>
+            button.getClientRects().length > 0 &&
             normalize(button.getAttribute("aria-label") || button.textContent) ===
             expectedText,
         );
@@ -398,6 +401,7 @@ async function waitForRows(
                 .trim()
                 .toLocaleLowerCase();
             return (
+              button.getClientRects().length > 0 &&
               normalize(button.getAttribute("aria-label") || button.textContent) ===
                 normalizedExpectedControl &&
               (button.getAttribute("aria-pressed") === "true" ||
