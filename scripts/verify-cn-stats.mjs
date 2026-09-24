@@ -5,6 +5,9 @@ import puppeteer from "puppeteer";
 
 const SITE_URL =
   process.env.CN_STATS_SITE_URL || "https://wildriftallstats.ru/winrates";
+const SITE_API_URL =
+  process.env.CN_STATS_SITE_API_URL ||
+  new URL("/api/winrates-snapshot", SITE_URL).toString();
 const SOURCE_URL =
   process.env.CN_STATS_SOURCE_URL ||
   "https://lolm.qq.com/act/a20220818raider/index.html";
@@ -37,7 +40,7 @@ async function navigatePage(page, url, label) {
       waitUntil: "domcontentloaded",
       timeout: NAVIGATION_TIMEOUT_MS,
     });
-  } catch {
+  } catch (error) {
     const isNavigationTimeout = String(error?.message || "").includes(
       "Navigation timeout",
     );
@@ -59,20 +62,46 @@ function normalizeControlText(value) {
 }
 
 const RANKS = [
-  { site: "Алмаз", source: "钻石以上", api: "1" },
-  { site: "Мастер", source: "大师以上", api: "2" },
-  { site: "ГМ", source: "王者", api: "3" },
-  { site: "Претендент", source: "峡谷之巅", api: "4" },
+  { site: "Алмаз", source: "钻石以上", api: "1", siteApi: "diamondPlus" },
+  { site: "Мастер", source: "大师以上", api: "2", siteApi: "masterPlus" },
+  { site: "ГМ", source: "王者", api: "3", siteApi: "king" },
+  { site: "Претендент", source: "峡谷之巅", api: "4", siteApi: "peak" },
 ];
 const LANES = [
-  { site: "Топ", source: "上单", api: "2" },
-  { site: "Лес", source: "打野", api: "5" },
-  { site: "Мид", source: "中路", api: "1" },
-  { site: "Стрелок", source: "下路", api: "3" },
-  { site: "Поддержка", source: "辅助", api: "4" },
+  { site: "Топ", source: "上单", api: "2", siteApi: "top" },
+  { site: "Лес", source: "打野", api: "5", siteApi: "jungle" },
+  { site: "Мид", source: "中路", api: "1", siteApi: "mid" },
+  { site: "Стрелок", source: "下路", api: "3", siteApi: "adc" },
+  { site: "Поддержка", source: "辅助", api: "4", siteApi: "support" },
 ];
 
 let sourceApiPromise = null;
+let siteApiPromise = null;
+
+async function loadSiteApi() {
+  if (!siteApiPromise) {
+    siteApiPromise = (async () => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), NAVIGATION_TIMEOUT_MS);
+      try {
+        const response = await fetch(SITE_API_URL, {
+          signal: controller.signal,
+          headers: { accept: "application/json" },
+        });
+        if (!response.ok) throw new Error(`site API HTTP ${response.status}`);
+        const payload = await response.json();
+        if (!payload?.rowsBySlice || typeof payload.rowsBySlice !== "object") {
+          throw new Error("site API payload has no rowsBySlice object");
+        }
+        console.warn(`[cn-stats-verify] using site API fallback: ${SITE_API_URL}`);
+        return payload;
+      } finally {
+        clearTimeout(timeout);
+      }
+    })();
+  }
+  return siteApiPromise;
+}
 
 function fetchSourceApiOnce() {
   return new Promise((resolve, reject) => {
@@ -300,6 +329,23 @@ async function readSiteRows(page) {
   });
 }
 
+function readSiteApiRows(payload, rank, lane) {
+  const rawRows = payload?.rowsBySlice?.[`${rank.siteApi}|${lane.siteApi}`];
+  if (!Array.isArray(rawRows)) {
+    throw new Error(`site API has no rows for ${rank.site}/${lane.site}`);
+  }
+  return rawRows
+    .map((row) => ({
+      name: String(row?.name || row?.slug || ""),
+      values: [
+        Number(row?.winRate),
+        Number(row?.pickRate),
+        Number(row?.banRate),
+      ],
+    }))
+    .filter((row) => row.name && row.values.every(Number.isFinite));
+}
+
 async function readSourceRows(page) {
   return page.evaluate(() => {
     const rows = [...document.querySelectorAll("#data-list li")];
@@ -523,31 +569,66 @@ export async function verifyWebsiteStats() {
     const errors = [];
     const samples = [];
     const skippedSlices = [];
+    let siteApiFallback = false;
+    let sitePayload = null;
+
+    const readSiteApiSlice = async (rank, lane) => {
+      sitePayload ||= await loadSiteApi();
+      return readSiteApiRows(sitePayload, rank, lane);
+    };
+
     for (const [rankIndex, rank] of RANKS.entries()) {
-      const rankPreviousSignatures = rankIndex === 0
+      const rankPreviousSignatures = rankIndex === 0 || siteApiFallback
         ? null
         : await readRowsSignature(sitePage, "site");
       // Both public pages open on the first rank and first lane by default.
       // Avoid clicking the already-selected SSR default before hydration.
-      if (rankIndex > 0) {
-        await clickVisibleText(sitePage, rank.site);
+      if (rankIndex > 0 && !siteApiFallback) {
+        try {
+          await clickVisibleText(sitePage, rank.site);
+        } catch (error) {
+          siteApiFallback = true;
+          console.warn(
+            `[cn-stats-verify] site UI rank switch unavailable; using site API: ${error.message}`,
+          );
+        }
       }
 
       for (const [laneIndex, lane] of LANES.entries()) {
-        const previousSignatures = laneIndex === 0
+        const previousSignatures = laneIndex === 0 || siteApiFallback
           ? rankPreviousSignatures
           : await readRowsSignature(sitePage, "site");
-        if (rankIndex > 0 || laneIndex > 0) {
-          await clickVisibleText(sitePage, lane.site);
+        if ((rankIndex > 0 || laneIndex > 0) && !siteApiFallback) {
+          try {
+            await clickVisibleText(sitePage, lane.site);
+          } catch (error) {
+            siteApiFallback = true;
+            console.warn(
+              `[cn-stats-verify] site UI lane switch unavailable; using site API: ${error.message}`,
+            );
+          }
         }
 
-        const siteRows = await waitForRows(
-          sitePage,
-          "site",
-          `site ${rank.site}/${lane.site}`,
-          previousSignatures,
-          laneIndex === 0 ? rank.site : lane.site,
-        );
+        let siteRows;
+        if (siteApiFallback) {
+          siteRows = await readSiteApiSlice(rank, lane);
+        } else {
+          try {
+            siteRows = await waitForRows(
+              sitePage,
+              "site",
+              `site ${rank.site}/${lane.site}`,
+              previousSignatures,
+              laneIndex === 0 ? rank.site : lane.site,
+            );
+          } catch (error) {
+            siteApiFallback = true;
+            console.warn(
+              `[cn-stats-verify] site UI rows did not switch; using site API: ${error.message}`,
+            );
+            siteRows = await readSiteApiSlice(rank, lane);
+          }
+        }
         const sourceRows = readSourceApiRows(sourcePayload, rank, lane);
         if (!siteRows.length && !sourceRows.length) {
           skippedSlices.push(`${rank.site}/${lane.site}`);
