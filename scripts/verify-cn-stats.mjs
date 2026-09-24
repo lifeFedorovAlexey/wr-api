@@ -142,9 +142,19 @@ async function readRowsSignature(page, reader) {
     const rows = kind === "source"
       ? [...document.querySelectorAll("#data-list li")]
       : [...document.querySelectorAll('[class*="WinratesTable"][class*="row"]')];
+    const signatureFor = (row) => {
+      if (kind === "source") {
+        return (row.textContent || row.innerText || "").replace(/\s+/g, " ").trim();
+      }
+      const name = row.querySelector('[class*="heroName"]')?.textContent?.trim() || "";
+      const metrics = [...row.querySelectorAll('[class*="metricCell"]')]
+        .map((cell) => cell.textContent?.replace(/\s+/g, " ").trim() || "")
+        .join("|");
+      return `${name}|${metrics}`;
+    };
     return rows
       .slice(0, 5)
-      .map((row) => (row.textContent || row.innerText || "").replace(/\s+/g, " ").trim())
+      .map(signatureFor)
       .join("||");
   }, reader);
 }
@@ -163,9 +173,19 @@ async function waitForRows(page, reader, label, previousSignature = null) {
         const hasEmptyState = kind === "source"
           ? pageText.includes("暂无数据")
           : pageText.includes("Нет данных");
+        const signatureFor = (row) => {
+          if (kind === "source") {
+            return (row.textContent || row.innerText || "").replace(/\s+/g, " ").trim();
+          }
+          const name = row.querySelector('[class*="heroName"]')?.textContent?.trim() || "";
+          const metrics = [...row.querySelectorAll('[class*="metricCell"]')]
+            .map((cell) => cell.textContent?.replace(/\s+/g, " ").trim() || "")
+            .join("|");
+          return `${name}|${metrics}`;
+        };
         const signature = rows
           .slice(0, 5)
-          .map((row) => (row.textContent || row.innerText || "").replace(/\s+/g, " ").trim())
+          .map(signatureFor)
           .join("||");
         return hasEmptyState || (hasRows && (!previous || signature !== previous));
       },
@@ -188,7 +208,16 @@ async function waitForRows(page, reader, label, previousSignature = null) {
           ? document.querySelectorAll("#data-list li")
           : document.querySelectorAll(rowSelector))]
           .slice(0, 5)
-          .map((row) => (row.textContent || row.innerText || "").replace(/\s+/g, " ").trim())
+          .map((row) => {
+            if (kind === "source") {
+              return (row.textContent || row.innerText || "").replace(/\s+/g, " ").trim();
+            }
+            const name = row.querySelector('[class*="heroName"]')?.textContent?.trim() || "";
+            const metrics = [...row.querySelectorAll('[class*="metricCell"]')]
+              .map((cell) => cell.textContent?.replace(/\s+/g, " ").trim() || "")
+              .join("|");
+            return `${name}|${metrics}`;
+          })
           .join("||"),
         kind,
       };
