@@ -8,6 +8,9 @@ const SITE_URL =
 const SITE_API_URL =
   process.env.CN_STATS_SITE_API_URL ||
   new URL("/wr-api/api/winrates-snapshot", SITE_URL).toString();
+const SITE_CHAMPIONS_API_URL =
+  process.env.CN_STATS_SITE_CHAMPIONS_API_URL ||
+  new URL("/wr-api/api/champions?lang=ru_ru", SITE_URL).toString();
 const SOURCE_URL =
   process.env.CN_STATS_SOURCE_URL ||
   "https://lolm.qq.com/act/a20220818raider/index.html";
@@ -77,6 +80,7 @@ const LANES = [
 
 let sourceApiPromise = null;
 let siteApiPromise = null;
+let siteChampionsApiPromise = null;
 
 async function loadSiteApi() {
   if (!siteApiPromise) {
@@ -101,6 +105,32 @@ async function loadSiteApi() {
     })();
   }
   return siteApiPromise;
+}
+
+async function loadSiteChampionsApi() {
+  if (!siteChampionsApiPromise) {
+    siteChampionsApiPromise = (async () => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), NAVIGATION_TIMEOUT_MS);
+      try {
+        const response = await fetch(SITE_CHAMPIONS_API_URL, {
+          signal: controller.signal,
+          headers: { accept: "application/json" },
+        });
+        if (!response.ok) {
+          throw new Error(`site champions API HTTP ${response.status}`);
+        }
+        const payload = await response.json();
+        if (!Array.isArray(payload)) {
+          throw new Error("site champions API payload is not an array");
+        }
+        return payload;
+      } finally {
+        clearTimeout(timeout);
+      }
+    })();
+  }
+  return siteChampionsApiPromise;
 }
 
 function fetchSourceApiOnce() {
@@ -194,6 +224,7 @@ function readSourceApiRows(payload, rank, lane) {
         readSourcePercent(left, "win_rate_percent", "win_rate"),
     )
     .map((item) => ({
+      heroId: String(item?.hero_id || ""),
       name: String(item?.hero_id || ""),
       text: `official-api hero=${item?.hero_id || ""}`,
       values: [
@@ -210,6 +241,29 @@ function normalizeName(value) {
     .replace(/\s+/g, " ")
     .trim()
     .toLocaleLowerCase();
+}
+
+function buildSiteChampionIdentity(payload) {
+  const byCnHeroId = new Map();
+  const byName = new Map();
+
+  for (const champion of payload) {
+    const slug = String(champion?.slug || "").trim();
+    const name = String(champion?.name || "").trim();
+    const cnHeroId = String(champion?.ids?.cnHeroId ?? champion?.cnHeroId ?? "").trim();
+    if (!slug) continue;
+    if (cnHeroId) byCnHeroId.set(cnHeroId, slug);
+    if (name) byName.set(normalizeName(name), slug);
+  }
+
+  return { byCnHeroId, byName };
+}
+
+function attachSiteChampionIdentity(rows, identity) {
+  return rows.map((row) => ({
+    ...row,
+    slug: row.slug || identity.byName.get(normalizeName(row.name)) || "",
+  }));
 }
 
 function compareMetric(label, expected, actual) {
@@ -332,6 +386,7 @@ function readSiteApiRows(payload, rank, lane) {
   if (!Array.isArray(rawRows)) return [];
   return rawRows
     .map((row) => ({
+      slug: String(row?.slug || ""),
       name: String(row?.name || row?.slug || ""),
       values: [
         Number(row?.winRate),
@@ -549,7 +604,11 @@ async function waitForRows(
 }
 
 export async function verifyWebsiteStats() {
-  const sourcePayload = await loadSourceApi();
+  const [sourcePayload, siteChampionsPayload] = await Promise.all([
+    loadSourceApi(),
+    loadSiteChampionsApi(),
+  ]);
+  const siteChampionIdentity = buildSiteChampionIdentity(siteChampionsPayload);
   const browser = await puppeteer.launch({
     headless: "new",
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
@@ -625,6 +684,7 @@ export async function verifyWebsiteStats() {
             siteRows = await readSiteApiSlice(rank, lane);
           }
         }
+        siteRows = attachSiteChampionIdentity(siteRows, siteChampionIdentity);
         const sourceRows = readSourceApiRows(sourcePayload, rank, lane);
         if (!siteRows.length && !sourceRows.length) {
           skippedSlices.push(`${rank.site}/${lane.site}`);
@@ -636,29 +696,36 @@ export async function verifyWebsiteStats() {
           );
           continue;
         }
-        const sampleCount = Math.min(
-          SAMPLES_PER_SLICE,
-          siteRows.length,
-          sourceRows.length,
+        const siteRowsBySlug = new Map(
+          siteRows.filter((row) => row.slug).map((row) => [row.slug, row]),
         );
+        const comparableRows = sourceRows
+          .map((sourceRow) => ({
+            sourceRow,
+            siteRow: siteRowsBySlug.get(
+              siteChampionIdentity.byCnHeroId.get(sourceRow.heroId),
+            ),
+          }))
+          .filter(({ siteRow }) => siteRow);
+        const sampleCount = Math.min(SAMPLES_PER_SLICE, comparableRows.length);
 
         if (sampleCount < SAMPLES_PER_SLICE) {
           errors.push(
-            `${rank.site}/${lane.site}: not enough rows for ${SAMPLES_PER_SLICE} samples (site=${siteRows.length}, source=${sourceRows.length})`,
+            `${rank.site}/${lane.site}: not enough matched heroes for ${SAMPLES_PER_SLICE} samples (site=${siteRows.length}, source=${sourceRows.length}, matched=${comparableRows.length})`,
           );
         }
 
         const selectedIndexes = new Set();
         while (selectedIndexes.size < sampleCount) {
-          selectedIndexes.add(randomInt(Math.min(siteRows.length, sourceRows.length)));
+          selectedIndexes.add(randomInt(comparableRows.length));
         }
 
         for (const index of selectedIndexes) {
-          const siteRow = siteRows[index];
-          const sourceRow = sourceRows[index];
+          const { siteRow, sourceRow } = comparableRows[index];
           const sourceValues = sourceRow.values.slice(-3);
           const siteValues = siteRow.values;
-          const label = `${rank.site}/${lane.site}/#${index + 1}/${normalizeName(siteRow.name)}`;
+          const sitePosition = siteRows.indexOf(siteRow) + 1;
+          const label = `${rank.site}/${lane.site}/#${sitePosition}/${normalizeName(siteRow.name)}`;
           const rowErrors = [
             compareMetric(`${label} WR`, sourceValues[0], siteValues[0]),
             compareMetric(`${label} PR`, sourceValues[1], siteValues[1]),
@@ -668,7 +735,7 @@ export async function verifyWebsiteStats() {
           samples.push({
             rank: rank.site,
             lane: lane.site,
-            position: index + 1,
+            position: sitePosition,
             siteName: siteRow.name,
             sourceText: sourceRow.text.replace(/\s+/g, " ").trim(),
             siteValues,
