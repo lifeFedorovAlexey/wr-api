@@ -13,6 +13,7 @@ const SAMPLES_PER_SLICE = Math.max(
 );
 const TOLERANCE = Number(process.env.CN_STATS_TOLERANCE || "0.02");
 const NAVIGATION_TIMEOUT_MS = 60_000;
+const ROWS_TIMEOUT_MS = 20_000;
 
 function sleep(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -133,18 +134,41 @@ async function readSourceRows(page) {
 }
 
 async function waitForRows(page, reader, label) {
-  await page.waitForFunction(
-    (kind) => {
-      const rows = kind === "source"
-        ? [...document.querySelectorAll("#data-list li")]
-        : [...document.querySelectorAll('[class*="WinratesTable"][class*="row"]')];
-      return kind === "source"
-        ? rows.some((row) => /\d+(?:\.\d+)?\s*%/.test(row.innerText || row.textContent || ""))
-        : rows.length > 0;
-    },
-    { timeout: NAVIGATION_TIMEOUT_MS },
-    reader,
-  );
+  try {
+    await page.waitForFunction(
+      (kind) => {
+        const rows = kind === "source"
+          ? [...document.querySelectorAll("#data-list li")]
+          : [...document.querySelectorAll('[class*="WinratesTable"][class*="row"]')];
+        return kind === "source"
+          ? rows.some((row) => /\d+(?:\.\d+)?\s*%/.test(row.innerText || row.textContent || ""))
+          : rows.length > 0;
+      },
+      { timeout: ROWS_TIMEOUT_MS },
+      reader,
+    );
+  } catch (error) {
+    const diagnostics = await page.evaluate((kind) => {
+      const dataList = document.querySelector("#data-list");
+      const rowSelector = '[class*="WinratesTable"][class*="row"]';
+      return {
+        url: window.location.href,
+        title: document.title,
+        dataListText: dataList?.innerText?.trim() || null,
+        sourceRows: dataList?.querySelectorAll("li").length || 0,
+        siteRows: document.querySelectorAll(rowSelector).length,
+        bodyText: (document.body?.innerText || "").replace(/\s+/g, " ").trim().slice(0, 240),
+        kind,
+      };
+    }, reader);
+    const sourceHint = reader === "source" && diagnostics.dataListText?.includes("获取数据中")
+      ? " official source API did not populate #data-list"
+      : "";
+    throw new Error(
+      `${label}: rows did not load within ${ROWS_TIMEOUT_MS}ms.${sourceHint} diagnostics=${JSON.stringify(diagnostics)}`,
+      { cause: error },
+    );
+  }
 
   const rows = reader === "source" ? await readSourceRows(page) : await readSiteRows(page);
   if (!rows.length) throw new Error(`${label}: table has no readable rows`);
