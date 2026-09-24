@@ -18,6 +18,13 @@ function sleep(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+function normalizeControlText(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLocaleLowerCase();
+}
+
 const RANKS = [
   { site: "Алмаз", source: "钻石以上" },
   { site: "Мастер", source: "大师以上" },
@@ -50,18 +57,45 @@ function compareMetric(label, expected, actual) {
 }
 
 async function clickVisibleText(page, text) {
+  const normalizedText = normalizeControlText(text);
+  await page.waitForFunction(
+    (expectedText) => {
+      const normalize = (value) =>
+        String(value || "")
+          .replace(/\s+/g, " ")
+          .trim()
+          .toLocaleLowerCase();
+      return [...document.querySelectorAll('button, a, [role="button"]')].some(
+        (candidate) =>
+          candidate.getClientRects().length > 0 &&
+          normalize(candidate.textContent) === expectedText,
+      );
+    },
+    { timeout: NAVIGATION_TIMEOUT_MS },
+    normalizedText,
+  );
+
   const clicked = await page.evaluate((expectedText) => {
-    const candidates = [...document.querySelectorAll("button, a")];
+    const normalize = (value) =>
+      String(value || "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLocaleLowerCase();
+    const candidates = [
+      ...document.querySelectorAll('button, a, [role="button"]'),
+    ];
     const element = candidates.find(
-      (candidate) => candidate.textContent?.trim() === expectedText,
+      (candidate) =>
+        candidate.getClientRects().length > 0 &&
+        normalize(candidate.textContent) === expectedText,
     );
     if (!element) return false;
     element.click();
     return true;
-  }, text);
+  }, normalizedText);
 
   if (!clicked) throw new Error(`control not found: ${text}`);
-  await sleep(350);
+  await sleep(500);
 }
 
 async function readSiteRows(page) {
