@@ -214,26 +214,26 @@ async function clickVisibleText(page, text, { expectActive = false } = {}) {
     normalizedText,
   );
 
-  const clicked = await page.evaluate((expectedText) => {
+  const controlSelector = 'button, a, [role="button"]';
+  const candidateIndex = await page.evaluate((expectedText) => {
     const normalize = (value) =>
       String(value || "")
         .replace(/\s+/g, " ")
         .trim()
         .toLocaleLowerCase();
-    const candidates = [
-      ...document.querySelectorAll('button, a, [role="button"]'),
-    ];
-    const element = candidates.find(
+    return [...document.querySelectorAll('button, a, [role="button"]')].findIndex(
       (candidate) =>
         normalize(candidate.getAttribute("aria-label") || candidate.textContent) ===
         expectedText,
     );
-    if (!element) return false;
-    element.click();
-    return true;
   }, normalizedText);
 
-  if (!clicked) throw new Error(`control not found: ${text}`);
+  if (candidateIndex < 0) throw new Error(`control not found: ${text}`);
+  const candidates = await page.$$(controlSelector);
+  const candidate = candidates[candidateIndex];
+  if (!candidate) throw new Error(`control not found: ${text}`);
+  await candidate.click();
+  await Promise.all(candidates.map((handle) => handle.dispose()));
   if (expectActive) {
     await page.waitForFunction(
       (expectedText) => {
@@ -555,19 +555,25 @@ export async function verifyWebsiteStats() {
     const errors = [];
     const samples = [];
     const skippedSlices = [];
+    const shouldUseSourcePage = () =>
+      !sourcePage.url().startsWith("chrome-error://") && !sourceApiPromise;
 
     for (const [rankIndex, rank] of RANKS.entries()) {
       const rankPreviousSignatures = rankIndex === 0
         ? [null, null]
         : await Promise.all([
           readRowsSignature(sitePage, "site"),
-          readRowsSignature(sourcePage, "source"),
+          shouldUseSourcePage()
+            ? readRowsSignature(sourcePage, "source")
+            : Promise.resolve(null),
         ]);
       // Both public pages open on the first rank and first lane by default.
       // Avoid clicking the already-selected SSR default before hydration.
       if (rankIndex > 0) {
         await clickVisibleText(sitePage, rank.site, { expectActive: true });
-        await clickVisibleText(sourcePage, rank.source);
+        if (shouldUseSourcePage()) {
+          await clickVisibleText(sourcePage, rank.source);
+        }
       }
 
       for (const [laneIndex, lane] of LANES.entries()) {
@@ -575,11 +581,15 @@ export async function verifyWebsiteStats() {
           ? rankPreviousSignatures
           : await Promise.all([
             readRowsSignature(sitePage, "site"),
-            readRowsSignature(sourcePage, "source"),
+            shouldUseSourcePage()
+              ? readRowsSignature(sourcePage, "source")
+              : Promise.resolve(null),
           ]);
         if (rankIndex > 0 || laneIndex > 0) {
           await clickVisibleText(sitePage, lane.site, { expectActive: true });
-          await clickVisibleText(sourcePage, lane.source);
+          if (shouldUseSourcePage()) {
+            await clickVisibleText(sourcePage, lane.source);
+          }
         }
 
         const [siteRows, sourceResult] = await Promise.all([
