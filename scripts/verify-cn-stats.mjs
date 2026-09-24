@@ -19,6 +19,26 @@ function sleep(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+async function navigatePage(page, url, label) {
+  try {
+    await page.goto(url, {
+      waitUntil: "domcontentloaded",
+      timeout: NAVIGATION_TIMEOUT_MS,
+    });
+  } catch (error) {
+    const isNavigationTimeout = String(error?.message || "").includes(
+      "Navigation timeout",
+    );
+    const hasDocument = await page
+      .evaluate(() => document.readyState !== "loading")
+      .catch(() => false);
+    if (!isNavigationTimeout || !hasDocument) throw error;
+    console.warn(
+      `[cn-stats-verify] ${label} navigation timed out; continuing with loaded DOM`,
+    );
+  }
+}
+
 function normalizeControlText(value) {
   return String(value || "")
     .replace(/\s+/g, " ")
@@ -375,14 +395,8 @@ export async function verifyWebsiteStats() {
     ]);
 
     await Promise.all([
-      sitePage.goto(SITE_URL, {
-        waitUntil: "networkidle2",
-        timeout: NAVIGATION_TIMEOUT_MS,
-      }),
-      sourcePage.goto(SOURCE_URL, {
-        waitUntil: "networkidle2",
-        timeout: NAVIGATION_TIMEOUT_MS,
-      }),
+      navigatePage(sitePage, SITE_URL, "site"),
+      navigatePage(sourcePage, SOURCE_URL, "source"),
     ]);
 
     const errors = [];
