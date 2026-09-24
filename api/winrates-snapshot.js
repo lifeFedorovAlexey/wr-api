@@ -206,8 +206,11 @@ export default async function handler(req, res) {
       .sort();
     const latestSnapshot = recentSnapshots[0] || null;
     const latestDate = toDateString(latestSnapshot?.statsDate);
+    const latestCompletedAt = latestSnapshot?.completedAt
+      ? new Date(latestSnapshot.completedAt).toISOString()
+      : null;
     const latestSnapshotKey = latestSnapshot
-      ? `${latestSnapshot.id}:${latestDate}`
+      ? `${latestSnapshot.id}:${latestDate}:${latestCompletedAt || ""}`
       : null;
 
     if (cachedSnapshot && cachedSnapshot.latestSnapshotKey === latestSnapshotKey) {
