@@ -41,6 +41,15 @@ export default [
     }
   },
   {
+    files: ["scripts/verify-cn-stats.mjs"],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+        ...globals.browser,
+      },
+    },
+  },
+  {
     files: [
       "lib/guides.mjs",
       "lib/httpApiServer.mjs",
