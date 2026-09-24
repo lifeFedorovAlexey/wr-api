@@ -57,7 +57,7 @@ function compareMetric(label, expected, actual) {
   return null;
 }
 
-async function clickVisibleText(page, text) {
+async function clickVisibleText(page, text, { expectActive = false } = {}) {
   const normalizedText = normalizeControlText(text);
   await page.waitForFunction(
     (expectedText) => {
@@ -96,6 +96,31 @@ async function clickVisibleText(page, text) {
   }, normalizedText);
 
   if (!clicked) throw new Error(`control not found: ${text}`);
+  if (expectActive) {
+    await page.waitForFunction(
+      (expectedText) => {
+        const normalize = (value) =>
+          String(value || "")
+            .replace(/\s+/g, " ")
+            .trim()
+            .toLocaleLowerCase();
+        const candidate = [...document.querySelectorAll("button")].find(
+          (button) =>
+            normalize(button.getAttribute("aria-label") || button.textContent) ===
+            expectedText,
+        );
+        return Boolean(
+          candidate &&
+          (candidate.getAttribute("aria-pressed") === "true" ||
+            [...candidate.classList].some((className) =>
+              className.toLocaleLowerCase().includes("buttonactive"),
+            )),
+        );
+      },
+      { timeout: 5_000 },
+      normalizedText,
+    );
+  }
   await sleep(500);
 }
 
@@ -173,10 +198,25 @@ async function readRowsSignature(page, reader) {
   }, reader);
 }
 
-async function waitForRows(page, reader, label, previousSignature = null) {
+// The browser-side diagnostics and readiness checks intentionally live here
+// so one poll observes the same DOM state before rows are parsed.
+// eslint-disable-next-line max-lines-per-function
+async function waitForRows(
+  page,
+  reader,
+  label,
+  previousSignature = null,
+  selectedControl = null,
+) {
   try {
     await page.waitForFunction(
-      (kind, previous) => {
+      (kind, previous, expectedControl) => {
+        const normalizedExpectedControl = expectedControl
+          ? String(expectedControl)
+            .replace(/\s+/g, " ")
+            .trim()
+            .toLocaleLowerCase()
+          : "";
         const rows = kind === "source"
           ? [...document.querySelectorAll("#data-list li")]
           : [...document.querySelectorAll('div[tabindex="0"]')];
@@ -212,11 +252,31 @@ async function waitForRows(page, reader, label, previousSignature = null) {
           .slice(0, 5)
           .map(signatureFor)
           .join("||");
-        return hasEmptyState || (hasRows && (!previous || signature !== previous));
+        const controlIsActive = kind === "site" && expectedControl
+          ? [...document.querySelectorAll("button")].some((button) => {
+            const normalize = (value) =>
+              String(value || "")
+                .replace(/\s+/g, " ")
+                .trim()
+                .toLocaleLowerCase();
+            return (
+              normalize(button.getAttribute("aria-label") || button.textContent) ===
+                normalizedExpectedControl &&
+              (button.getAttribute("aria-pressed") === "true" ||
+                [...button.classList].some((className) =>
+                  className.toLocaleLowerCase().includes("buttonactive"),
+                ))
+            );
+          })
+          : false;
+        return hasEmptyState ||
+          (hasRows &&
+            (!previous || signature !== previous || controlIsActive));
       },
       { timeout: ROWS_TIMEOUT_MS },
       reader,
       previousSignature,
+      selectedControl,
     );
   } catch (error) {
     const diagnostics = await page.evaluate((kind) => {
@@ -232,6 +292,16 @@ async function waitForRows(page, reader, label, previousSignature = null) {
         siteRowsWithMetrics: siteRows.filter((row) =>
           row.querySelectorAll('div[style*="--metric-accent"]').length >= 3,
         ).length,
+        activeControls: [...document.querySelectorAll("button")]
+          .filter((button) =>
+            [...button.classList].some((className) =>
+              className.toLocaleLowerCase().includes("buttonactive"),
+            ),
+          )
+          .map((button) =>
+            button.getAttribute("aria-label") || button.textContent?.trim(),
+          )
+          .filter(Boolean),
         bodyText: (document.body?.innerText || "").replace(/\s+/g, " ").trim().slice(0, 240),
         signature: [...(kind === "source"
           ? document.querySelectorAll("#data-list li")
@@ -292,6 +362,7 @@ async function waitForRows(page, reader, label, previousSignature = null) {
 export async function verifyWebsiteStats() {
   const browser = await puppeteer.launch({
     headless: "new",
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
     args: ["--no-sandbox", "--disable-setuid-sandbox"],
   });
 
@@ -328,7 +399,7 @@ export async function verifyWebsiteStats() {
       // Both public pages open on the first rank and first lane by default.
       // Avoid clicking the already-selected SSR default before hydration.
       if (rankIndex > 0) {
-        await clickVisibleText(sitePage, rank.site);
+        await clickVisibleText(sitePage, rank.site, { expectActive: true });
         await clickVisibleText(sourcePage, rank.source);
       }
 
@@ -340,7 +411,7 @@ export async function verifyWebsiteStats() {
             readRowsSignature(sourcePage, "source"),
           ]);
         if (rankIndex > 0 || laneIndex > 0) {
-          await clickVisibleText(sitePage, lane.site);
+          await clickVisibleText(sitePage, lane.site, { expectActive: true });
           await clickVisibleText(sourcePage, lane.source);
         }
 
@@ -350,6 +421,7 @@ export async function verifyWebsiteStats() {
             "site",
             `site ${rank.site}/${lane.site}`,
             previousSignatures[0],
+            laneIndex === 0 ? rank.site : lane.site,
           ),
           waitForRows(
             sourcePage,
