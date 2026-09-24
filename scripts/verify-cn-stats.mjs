@@ -7,7 +7,7 @@ const SITE_URL =
   process.env.CN_STATS_SITE_URL || "https://wildriftallstats.ru/winrates";
 const SITE_API_URL =
   process.env.CN_STATS_SITE_API_URL ||
-  new URL("/api/winrates-snapshot", SITE_URL).toString();
+  new URL("/wr-api/api/winrates-snapshot", SITE_URL).toString();
 const SOURCE_URL =
   process.env.CN_STATS_SOURCE_URL ||
   "https://lolm.qq.com/act/a20220818raider/index.html";
