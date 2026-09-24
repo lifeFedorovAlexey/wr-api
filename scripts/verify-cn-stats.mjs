@@ -67,9 +67,8 @@ async function clickVisibleText(page, text) {
           .toLocaleLowerCase();
       return [...document.querySelectorAll('button, a, [role="button"]')].some(
         (candidate) =>
-          candidate.getClientRects().length > 0 &&
           normalize(candidate.getAttribute("aria-label") || candidate.textContent) ===
-            expectedText,
+          expectedText,
       );
     },
     { timeout: NAVIGATION_TIMEOUT_MS },
@@ -87,9 +86,8 @@ async function clickVisibleText(page, text) {
     ];
     const element = candidates.find(
       (candidate) =>
-        candidate.getClientRects().length > 0 &&
         normalize(candidate.getAttribute("aria-label") || candidate.textContent) ===
-          expectedText,
+        expectedText,
     );
     if (!element) return false;
     element.click();
