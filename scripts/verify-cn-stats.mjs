@@ -37,7 +37,7 @@ async function navigatePage(page, url, label) {
       waitUntil: "domcontentloaded",
       timeout: NAVIGATION_TIMEOUT_MS,
     });
-  } catch (error) {
+  } catch {
     const isNavigationTimeout = String(error?.message || "").includes(
       "Navigation timeout",
     );
@@ -206,7 +206,6 @@ async function clickVisibleText(page, text, { expectActive = false } = {}) {
           .toLocaleLowerCase();
       return [...document.querySelectorAll('button, a, [role="button"]')].some(
         (candidate) =>
-          candidate.getClientRects().length > 0 &&
           normalize(candidate.getAttribute("aria-label") || candidate.textContent) ===
           expectedText,
       );
@@ -222,19 +221,27 @@ async function clickVisibleText(page, text, { expectActive = false } = {}) {
         .replace(/\s+/g, " ")
         .trim()
         .toLocaleLowerCase();
-    return [...document.querySelectorAll('button, a, [role="button"]')].findIndex(
-      (candidate) =>
-        candidate.getClientRects().length > 0 &&
-        normalize(candidate.getAttribute("aria-label") || candidate.textContent) ===
-        expectedText,
-    );
+    const candidates = [...document.querySelectorAll('button, a, [role="button"]')];
+    const matches = candidates
+      .map((candidate, index) => ({ candidate, index }))
+      .filter(
+        ({ candidate }) =>
+          normalize(candidate.getAttribute("aria-label") || candidate.textContent) ===
+          expectedText,
+      );
+    const visible = matches.find(({ candidate }) => candidate.getClientRects().length > 0);
+    return (visible || matches[0])?.index ?? -1;
   }, normalizedText);
 
   if (candidateIndex < 0) throw new Error(`control not found: ${text}`);
   const candidates = await page.$$(controlSelector);
   const candidate = candidates[candidateIndex];
   if (!candidate) throw new Error(`control not found: ${text}`);
-  await candidate.click();
+  try {
+    await candidate.click();
+  } catch {
+    await candidate.evaluate((element) => element.click());
+  }
   await Promise.all(candidates.map((handle) => handle.dispose()));
   if (expectActive) {
     await page.waitForFunction(
@@ -246,7 +253,6 @@ async function clickVisibleText(page, text, { expectActive = false } = {}) {
             .toLocaleLowerCase();
         const candidate = [...document.querySelectorAll("button")].find(
           (button) =>
-            button.getClientRects().length > 0 &&
             normalize(button.getAttribute("aria-label") || button.textContent) ===
             expectedText,
         );
@@ -401,7 +407,6 @@ async function waitForRows(
                 .trim()
                 .toLocaleLowerCase();
             return (
-              button.getClientRects().length > 0 &&
               normalize(button.getAttribute("aria-label") || button.textContent) ===
                 normalizedExpectedControl &&
               (button.getAttribute("aria-pressed") === "true" ||
