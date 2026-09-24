@@ -20,7 +20,7 @@ const SOURCE_API_URL =
   "https://mlol.qt.qq.com/go/lgame_battle_info/hero_rank_list_v2";
 const SOURCE_API_TIMEOUT_MS = Math.max(
   5_000,
-  Number(process.env.CN_STATS_SOURCE_API_TIMEOUT_MS || "30_000"),
+  Number(process.env.CN_STATS_SOURCE_API_TIMEOUT_MS || "30000"),
 );
 const SOURCE_API_RETRIES = Math.max(
   1,
