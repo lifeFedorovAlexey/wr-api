@@ -123,20 +123,36 @@ async function readSourceRows(page) {
   return page.evaluate(() => {
     const rows = [...document.querySelectorAll("#data-list li")];
     return rows
-      .map((row) => ({
-        text: row.innerText || row.textContent || "",
-        values: [...(row.innerText || row.textContent || "").matchAll(
-          /(-?\d+(?:\.\d+)?)\s*%/g,
-        )].map((match) => Number(match[1])),
-      }))
+      .map((row) => {
+        const text = row.innerText || row.textContent || "";
+        return {
+          name: row.querySelector(".hero-name")?.textContent?.trim() || "",
+          text,
+          values: [...text.matchAll(/(-?\d+(?:\.\d+)?)\s*%/g)].map((match) =>
+            Number(match[1]),
+          ),
+        };
+      })
       .filter((row) => row.values.length >= 3);
   });
 }
 
-async function waitForRows(page, reader, label) {
+async function readRowsSignature(page, reader) {
+  return page.evaluate((kind) => {
+    const rows = kind === "source"
+      ? [...document.querySelectorAll("#data-list li")]
+      : [...document.querySelectorAll('[class*="WinratesTable"][class*="row"]')];
+    return rows
+      .slice(0, 5)
+      .map((row) => (row.innerText || row.textContent || "").replace(/\s+/g, " ").trim())
+      .join("||");
+  }, reader);
+}
+
+async function waitForRows(page, reader, label, previousSignature = null) {
   try {
     await page.waitForFunction(
-      (kind) => {
+      (kind, previous) => {
         const rows = kind === "source"
           ? [...document.querySelectorAll("#data-list li")]
           : [...document.querySelectorAll('[class*="WinratesTable"][class*="row"]')];
@@ -147,10 +163,15 @@ async function waitForRows(page, reader, label) {
         const hasEmptyState = kind === "source"
           ? pageText.includes("暂无数据")
           : pageText.includes("Нет данных");
-        return hasRows || hasEmptyState;
+        const signature = rows
+          .slice(0, 5)
+          .map((row) => (row.innerText || row.textContent || "").replace(/\s+/g, " ").trim())
+          .join("||");
+        return hasEmptyState || (hasRows && (!previous || signature !== previous));
       },
       { timeout: ROWS_TIMEOUT_MS },
       reader,
+      previousSignature,
     );
   } catch (error) {
     const diagnostics = await page.evaluate((kind) => {
@@ -163,6 +184,12 @@ async function waitForRows(page, reader, label) {
         sourceRows: dataList?.querySelectorAll("li").length || 0,
         siteRows: document.querySelectorAll(rowSelector).length,
         bodyText: (document.body?.innerText || "").replace(/\s+/g, " ").trim().slice(0, 240),
+        signature: [...(kind === "source"
+          ? document.querySelectorAll("#data-list li")
+          : document.querySelectorAll(rowSelector))]
+          .slice(0, 5)
+          .map((row) => (row.innerText || row.textContent || "").replace(/\s+/g, " ").trim())
+          .join("||"),
         kind,
       };
     }, reader);
@@ -227,6 +254,12 @@ export async function verifyWebsiteStats() {
     const skippedSlices = [];
 
     for (const [rankIndex, rank] of RANKS.entries()) {
+      const rankPreviousSignatures = rankIndex === 0
+        ? [null, null]
+        : await Promise.all([
+          readRowsSignature(sitePage, "site"),
+          readRowsSignature(sourcePage, "source"),
+        ]);
       // Both public pages open on the first rank and first lane by default.
       // Avoid clicking the already-selected SSR default before hydration.
       if (rankIndex > 0) {
@@ -235,14 +268,30 @@ export async function verifyWebsiteStats() {
       }
 
       for (const [laneIndex, lane] of LANES.entries()) {
+        const previousSignatures = laneIndex === 0
+          ? rankPreviousSignatures
+          : await Promise.all([
+            readRowsSignature(sitePage, "site"),
+            readRowsSignature(sourcePage, "source"),
+          ]);
         if (rankIndex > 0 || laneIndex > 0) {
           await clickVisibleText(sitePage, lane.site);
           await clickVisibleText(sourcePage, lane.source);
         }
 
         const [siteRows, sourceRows] = await Promise.all([
-          waitForRows(sitePage, "site", `site ${rank.site}/${lane.site}`),
-          waitForRows(sourcePage, "source", `source ${rank.source}/${lane.source}`),
+          waitForRows(
+            sitePage,
+            "site",
+            `site ${rank.site}/${lane.site}`,
+            previousSignatures[0],
+          ),
+          waitForRows(
+            sourcePage,
+            "source",
+            `source ${rank.source}/${lane.source}`,
+            previousSignatures[1],
+          ),
         ]);
         if (!siteRows.length && !sourceRows.length) {
           skippedSlices.push(`${rank.site}/${lane.site}`);
