@@ -140,9 +140,14 @@ async function waitForRows(page, reader, label) {
         const rows = kind === "source"
           ? [...document.querySelectorAll("#data-list li")]
           : [...document.querySelectorAll('[class*="WinratesTable"][class*="row"]')];
-        return kind === "source"
+        const hasRows = kind === "source"
           ? rows.some((row) => /\d+(?:\.\d+)?\s*%/.test(row.innerText || row.textContent || ""))
           : rows.length > 0;
+        const pageText = document.body?.innerText || "";
+        const hasEmptyState = kind === "source"
+          ? pageText.includes("暂无数据")
+          : pageText.includes("Нет данных");
+        return hasRows || hasEmptyState;
       },
       { timeout: ROWS_TIMEOUT_MS },
       reader,
@@ -169,6 +174,23 @@ async function waitForRows(page, reader, label) {
       { cause: error },
     );
   }
+
+  const pageState = await page.evaluate((kind) => {
+    const rowSelector = '[class*="WinratesTable"][class*="row"]';
+    const dataList = document.querySelector("#data-list");
+    const pageText = document.body?.innerText || "";
+    return {
+      hasEmptyState: kind === "source"
+        ? pageText.includes("暂无数据")
+        : pageText.includes("Нет данных"),
+      hasRows: kind === "source"
+        ? [...(dataList?.querySelectorAll("li") || [])].some((row) =>
+          /\d+(?:\.\d+)?\s*%/.test(row.innerText || row.textContent || ""),
+        )
+        : document.querySelectorAll(rowSelector).length > 0,
+    };
+  }, reader);
+  if (pageState.hasEmptyState && !pageState.hasRows) return [];
 
   const rows = reader === "source" ? await readSourceRows(page) : await readSiteRows(page);
   if (!rows.length) throw new Error(`${label}: table has no readable rows`);
@@ -202,6 +224,7 @@ export async function verifyWebsiteStats() {
 
     const errors = [];
     const samples = [];
+    const skippedSlices = [];
 
     for (const [rankIndex, rank] of RANKS.entries()) {
       // Both public pages open on the first rank and first lane by default.
@@ -221,6 +244,16 @@ export async function verifyWebsiteStats() {
           waitForRows(sitePage, "site", `site ${rank.site}/${lane.site}`),
           waitForRows(sourcePage, "source", `source ${rank.source}/${lane.source}`),
         ]);
+        if (!siteRows.length && !sourceRows.length) {
+          skippedSlices.push(`${rank.site}/${lane.site}`);
+          continue;
+        }
+        if (!siteRows.length || !sourceRows.length) {
+          errors.push(
+            `${rank.site}/${lane.site}: one site has no data (site=${siteRows.length}, source=${sourceRows.length})`,
+          );
+          continue;
+        }
         const sampleCount = Math.min(
           SAMPLES_PER_SLICE,
           siteRows.length,
@@ -265,7 +298,7 @@ export async function verifyWebsiteStats() {
       }
     }
 
-    return { errors, samples };
+    return { errors, samples, skippedSlices };
   } finally {
     await browser.close();
   }
@@ -275,8 +308,11 @@ async function main() {
   try {
     const report = await verifyWebsiteStats();
     console.log(
-      `[cn-stats-verify] website samples=${report.samples.length} tolerance=${TOLERANCE}`,
+      `[cn-stats-verify] website samples=${report.samples.length} skipped=${report.skippedSlices.length} tolerance=${TOLERANCE}`,
     );
+    for (const slice of report.skippedSlices) {
+      console.log(`[cn-stats-verify] SKIP ${slice}: both websites show no data`);
+    }
     for (const sample of report.samples) {
       console.log(
         `[cn-stats-verify] ${sample.rank}/${sample.lane}/#${sample.position} ${sample.siteName}: site=${sample.siteValues.join(",")} source=${sample.sourceValues.join(",")}`,
