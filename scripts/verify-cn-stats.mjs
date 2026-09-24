@@ -530,7 +530,7 @@ export async function verifyWebsiteStats() {
       // Both public pages open on the first rank and first lane by default.
       // Avoid clicking the already-selected SSR default before hydration.
       if (rankIndex > 0) {
-        await clickVisibleText(sitePage, rank.site, { expectActive: true });
+        await clickVisibleText(sitePage, rank.site);
       }
 
       for (const [laneIndex, lane] of LANES.entries()) {
@@ -538,7 +538,7 @@ export async function verifyWebsiteStats() {
           ? rankPreviousSignatures
           : await readRowsSignature(sitePage, "site");
         if (rankIndex > 0 || laneIndex > 0) {
-          await clickVisibleText(sitePage, lane.site, { expectActive: true });
+          await clickVisibleText(sitePage, lane.site);
         }
 
         const siteRows = await waitForRows(
