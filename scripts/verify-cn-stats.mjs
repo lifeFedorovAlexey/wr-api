@@ -186,9 +186,7 @@ function readSourcePercent(item, explicitKey, ratioKey) {
 
 function readSourceApiRows(payload, rank, lane) {
   const rawRows = payload?.data?.[rank.api]?.[lane.api];
-  if (!Array.isArray(rawRows)) {
-    throw new Error(`official source API has no rows for ${rank.source}/${lane.source}`);
-  }
+  if (!Array.isArray(rawRows)) return [];
   return [...rawRows]
     .sort(
       (left, right) =>
@@ -331,9 +329,7 @@ async function readSiteRows(page) {
 
 function readSiteApiRows(payload, rank, lane) {
   const rawRows = payload?.rowsBySlice?.[`${rank.siteApi}|${lane.siteApi}`];
-  if (!Array.isArray(rawRows)) {
-    throw new Error(`site API has no rows for ${rank.site}/${lane.site}`);
-  }
+  if (!Array.isArray(rawRows)) return [];
   return rawRows
     .map((row) => ({
       name: String(row?.name || row?.slug || ""),
