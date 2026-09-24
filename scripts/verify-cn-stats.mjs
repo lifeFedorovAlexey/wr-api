@@ -14,6 +14,10 @@ const SAMPLES_PER_SLICE = Math.max(
 const TOLERANCE = Number(process.env.CN_STATS_TOLERANCE || "0.02");
 const NAVIGATION_TIMEOUT_MS = 60_000;
 
+function sleep(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
 const RANKS = [
   { site: "Алмаз", source: "钻石以上" },
   { site: "Мастер", source: "大师以上" },
@@ -57,7 +61,7 @@ async function clickVisibleText(page, text) {
   }, text);
 
   if (!clicked) throw new Error(`control not found: ${text}`);
-  await page.waitForTimeout(350);
+  await sleep(350);
 }
 
 async function readSiteRows(page) {
