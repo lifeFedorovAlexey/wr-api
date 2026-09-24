@@ -101,21 +101,30 @@ async function clickVisibleText(page, text) {
 
 async function readSiteRows(page) {
   return page.evaluate(() => {
-    const rowElements = [
-      ...document.querySelectorAll('[class*="WinratesTable"][class*="row"]'),
-    ];
+    // CSS-module class names are generated during the UI build and have
+    // already changed without changing the table markup. The row itself has
+    // a stable tabIndex, while each metric cell exposes the stable CSS
+    // variable used for its accent color.
+    const rowElements = [...document.querySelectorAll('div[tabindex="0"]')];
     return rowElements
       .map((row) => {
-        const name = row.querySelector('[class*="heroName"]')?.textContent?.trim() || "";
-        const cells = [...row.querySelectorAll('[class*="metricCell"]')];
+        const name = row.querySelector('span[title]')?.textContent?.trim() || "";
+        const cells = [...row.querySelectorAll('div[style*="--metric-accent"]')];
         const values = cells.map((cell) => {
-          const value = cell.lastElementChild?.textContent?.trim() || "";
-          const match = value.match(/(-?\d+(?:\.\d+)?)\s*%/);
-          return match ? Number(match[1]) : NaN;
+          const matches = [
+            ...(cell.textContent || "").matchAll(/(-?\d+(?:\.\d+)?)\s*%/g),
+          ];
+          return matches.length ? Number(matches.at(-1)[1]) : NaN;
         });
         return { name, values };
       })
-      .filter((row) => row.name && row.values.length === 3);
+      .filter(
+        (row) =>
+          row.name &&
+          row.values.length >= 3 &&
+          row.values.slice(0, 3).every(Number.isFinite),
+      )
+      .map((row) => ({ ...row, values: row.values.slice(0, 3) }));
   });
 }
 
@@ -141,14 +150,19 @@ async function readRowsSignature(page, reader) {
   return page.evaluate((kind) => {
     const rows = kind === "source"
       ? [...document.querySelectorAll("#data-list li")]
-      : [...document.querySelectorAll('[class*="WinratesTable"][class*="row"]')];
+      : [...document.querySelectorAll('div[tabindex="0"]')];
     const signatureFor = (row) => {
       if (kind === "source") {
         return (row.textContent || row.innerText || "").replace(/\s+/g, " ").trim();
       }
-      const name = row.querySelector('[class*="heroName"]')?.textContent?.trim() || "";
-      const metrics = [...row.querySelectorAll('[class*="metricCell"]')]
-        .map((cell) => cell.textContent?.replace(/\s+/g, " ").trim() || "")
+      const name = row.querySelector('span[title]')?.textContent?.trim() || "";
+      const metrics = [...row.querySelectorAll('div[style*="--metric-accent"]')]
+        .map((cell) => {
+          const matches = [
+            ...(cell.textContent || "").matchAll(/(-?\d+(?:\.\d+)?)\s*%/g),
+          ];
+          return matches.length ? matches.at(-1)[1] : "";
+        })
         .join("|");
       return `${name}|${metrics}`;
     };
@@ -165,10 +179,16 @@ async function waitForRows(page, reader, label, previousSignature = null) {
       (kind, previous) => {
         const rows = kind === "source"
           ? [...document.querySelectorAll("#data-list li")]
-          : [...document.querySelectorAll('[class*="WinratesTable"][class*="row"]')];
+          : [...document.querySelectorAll('div[tabindex="0"]')];
         const hasRows = kind === "source"
           ? rows.some((row) => /\d+(?:\.\d+)?\s*%/.test(row.innerText || row.textContent || ""))
-          : rows.length > 0;
+          : rows.some((row) => {
+            const name = row.querySelector('span[title]')?.textContent?.trim() || "";
+            const metrics = [...row.querySelectorAll('div[style*="--metric-accent"]')];
+            return Boolean(name) && metrics.length >= 3 && metrics.every((cell) =>
+              /-?\d+(?:\.\d+)?\s*%/.test(cell.textContent || ""),
+            );
+          });
         const pageText = document.body?.innerText || "";
         const hasEmptyState = kind === "source"
           ? pageText.includes("暂无数据")
@@ -177,9 +197,14 @@ async function waitForRows(page, reader, label, previousSignature = null) {
           if (kind === "source") {
             return (row.textContent || row.innerText || "").replace(/\s+/g, " ").trim();
           }
-          const name = row.querySelector('[class*="heroName"]')?.textContent?.trim() || "";
-          const metrics = [...row.querySelectorAll('[class*="metricCell"]')]
-            .map((cell) => cell.textContent?.replace(/\s+/g, " ").trim() || "")
+          const name = row.querySelector('span[title]')?.textContent?.trim() || "";
+          const metrics = [...row.querySelectorAll('div[style*="--metric-accent"]')]
+            .map((cell) => {
+              const matches = [
+                ...(cell.textContent || "").matchAll(/(-?\d+(?:\.\d+)?)\s*%/g),
+              ];
+              return matches.length ? matches.at(-1)[1] : "";
+            })
             .join("|");
           return `${name}|${metrics}`;
         };
@@ -196,13 +221,17 @@ async function waitForRows(page, reader, label, previousSignature = null) {
   } catch (error) {
     const diagnostics = await page.evaluate((kind) => {
       const dataList = document.querySelector("#data-list");
-      const rowSelector = '[class*="WinratesTable"][class*="row"]';
+      const rowSelector = 'div[tabindex="0"]';
+      const siteRows = [...document.querySelectorAll(rowSelector)];
       return {
         url: window.location.href,
         title: document.title,
         dataListText: dataList?.innerText?.trim() || null,
         sourceRows: dataList?.querySelectorAll("li").length || 0,
-        siteRows: document.querySelectorAll(rowSelector).length,
+        siteRows: siteRows.length,
+        siteRowsWithMetrics: siteRows.filter((row) =>
+          row.querySelectorAll('div[style*="--metric-accent"]').length >= 3,
+        ).length,
         bodyText: (document.body?.innerText || "").replace(/\s+/g, " ").trim().slice(0, 240),
         signature: [...(kind === "source"
           ? document.querySelectorAll("#data-list li")
@@ -212,9 +241,14 @@ async function waitForRows(page, reader, label, previousSignature = null) {
             if (kind === "source") {
               return (row.textContent || row.innerText || "").replace(/\s+/g, " ").trim();
             }
-            const name = row.querySelector('[class*="heroName"]')?.textContent?.trim() || "";
-            const metrics = [...row.querySelectorAll('[class*="metricCell"]')]
-              .map((cell) => cell.textContent?.replace(/\s+/g, " ").trim() || "")
+            const name = row.querySelector('span[title]')?.textContent?.trim() || "";
+            const metrics = [...row.querySelectorAll('div[style*="--metric-accent"]')]
+              .map((cell) => {
+                const matches = [
+                  ...(cell.textContent || "").matchAll(/(-?\d+(?:\.\d+)?)\s*%/g),
+                ];
+                return matches.length ? matches.at(-1)[1] : "";
+              })
               .join("|");
             return `${name}|${metrics}`;
           })
@@ -232,7 +266,7 @@ async function waitForRows(page, reader, label, previousSignature = null) {
   }
 
   const pageState = await page.evaluate((kind) => {
-    const rowSelector = '[class*="WinratesTable"][class*="row"]';
+    const rowSelector = 'div[tabindex="0"]';
     const dataList = document.querySelector("#data-list");
     const pageText = document.body?.innerText || "";
     return {
@@ -243,7 +277,9 @@ async function waitForRows(page, reader, label, previousSignature = null) {
         ? [...(dataList?.querySelectorAll("li") || [])].some((row) =>
           /\d+(?:\.\d+)?\s*%/.test(row.innerText || row.textContent || ""),
         )
-        : document.querySelectorAll(rowSelector).length > 0,
+        : [...document.querySelectorAll(rowSelector)].some((row) =>
+          row.querySelectorAll('div[style*="--metric-accent"]').length >= 3,
+        ),
     };
   }, reader);
   if (pageState.hasEmptyState && !pageState.hasRows) return [];
