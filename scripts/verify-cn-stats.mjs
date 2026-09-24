@@ -1,4 +1,5 @@
 import { randomInt } from "node:crypto";
+import { request as httpsRequest } from "node:https";
 import { pathToFileURL } from "node:url";
 import puppeteer from "puppeteer";
 
@@ -14,6 +15,17 @@ const SAMPLES_PER_SLICE = Math.max(
 const TOLERANCE = Number(process.env.CN_STATS_TOLERANCE || "0.02");
 const NAVIGATION_TIMEOUT_MS = 60_000;
 const ROWS_TIMEOUT_MS = 20_000;
+const SOURCE_API_URL =
+  process.env.CN_STATS_SOURCE_API_URL ||
+  "https://mlol.qt.qq.com/go/lgame_battle_info/hero_rank_list_v2";
+const SOURCE_API_TIMEOUT_MS = Math.max(
+  5_000,
+  Number(process.env.CN_STATS_SOURCE_API_TIMEOUT_MS || "30_000"),
+);
+const SOURCE_API_RETRIES = Math.max(
+  1,
+  Number(process.env.CN_STATS_SOURCE_API_RETRIES || "3"),
+);
 
 function sleep(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -47,18 +59,124 @@ function normalizeControlText(value) {
 }
 
 const RANKS = [
-  { site: "Алмаз", source: "钻石以上" },
-  { site: "Мастер", source: "大师以上" },
-  { site: "ГМ", source: "王者" },
-  { site: "Претендент", source: "峡谷之巅" },
+  { site: "Алмаз", source: "钻石以上", api: "1" },
+  { site: "Мастер", source: "大师以上", api: "2" },
+  { site: "ГМ", source: "王者", api: "3" },
+  { site: "Претендент", source: "峡谷之巅", api: "4" },
 ];
 const LANES = [
-  { site: "Топ", source: "上单" },
-  { site: "Лес", source: "打野" },
-  { site: "Мид", source: "中路" },
-  { site: "Стрелок", source: "下路" },
-  { site: "Поддержка", source: "辅助" },
+  { site: "Топ", source: "上单", api: "2" },
+  { site: "Лес", source: "打野", api: "5" },
+  { site: "Мид", source: "中路", api: "1" },
+  { site: "Стрелок", source: "下路", api: "3" },
+  { site: "Поддержка", source: "辅助", api: "4" },
 ];
+
+let sourceApiPromise = null;
+
+function fetchSourceApiOnce() {
+  return new Promise((resolve, reject) => {
+    const parsedUrl = new URL(SOURCE_API_URL);
+    const request = httpsRequest(
+      {
+        protocol: parsedUrl.protocol,
+        hostname: parsedUrl.hostname,
+        port: parsedUrl.port || 443,
+        path: `${parsedUrl.pathname}${parsedUrl.search}`,
+        method: "GET",
+        family: 4,
+        headers: {
+          accept: "application/json,text/plain,*/*",
+          referer: SOURCE_URL,
+          "user-agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/135.0.0.0 Safari/537.36",
+        },
+      },
+      (response) => {
+        const chunks = [];
+        response.setEncoding("utf8");
+        response.on("data", (chunk) => chunks.push(chunk));
+        response.on("end", () => {
+          const status = response.statusCode || 0;
+          const body = chunks.join("");
+          if (status < 200 || status >= 300) {
+            reject(new Error(`source API HTTP ${status}: ${body.slice(0, 200)}`));
+            return;
+          }
+          try {
+            resolve(JSON.parse(body));
+          } catch (error) {
+            reject(new Error("source API returned invalid JSON", { cause: error }));
+          }
+        });
+      },
+    );
+    request.setTimeout(SOURCE_API_TIMEOUT_MS, () => {
+      request.destroy(new Error(`source API timeout after ${SOURCE_API_TIMEOUT_MS}ms`));
+    });
+    request.on("error", reject);
+    request.end();
+  });
+}
+
+async function loadSourceApi() {
+  if (!sourceApiPromise) {
+    sourceApiPromise = (async () => {
+      let lastError = null;
+      for (let attempt = 1; attempt <= SOURCE_API_RETRIES; attempt += 1) {
+        try {
+          const payload = await fetchSourceApiOnce();
+          if (!payload?.data || typeof payload.data !== "object") {
+            throw new Error("source API payload has no data object");
+          }
+          console.warn(
+            `[cn-stats-verify] using official source API fallback: ${SOURCE_API_URL}`,
+          );
+          return payload;
+        } catch (error) {
+          lastError = error;
+          if (attempt < SOURCE_API_RETRIES) await sleep(1_000 * attempt);
+        }
+      }
+      throw new Error(
+        `official source API unavailable after ${SOURCE_API_RETRIES} attempts: ${lastError?.message || lastError}`,
+        { cause: lastError },
+      );
+    })();
+  }
+  return sourceApiPromise;
+}
+
+function readSourcePercent(item, explicitKey, ratioKey) {
+  const explicit = Number(item?.[explicitKey]);
+  if (Number.isFinite(explicit)) return explicit;
+  const ratio = Number(item?.[ratioKey]);
+  if (!Number.isFinite(ratio)) return NaN;
+  return ratio >= 0 && ratio <= 1 ? ratio * 100 : ratio;
+}
+
+function readSourceApiRows(payload, rank, lane) {
+  const rawRows = payload?.data?.[rank.api]?.[lane.api];
+  if (!Array.isArray(rawRows)) {
+    throw new Error(`official source API has no rows for ${rank.source}/${lane.source}`);
+  }
+  return [...rawRows]
+    .sort(
+      (left, right) =>
+        readSourcePercent(right, "win_rate_percent", "win_rate") -
+        readSourcePercent(left, "win_rate_percent", "win_rate"),
+    )
+    .map((item) => ({
+      name: String(item?.hero_id || ""),
+      text: `official-api hero=${item?.hero_id || ""}`,
+      values: [
+        readSourcePercent(item, "win_rate_percent", "win_rate"),
+        readSourcePercent(item, "appear_rate_percent", "appear_rate"),
+        readSourcePercent(item, "forbid_rate_percent", "forbid_rate"),
+      ],
+    }))
+    .filter((row) => row.values.every(Number.isFinite));
+}
 
 function normalizeName(value) {
   return String(value || "")
@@ -379,6 +497,41 @@ async function waitForRows(
   return rows;
 }
 
+async function readSourceRowsForSlice(
+  sourcePage,
+  rank,
+  lane,
+  previousSignature,
+) {
+  if (sourcePage.url().startsWith("chrome-error://") || sourceApiPromise) {
+    return {
+      rows: readSourceApiRows(await loadSourceApi(), rank, lane),
+      usedApiFallback: true,
+    };
+  }
+  try {
+    return {
+      rows: await waitForRows(
+        sourcePage,
+        "source",
+        `source ${rank.source}/${lane.source}`,
+        previousSignature,
+      ),
+      usedApiFallback: false,
+    };
+  } catch (error) {
+    const message = String(error?.message || error);
+    const canUseApiFallback =
+      sourcePage.url().startsWith("chrome-error://") ||
+      message.includes("official source API did not populate #data-list");
+    if (!canUseApiFallback) throw error;
+    return {
+      rows: readSourceApiRows(await loadSourceApi(), rank, lane),
+      usedApiFallback: true,
+    };
+  }
+}
+
 export async function verifyWebsiteStats() {
   const browser = await puppeteer.launch({
     headless: "new",
@@ -429,7 +582,7 @@ export async function verifyWebsiteStats() {
           await clickVisibleText(sourcePage, lane.source);
         }
 
-        const [siteRows, sourceRows] = await Promise.all([
+        const [siteRows, sourceResult] = await Promise.all([
           waitForRows(
             sitePage,
             "site",
@@ -437,13 +590,9 @@ export async function verifyWebsiteStats() {
             previousSignatures[0],
             laneIndex === 0 ? rank.site : lane.site,
           ),
-          waitForRows(
-            sourcePage,
-            "source",
-            `source ${rank.source}/${lane.source}`,
-            previousSignatures[1],
-          ),
+          readSourceRowsForSlice(sourcePage, rank, lane, previousSignatures[1]),
         ]);
+        const sourceRows = sourceResult.rows;
         if (!siteRows.length && !sourceRows.length) {
           skippedSlices.push(`${rank.site}/${lane.site}`);
           continue;
