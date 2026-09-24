@@ -72,9 +72,18 @@ function normalizeStatsDate(value) {
 }
 
 function readPercentValue(item, canonicalKey, percentKey) {
-  // The official page renders win_rate/appear_rate/forbid_rate. Keep those
-  // fields authoritative and only use *_percent for older API responses.
-  return toFloat(item[canonicalKey] ?? item[percentKey]);
+  // The API exposes both ratio fields (for example win_rate=0.5759) and
+  // explicit percentage fields (win_rate_percent=57.59). The database and
+  // UI use percentage points, so prefer the explicit percentage field and
+  // normalize ratio-only responses as a safe fallback.
+  const percentValue = toFloat(item[percentKey]);
+  if (percentValue !== null) return percentValue;
+
+  const canonicalValue = toFloat(item[canonicalKey]);
+  if (canonicalValue === null) return null;
+  return canonicalValue >= 0 && canonicalValue <= 1
+    ? canonicalValue * 100
+    : canonicalValue;
 }
 
 async function fetchCnHeroRankOnce() {
