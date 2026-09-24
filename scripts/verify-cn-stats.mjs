@@ -68,7 +68,8 @@ async function clickVisibleText(page, text) {
       return [...document.querySelectorAll('button, a, [role="button"]')].some(
         (candidate) =>
           candidate.getClientRects().length > 0 &&
-          normalize(candidate.textContent) === expectedText,
+          normalize(candidate.getAttribute("aria-label") || candidate.textContent) ===
+            expectedText,
       );
     },
     { timeout: NAVIGATION_TIMEOUT_MS },
@@ -87,7 +88,8 @@ async function clickVisibleText(page, text) {
     const element = candidates.find(
       (candidate) =>
         candidate.getClientRects().length > 0 &&
-        normalize(candidate.textContent) === expectedText,
+        normalize(candidate.getAttribute("aria-label") || candidate.textContent) ===
+          expectedText,
     );
     if (!element) return false;
     element.click();
@@ -179,13 +181,19 @@ export async function verifyWebsiteStats() {
     const errors = [];
     const samples = [];
 
-    for (const rank of RANKS) {
-      await clickVisibleText(sitePage, rank.site);
-      await clickVisibleText(sourcePage, rank.source);
+    for (const [rankIndex, rank] of RANKS.entries()) {
+      // Both public pages open on the first rank and first lane by default.
+      // Avoid clicking the already-selected SSR default before hydration.
+      if (rankIndex > 0) {
+        await clickVisibleText(sitePage, rank.site);
+        await clickVisibleText(sourcePage, rank.source);
+      }
 
-      for (const lane of LANES) {
-        await clickVisibleText(sitePage, lane.site);
-        await clickVisibleText(sourcePage, lane.source);
+      for (const [laneIndex, lane] of LANES.entries()) {
+        if (rankIndex > 0 || laneIndex > 0) {
+          await clickVisibleText(sitePage, lane.site);
+          await clickVisibleText(sourcePage, lane.source);
+        }
 
         const [siteRows, sourceRows] = await Promise.all([
           waitForRows(sitePage, "site", `site ${rank.site}/${lane.site}`),
