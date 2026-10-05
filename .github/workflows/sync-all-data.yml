@@ -2,9 +2,9 @@ name: Sync All Data
 
 on:
   schedule:
-    - cron: "0 * * * *"
+    - cron: "17 * * * *"
     - cron: "20 3 * * *"
-    - cron: "0 4 * * 0"
+    - cron: "17 4 * * 0"
   workflow_dispatch:
     inputs:
       mode:
@@ -114,7 +114,7 @@ jobs:
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             mode="${{ inputs.mode }}"
             requested_slugs="${{ inputs.slugs }}"
-          elif [[ "${{ github.event.schedule }}" == "0 * * * *" ]]; then
+          elif [[ "${{ github.event.schedule }}" == "17 * * * *" ]]; then
             mode="champions-history"
           elif [[ "${{ github.event.schedule }}" == "20 3 * * *" ]]; then
             mode="champions-history-riftgg"
