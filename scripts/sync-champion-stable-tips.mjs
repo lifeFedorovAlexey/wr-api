@@ -8,7 +8,9 @@ if (!origin || !secret) throw new Error("WR_API_ORIGIN and GUIDES_SYNC_SECRET ar
 const approved = (await db.select().from(championStableTips)).filter((row) => row.reviewStatus === "approved");
 let synced = 0;
 for (let index = 0; index < approved.length; index += 250) {
-  const items = approved.slice(index, index + 250).map(({ id, createdAt, updatedAt, reviewStatus, ...item }) => item);
+  const items = approved
+    .slice(index, index + 250)
+    .map(({ id: _id, createdAt: _createdAt, updatedAt: _updatedAt, reviewStatus: _reviewStatus, ...item }) => item);
   const response = await fetch(`${origin}/api/assistant/tips/sync`, { method: "POST", headers: { "content-type": "application/json", "x-guides-sync-secret": secret }, body: JSON.stringify({ items }) });
   if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
   synced += (await response.json()).accepted;

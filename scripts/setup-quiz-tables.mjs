@@ -1,9 +1,7 @@
 import "dotenv/config";
 import { client } from "../db/client.js";
 
-async function main() {
-  await client.begin(async (sql) => {
-    await sql.unsafe(`
+const QUIZ_TABLES_SQL = `
       do $$
       begin
         if exists (
@@ -159,8 +157,14 @@ async function main() {
           end if;
         end loop;
       end $$;
-    `);
-  });
+`;
+
+async function setupQuizTables() {
+  await client.begin((sql) => sql.unsafe(QUIZ_TABLES_SQL));
+}
+
+async function main() {
+  await setupQuizTables();
   console.log("quiz tables are ready");
 }
 

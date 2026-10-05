@@ -603,150 +603,154 @@ async function waitForRows(
   return rows;
 }
 
+async function readSiteApiSlice(state, rank, lane) {
+  state.sitePayload ||= await loadSiteApi();
+  return readSiteApiRows(state.sitePayload, rank, lane);
+}
+
+async function switchSiteControl(page, state, control, kind) {
+  if (state.siteApiFallback) return;
+  try {
+    await clickVisibleText(page, control);
+  } catch (error) {
+    state.siteApiFallback = true;
+    console.warn(
+      `[cn-stats-verify] site UI ${kind} switch unavailable; using site API: ${error.message}`,
+    );
+  }
+}
+
+async function readSiteSlice(page, state, rank, lane, previousSignature, expectedControl) {
+  if (state.siteApiFallback) return readSiteApiSlice(state, rank, lane);
+  try {
+    return await waitForRows(
+      page,
+      "site",
+      `site ${rank.site}/${lane.site}`,
+      previousSignature,
+      expectedControl,
+    );
+  } catch (error) {
+    state.siteApiFallback = true;
+    console.warn(
+      `[cn-stats-verify] site UI rows did not switch; using site API: ${error.message}`,
+    );
+    return readSiteApiSlice(state, rank, lane);
+  }
+}
+
+function appendSampleComparisons({ rank, lane, siteRows, sourceRows, identity, errors, samples }) {
+  if (!siteRows.length || !sourceRows.length) {
+    errors.push(
+      `${rank.site}/${lane.site}: one site has no data (site=${siteRows.length}, source=${sourceRows.length})`,
+    );
+    return;
+  }
+  const siteRowsBySlug = new Map(
+    siteRows.filter((row) => row.slug).map((row) => [row.slug, row]),
+  );
+  const comparableRows = sourceRows
+    .map((sourceRow) => ({
+      sourceRow,
+      siteRow: siteRowsBySlug.get(identity.byCnHeroId.get(sourceRow.heroId)),
+    }))
+    .filter(({ siteRow }) => siteRow);
+  const sampleCount = Math.min(SAMPLES_PER_SLICE, comparableRows.length);
+  if (sampleCount < SAMPLES_PER_SLICE) {
+    errors.push(
+      `${rank.site}/${lane.site}: not enough matched heroes for ${SAMPLES_PER_SLICE} samples (site=${siteRows.length}, source=${sourceRows.length}, matched=${comparableRows.length})`,
+    );
+  }
+  const selectedIndexes = new Set();
+  while (selectedIndexes.size < sampleCount) {
+    selectedIndexes.add(randomInt(comparableRows.length));
+  }
+  for (const index of selectedIndexes) {
+    const { siteRow, sourceRow } = comparableRows[index];
+    const sourceValues = sourceRow.values.slice(-3);
+    const siteValues = siteRow.values;
+    const sitePosition = siteRows.indexOf(siteRow) + 1;
+    const label = `${rank.site}/${lane.site}/#${sitePosition}/${normalizeName(siteRow.name)}`;
+    const rowErrors = [
+      compareMetric(`${label} WR`, sourceValues[0], siteValues[0]),
+      compareMetric(`${label} PR`, sourceValues[1], siteValues[1]),
+      compareMetric(`${label} BR`, sourceValues[2], siteValues[2]),
+    ].filter(Boolean);
+    samples.push({
+      rank: rank.site,
+      lane: lane.site,
+      position: sitePosition,
+      siteName: siteRow.name,
+      sourceText: sourceRow.text.replace(/\s+/g, " ").trim(),
+      siteValues,
+      sourceValues,
+      errors: rowErrors,
+    });
+    errors.push(...rowErrors);
+  }
+}
+
+async function verifyRankSlices({ page, state, rank, rankIndex, sourcePayload, identity, errors, samples, skippedSlices }) {
+  const rankPreviousSignatures = rankIndex === 0 || state.siteApiFallback
+    ? null
+    : await readRowsSignature(page, "site");
+  if (rankIndex > 0) await switchSiteControl(page, state, rank.site, "rank");
+  for (const [laneIndex, lane] of LANES.entries()) {
+    const previousSignature = laneIndex === 0 || state.siteApiFallback
+      ? rankPreviousSignatures
+      : await readRowsSignature(page, "site");
+    if (rankIndex > 0 || laneIndex > 0)
+      await switchSiteControl(page, state, lane.site, "lane");
+    const rawSiteRows = await readSiteSlice(
+      page,
+      state,
+      rank,
+      lane,
+      previousSignature,
+      laneIndex === 0 ? rank.site : lane.site,
+    );
+    const siteRows = attachSiteChampionIdentity(rawSiteRows, identity);
+    const sourceRows = readSourceApiRows(sourcePayload, rank, lane);
+    if (!siteRows.length && !sourceRows.length) {
+      skippedSlices.push(`${rank.site}/${lane.site}`);
+      continue;
+    }
+    appendSampleComparisons({ rank, lane, siteRows, sourceRows, identity, errors, samples });
+  }
+}
+
 export async function verifyWebsiteStats() {
   const [sourcePayload, siteChampionsPayload] = await Promise.all([
     loadSourceApi(),
     loadSiteChampionsApi(),
   ]);
-  const siteChampionIdentity = buildSiteChampionIdentity(siteChampionsPayload);
+  const identity = buildSiteChampionIdentity(siteChampionsPayload);
   const browser = await puppeteer.launch({
     headless: "new",
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
     args: ["--no-sandbox", "--disable-setuid-sandbox"],
   });
-
   try {
-    const sitePage = await browser.newPage();
-    await sitePage.setViewport({ width: 1440, height: 1200 });
-
-    await navigatePage(sitePage, SITE_URL, "site");
-
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1440, height: 1200 });
+    await navigatePage(page, SITE_URL, "site");
     const errors = [];
     const samples = [];
     const skippedSlices = [];
-    let siteApiFallback = false;
-    let sitePayload = null;
-
-    const readSiteApiSlice = async (rank, lane) => {
-      sitePayload ||= await loadSiteApi();
-      return readSiteApiRows(sitePayload, rank, lane);
-    };
-
+    const state = { siteApiFallback: false, sitePayload: null };
     for (const [rankIndex, rank] of RANKS.entries()) {
-      const rankPreviousSignatures = rankIndex === 0 || siteApiFallback
-        ? null
-        : await readRowsSignature(sitePage, "site");
-      // Both public pages open on the first rank and first lane by default.
-      // Avoid clicking the already-selected SSR default before hydration.
-      if (rankIndex > 0 && !siteApiFallback) {
-        try {
-          await clickVisibleText(sitePage, rank.site);
-        } catch (error) {
-          siteApiFallback = true;
-          console.warn(
-            `[cn-stats-verify] site UI rank switch unavailable; using site API: ${error.message}`,
-          );
-        }
-      }
-
-      for (const [laneIndex, lane] of LANES.entries()) {
-        const previousSignatures = laneIndex === 0 || siteApiFallback
-          ? rankPreviousSignatures
-          : await readRowsSignature(sitePage, "site");
-        if ((rankIndex > 0 || laneIndex > 0) && !siteApiFallback) {
-          try {
-            await clickVisibleText(sitePage, lane.site);
-          } catch (error) {
-            siteApiFallback = true;
-            console.warn(
-              `[cn-stats-verify] site UI lane switch unavailable; using site API: ${error.message}`,
-            );
-          }
-        }
-
-        let siteRows;
-        if (siteApiFallback) {
-          siteRows = await readSiteApiSlice(rank, lane);
-        } else {
-          try {
-            siteRows = await waitForRows(
-              sitePage,
-              "site",
-              `site ${rank.site}/${lane.site}`,
-              previousSignatures,
-              laneIndex === 0 ? rank.site : lane.site,
-            );
-          } catch (error) {
-            siteApiFallback = true;
-            console.warn(
-              `[cn-stats-verify] site UI rows did not switch; using site API: ${error.message}`,
-            );
-            siteRows = await readSiteApiSlice(rank, lane);
-          }
-        }
-        siteRows = attachSiteChampionIdentity(siteRows, siteChampionIdentity);
-        const sourceRows = readSourceApiRows(sourcePayload, rank, lane);
-        if (!siteRows.length && !sourceRows.length) {
-          skippedSlices.push(`${rank.site}/${lane.site}`);
-          continue;
-        }
-        if (!siteRows.length || !sourceRows.length) {
-          errors.push(
-            `${rank.site}/${lane.site}: one site has no data (site=${siteRows.length}, source=${sourceRows.length})`,
-          );
-          continue;
-        }
-        const siteRowsBySlug = new Map(
-          siteRows.filter((row) => row.slug).map((row) => [row.slug, row]),
-        );
-        const comparableRows = sourceRows
-          .map((sourceRow) => ({
-            sourceRow,
-            siteRow: siteRowsBySlug.get(
-              siteChampionIdentity.byCnHeroId.get(sourceRow.heroId),
-            ),
-          }))
-          .filter(({ siteRow }) => siteRow);
-        const sampleCount = Math.min(SAMPLES_PER_SLICE, comparableRows.length);
-
-        if (sampleCount < SAMPLES_PER_SLICE) {
-          errors.push(
-            `${rank.site}/${lane.site}: not enough matched heroes for ${SAMPLES_PER_SLICE} samples (site=${siteRows.length}, source=${sourceRows.length}, matched=${comparableRows.length})`,
-          );
-        }
-
-        const selectedIndexes = new Set();
-        while (selectedIndexes.size < sampleCount) {
-          selectedIndexes.add(randomInt(comparableRows.length));
-        }
-
-        for (const index of selectedIndexes) {
-          const { siteRow, sourceRow } = comparableRows[index];
-          const sourceValues = sourceRow.values.slice(-3);
-          const siteValues = siteRow.values;
-          const sitePosition = siteRows.indexOf(siteRow) + 1;
-          const label = `${rank.site}/${lane.site}/#${sitePosition}/${normalizeName(siteRow.name)}`;
-          const rowErrors = [
-            compareMetric(`${label} WR`, sourceValues[0], siteValues[0]),
-            compareMetric(`${label} PR`, sourceValues[1], siteValues[1]),
-            compareMetric(`${label} BR`, sourceValues[2], siteValues[2]),
-          ].filter(Boolean);
-
-          samples.push({
-            rank: rank.site,
-            lane: lane.site,
-            position: sitePosition,
-            siteName: siteRow.name,
-            sourceText: sourceRow.text.replace(/\s+/g, " ").trim(),
-            siteValues,
-            sourceValues,
-            errors: rowErrors,
-          });
-          errors.push(...rowErrors);
-        }
-      }
+      await verifyRankSlices({
+        page,
+        state,
+        rank,
+        rankIndex,
+        sourcePayload,
+        identity,
+        errors,
+        samples,
+        skippedSlices,
+      });
     }
-
     return { errors, samples, skippedSlices };
   } finally {
     await browser.close();
