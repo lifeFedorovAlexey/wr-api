@@ -1,0 +1,38 @@
+name: Sync Patch Notes
+
+on:
+  schedule:
+    - cron: "41 5 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: sync-patch-notes
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DATABASE_POOL_MAX: 2
+      PATCH_NOTES_REQUEST_TIMEOUT_MS: 30000
+      PATCH_NOTES_FETCH_RETRIES: 3
+    steps:
+      - name: Checkout API repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22.13.0
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Ensure patch notes schema exists
+        run: npm run setup:patch-notes
+
+      - name: Import English, then Russian patch notes
+        run: npm run sync:patch-notes
