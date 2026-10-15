@@ -447,6 +447,57 @@ export const newsArticles = pgTable(
   }),
 );
 
+export const patchNotes = pgTable(
+  "patch_notes",
+  {
+    patchVersion: text("patch_version").notNull(),
+    locale: text("locale").notNull(),
+    title: text("title").notNull(),
+    description: text("description"),
+    sourceUrl: text("source_url").notNull(),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    imageUrl: text("image_url"),
+    rawHtml: text("raw_html").notNull(),
+    contentHash: text("content_hash").notNull(),
+    parserVersion: integer("parser_version").default(1).notNull(),
+    parseStatus: text("parse_status").default("pending").notNull(),
+    parseError: text("parse_error"),
+    parsedPayload: jsonb("parsed_payload"),
+    importedAt: timestamp("imported_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.patchVersion, table.locale] }),
+    publishedAtIdx: index("patch_notes_published_at_idx").on(table.publishedAt),
+    parseStatusIdx: index("patch_notes_status_idx").on(table.parseStatus, table.parserVersion),
+  }),
+);
+
+export const patchNoteChanges = pgTable(
+  "patch_note_changes",
+  {
+    id: serial("id").primaryKey(),
+    patchVersion: text("patch_version").notNull(),
+    locale: text("locale").notNull(),
+    ordinal: integer("ordinal").notNull(),
+    entityKind: text("entity_kind").notNull(),
+    entitySlug: text("entity_slug"),
+    entityName: text("entity_name").notNull(),
+    imageUrl: text("image_url"),
+    changeType: text("change_type").notNull(),
+    sectionName: text("section_name"),
+    changeName: text("change_name"),
+    details: jsonb("details").notNull().default([]),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    uniqueChange: uniqueIndex("patch_note_changes_version_locale_ordinal_uidx")
+      .on(table.patchVersion, table.locale, table.ordinal),
+    patchLocaleIdx: index("patch_note_changes_patch_locale_idx").on(table.patchVersion, table.locale),
+    directionIdx: index("patch_note_changes_direction_idx").on(table.patchVersion, table.locale, table.changeType),
+  }),
+);
+
 export const championEvents = pgTable(
   "champion_events",
   {

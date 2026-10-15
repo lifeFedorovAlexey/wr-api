@@ -31,6 +31,8 @@
     "cleanup:chat": "node ./workers/cleanup-chat-history.mjs",
     "setup:riftgg-cn-stats": "node ./scripts/setup-riftgg-cn-stats-table.mjs",
     "setup:news": "node ./scripts/setup-news-tables.mjs",
+    "setup:patch-notes": "node ./scripts/setup-patch-notes-tables.mjs",
+    "sync:patch-notes": "node ./scripts/sync-patch-notes.mjs",
     "setup:quizzes": "node ./scripts/setup-quiz-tables.mjs",
     "setup:quiz-media-storage": "node ./scripts/setup-quiz-media-storage.mjs",
     "export:news-mapper": "node ./scripts/export-news-entity-mapper.mjs",
@@ -44,6 +46,7 @@
   },
   "overrides": {
     "basic-ftp": "6.2.1",
+    "cheerio": "^1.2.0",
     "fast-xml-parser": "^5.7.0"
   },
   "dependencies": {
@@ -55,7 +58,8 @@
     "drizzle-orm": "^0.45.2",
     "postgres": "^3.4.9",
     "puppeteer": "^25.12.0",
-    "sharp": "^0.35.4"
+    "sanitize-html": "^2.18.1",
+    "sharp": "^0.35.5"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

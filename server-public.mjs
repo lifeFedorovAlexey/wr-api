@@ -1,11 +1,11 @@
 import "dotenv/config";
 
 import { createApiServer, listenServer } from "./lib/httpApiServer.mjs";
-import { guideDetailRoute, publicRoutes } from "./lib/routeSets.mjs";
+import { guideDetailRoute, patchNotesDetailRoute, publicRoutes } from "./lib/routeSets.mjs";
 
 const server = createApiServer({
   routes: publicRoutes,
-  detailRoutes: [guideDetailRoute],
+  detailRoutes: [guideDetailRoute, patchNotesDetailRoute],
   enableIcons: true,
   enableGuideAssets: true,
   enableGuideHeroMedia: true,

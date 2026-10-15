@@ -207,6 +207,7 @@ jobs:
             npm run setup:quiz-media-storage
             npm run setup:riftgg-cn-stats
             npm run setup:news
+            npm run setup:patch-notes
 
             log_step "start canary public/auth/gateway"
             cleanup_canaries
