@@ -208,6 +208,7 @@ jobs:
             npm run setup:riftgg-cn-stats
             npm run setup:news
             npm run setup:patch-notes
+            npm run sync:patch-note-fallback-assets
 
             log_step "start canary public/auth/gateway"
             cleanup_canaries
