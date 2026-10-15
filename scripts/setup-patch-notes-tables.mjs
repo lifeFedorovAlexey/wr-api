@@ -44,9 +44,15 @@ async function main() {
       updated_at timestamptz not null default now(),
       unique (patch_version, locale, ordinal),
       check (locale in ('en-us', 'ru-ru')),
-      check (entity_kind in ('champion', 'item', 'rune', 'system')),
+      check (entity_kind in ('champion', 'item', 'rune', 'system', 'skin')),
       check (change_type in ('buff', 'nerf', 'rework', 'adjustment'))
     );
+  `;
+  await client`alter table patch_note_changes drop constraint if exists patch_note_changes_entity_kind_check;`;
+  await client`
+    alter table patch_note_changes
+    add constraint patch_note_changes_entity_kind_check
+    check (entity_kind in ('champion', 'item', 'rune', 'system', 'skin'));
   `;
   await client`alter table patch_note_changes drop constraint if exists patch_note_changes_change_type_check;`;
   await client`
