@@ -1,7 +1,9 @@
 import { and, desc, eq, isNotNull } from "drizzle-orm";
 
 import { db } from "../db/client.js";
-import { patchNoteChanges, patchNotes } from "../db/schema.js";
+import { champions, guideEntities, patchNoteChanges, patchNotes } from "../db/schema.js";
+import { buildPublicIconPath } from "../lib/championIcons.mjs";
+import { buildGuideAssetKey, buildPublicGuideAssetPath } from "../lib/guideAssets.mjs";
 import { setCors } from "./utils/cors.js";
 
 function setPublicCache(res) {
@@ -44,6 +46,60 @@ function compareVersions(left, right) {
     || String(b[3] || "").localeCompare(String(a[3] || ""));
 }
 
+function sourceFromStoredImage(imageUrl) {
+  const query = String(imageUrl || "").split("?", 2)[1] || "";
+  return new URLSearchParams(query).get("src");
+}
+
+function storedGuideAssetKey(imageUrl) {
+  const pathname = String(imageUrl || "").split("?", 1)[0];
+  const match = pathname.match(/^\/wr-api\/assets\/([^/]+)$/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+async function loadImageCatalog() {
+  const [championRows, itemRows] = await Promise.all([
+    db.select({ slug: champions.slug, icon: champions.icon }).from(champions),
+    db.select({
+      slug: guideEntities.slug,
+      imageUrl: guideEntities.imageUrl,
+      tooltipImageUrl: guideEntities.tooltipImageUrl,
+    }).from(guideEntities).where(eq(guideEntities.kind, "item")),
+  ]);
+
+  return {
+    champions: new Map(championRows.map((row) => [row.slug, row])),
+    items: new Map(itemRows.map((row) => [row.slug, row])),
+  };
+}
+
+function resolveChangeImageUrl(row, catalog) {
+  const storedSource = sourceFromStoredImage(row.imageUrl);
+  if (row.entityKind === "champion" && row.entitySlug) {
+    const sourceUrl = catalog.champions.get(row.entitySlug)?.icon || storedSource;
+    if (sourceUrl) return buildPublicIconPath(row.entitySlug, sourceUrl);
+  }
+
+  if (row.entityKind === "item" && row.entitySlug) {
+    const item = catalog.items.get(row.entitySlug);
+    const sourceUrl = item?.tooltipImageUrl || item?.imageUrl || storedSource;
+    if (sourceUrl) {
+      const assetKey = buildGuideAssetKey("guide", "item", row.entitySlug, "image");
+      return buildPublicGuideAssetPath(assetKey, sourceUrl);
+    }
+  }
+
+  // Older imports persisted proxy URLs. Resolve them through the same S3 asset
+  // key used by the importer instead of exposing the obsolete proxy route.
+  const assetKey = storedGuideAssetKey(row.imageUrl);
+  if (assetKey && storedSource) return buildPublicGuideAssetPath(assetKey, storedSource);
+  return row.imageUrl;
+}
+
+function toPublicChange(row, catalog) {
+  return { ...row, imageUrl: resolveChangeImageUrl(row, catalog) };
+}
+
 export default async function handler(req, res) {
   setCors(req, res);
   if (req.method === "OPTIONS") return res.status(204).end();
@@ -65,6 +121,7 @@ export default async function handler(req, res) {
         setNoStore(res);
         return res.status(404).json({ error: "Not Found" });
       }
+      const imageCatalog = await loadImageCatalog();
       const changes = await db
         .select({
           ordinal: patchNoteChanges.ordinal,
@@ -84,7 +141,10 @@ export default async function handler(req, res) {
         ))
         .orderBy(patchNoteChanges.ordinal);
       setPublicCache(res);
-      return res.status(200).json(toPublicPatch(selected, changes));
+      return res.status(200).json(toPublicPatch(
+        selected,
+        changes.map((row) => toPublicChange(row, imageCatalog)),
+      ));
     }
 
     const rows = await db
@@ -111,9 +171,12 @@ export default async function handler(req, res) {
       })
       .from(patchNoteChanges)
       .orderBy(patchNoteChanges.ordinal);
+    const imageCatalog = await loadImageCatalog();
     const previewsByPatch = new Map();
     for (const row of previewRows) {
-      if (!row.imageUrl || (row.entityKind !== "champion" && row.entityKind !== "item")) continue;
+      if (row.entityKind !== "champion" && row.entityKind !== "item") continue;
+      const imageUrl = resolveChangeImageUrl(row, imageCatalog);
+      if (!imageUrl) continue;
       const key = `${row.patchVersion}:${row.locale}`;
       const previews = previewsByPatch.get(key) || {
         new: [], buff: [], adjustment: [], nerf: [], removed: [], seen: new Set(),
@@ -129,7 +192,7 @@ export default async function handler(req, res) {
           entityKind: row.entityKind,
           entitySlug: row.entitySlug,
           entityName: row.entityName,
-          imageUrl: row.imageUrl,
+          imageUrl,
         });
       }
       previewsByPatch.set(key, previews);
