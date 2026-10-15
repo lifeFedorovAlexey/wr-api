@@ -30,7 +30,7 @@ async function main() {
   let skipped = 0;
 
   for (const slug of FALLBACK_ITEM_SLUGS) {
-    const item = catalog.items.get(slug);
+    const item = [...catalog.items.values()].find((candidate) => candidate.slug === slug);
     const sourceUrl = item?.tooltipImageUrl || item?.imageUrl;
     if (!sourceUrl) throw new Error(`No catalog image source for ${slug}`);
 
