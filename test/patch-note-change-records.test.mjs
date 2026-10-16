@@ -43,5 +43,5 @@ test("uses the fallback icon when a catalog rune has no image URL", () => {
     details: [],
   }], catalog);
 
-  assert.match(row.imageUrl, /\/wr-api\/assets\/guide-rune-legend-tenacity-image\?src=/);
+  assert.match(row.imageUrl, /\/wr-api\/api\/assets\/guide-rune-legend-tenacity-image\?src=/);
 });
