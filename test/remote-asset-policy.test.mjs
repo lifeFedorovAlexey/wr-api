@@ -48,6 +48,22 @@ test("normalizes remote asset urls before validation", () => {
   );
 });
 
+test("allows the item image sources used by the patch fallback catalog", () => {
+  for (const url of [
+    "https://www.wildriftmeta.com/assets/item/icon/item-gunmetal-greaves-icon.png",
+    "https://hub-game.com/wildrift/images/items/webp/177.webp",
+  ]) {
+    assert.equal(isAllowedRemoteAssetUrl(url), true);
+  }
+  for (const url of [
+    "https://www.wildriftmeta.com.evil.example/item.png",
+    "https://hub-game.com.evil.example/item.webp",
+    "https://fakehub-game.com/item.webp",
+  ]) {
+    assert.equal(isAllowedRemoteAssetUrl(url), false);
+  }
+});
+
 test("rejects localhost, ip literals, and disallowed hosts", () => {
   assert.equal(isAllowedRemoteAssetUrl("https://127.0.0.1/private"), false);
   assert.equal(isAllowedRemoteAssetUrl("https://localhost/private"), false);
