@@ -830,6 +830,38 @@ test("infers item adjustment type from the article's changed stats", () => {
   assert.equal(mercury?.changeName, "adjustment");
 });
 
+test("maps prefixed item variants to catalog identities in old and new patch prose", () => {
+  const items = [
+    { slug: "infinity-orb", name: "Infinity Orb", aliases: ["Сфера бесконечности"] },
+    { slug: "seryldas-grudge", name: "Serylda's Grudge", aliases: ["Злоба Серильды"] },
+  ];
+  const catalog = {
+    ...emptyCatalog,
+    items: new Map(items.flatMap((item) => [
+      [item.name.toLowerCase().replace(/[’']/g, " "), item],
+      ...item.aliases.map((alias) => [alias.toLowerCase().replace(/[’']/g, " "), item]),
+    ])),
+  };
+  const inputs = [
+    ["en-us", `
+      <h2>GAMEPLAY CHANGES</h2><h3>ITEMS</h3>
+      <h4>Yordle Infinity Orb</h4><p>Damage is too high.</p><h5>Thunderfall</h5><ul><li>Damage: 50 → 40</li></ul>
+      <h4>Yordle Serylda's Grudge</h4><p>Ability damage is too high.</p><h5>Frostbite</h5><ul><li>Damage: 25 → 10</li></ul>
+    `],
+    ["ru-ru", `
+      <h2>ИЗМЕНЕНИЯ ИГРОВОГО ПРОЦЕССА</h2><h3>ПРЕДМЕТЫ</h3>
+      <h4>Йордловская Сфера бесконечности</h4><p>Урон слишком высок.</p><h5>Раскаты грома</h5><ul><li>Урон: 50 → 40</li></ul>
+      <h4>Йордловская Злоба Серильды</h4><p>Урон слишком высок.</p><h5>Обморожение</h5><ul><li>Урон: 25 → 10</li></ul>
+    `],
+  ];
+
+  for (const [locale, body] of inputs) {
+    const parsed = parseChanges("9.0", locale, body, catalog);
+    const rows = buildPatchChangeRows(parsed, catalog, [], "9.0").filter(({ entityKind }) => entityKind === "item");
+    assert.deepEqual(rows.map(({ entitySlug }) => entitySlug).sort(), ["infinity-orb", "seryldas-grudge"]);
+  }
+});
+
 test("preserves the six non-mode bug fixes for patch 7.1b in EN and RU", () => {
   const inputs = [
     ["en-us", `
