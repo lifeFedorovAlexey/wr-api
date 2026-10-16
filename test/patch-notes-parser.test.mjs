@@ -773,7 +773,7 @@ test("fills the 7.2 localized skin release and return rows from the official art
       <h2>NEW WILD PASS</h2><p>Movie Director Wild Pass starring Movie Director Ryze and Ascended Movie Director Ryze.</p>
       <h3>Returning Wild Pass skins</h3><ul><li>Dream Raider Kha'Zix</li><li>Ascended Dream Raider Kha'Zix</li><li>Superhero Jayce</li><li>Ascended Superhero Jayce</li></ul>
       <h3>Returning Mini Wild Pass skins</h3><ul><li>Elderwood Xayah</li><li>Elderwood Xayah (Indigo)</li><li>Elderwood Rakan</li><li>Elderwood Rakan (Turquoise)</li></ul>
-      <p>Unlock three Cyber Pop Zoe chromas.</p><p>New Mini Wild Pass Return Track featuring Battlecast Nasus.</p>
+      <p>Unlock three Cyber Pop Zoe chromas.</p><p>A new Mini Wild Pass Return Track featuring Battlecast Nasus has been added. Progress is shared with the current Wild Pass, allowing you to unlock rewards from both tracks simultaneously.</p>
       <p>Unlock the all-new Purple Garlic Lulu skin.</p>
     `, [
       ["renekton-glorious-eminence-renekton", "new"],
@@ -789,7 +789,7 @@ test("fills the 7.2 localized skin release and return rows from the official art
       <h2>НОВЫЙ ПРОПУСК WILD RIFT</h2><p>Режиссер Райз и Вознесшийся режиссер Райз.</p>
       <h3>Повторные образы пропуска Wild Rift</h3><ul><li>Похититель снов Ка'Зикс</li><li>Вознесшийся Похититель снов Ка'Зикс</li><li>Супергерой Джейс</li><li>Вознесшийся супергерой Джейс</li></ul>
       <h3>Повторные образы мини-пропуска Wild Rift</h3><ul><li>Дух леса Шая</li><li>Дух леса Шая (темно-синий)</li><li>Дух леса Рэйкан</li><li>Дух леса Рэйкан (бирюзовый)</li></ul>
-      <p>Цветовые схемы Киберпоп-Зои.</p><p>Повторный мини-пропуск с Модифицированным Насусом.</p>
+      <p>Цветовые схемы Киберпоп-Зои.</p><p>Добавлена новая шкала повторных наград мини-пропуска Wild Rift с Модифицированным Насусом. У шкал текущих и повторных наград общий прогресс, а значит, вы сможете разблокировать награды одновременно.</p>
       <p>Новый образ «Фиолетовый чеснок Лулу».</p>
     `, [
       ["renekton-glorious-eminence-renekton", "new"],
@@ -804,6 +804,12 @@ test("fills the 7.2 localized skin release and return rows from the official art
 
   for (const [locale, body, expected] of inputs) {
     const changes = parseChanges("7.2", locale, body, skinChampionCatalog);
+    const expectedSkinSlugs = expected.map(([slug]) => slug).sort();
+    const actualSkinSlugs = changes
+      .filter(({ entityKind }) => entityKind === "skin")
+      .map(({ entitySlug }) => entitySlug)
+      .sort();
+    assert.deepEqual(actualSkinSlugs, expectedSkinSlugs, `${locale} should not infer extra skins from Wild Pass promotional copy`);
     for (const [slug, status] of expected) {
       const matches = changes.filter((change) => change.entityKind === "skin" && change.entitySlug === slug);
       assert.equal(matches.length, 1, `${locale} should emit one row for ${slug}; found ${changes.filter(({ entityKind }) => entityKind === "skin").map(({ entityName, entitySlug, changeName }) => `${entityName} (${entitySlug}, ${changeName})`).join(" | ")}`);
