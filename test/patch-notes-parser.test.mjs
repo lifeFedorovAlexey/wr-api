@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { parsePatchArticle } from "../lib/patchNotesParser.mjs";
+import { buildPatchChangeRows } from "../lib/patchNotesChangeRecords.mjs";
 
 const emptyCatalog = {
   champions: new Map(),
@@ -121,6 +122,56 @@ test("classifies Dusk and Dawn as a nerf in both patch 7.3 locales", () => {
     const item = parseChanges("7.3", locale, body).find((change) => change.entityKind === "item" && change.entitySlug === "dusk-and-dawn");
     assert.equal(item?.changeName, "nerf");
   }
+});
+
+test("parses 7.3 Smite adjustments as the same localized spell in both locales", () => {
+  const inputs = [
+    ["en-us", "Smite Adjustments", [
+      "[New] Champions with Smite deal bonus True damage.",
+      "[Removed] Champions with Smite deal bonus damage to monsters.",
+    ]],
+    ["ru-ru", "Изменения Кары", [
+      "[Новое] Чемпионы с Карой наносят дополнительный чистый урон.",
+      "[Удалено] Чемпионы с Карой наносят монстрам дополнительный урон.",
+    ]],
+  ];
+  const rows = [];
+  for (const [locale, heading, details] of inputs) {
+    const spell = {
+      slug: "smite",
+      name: locale === "ru-ru" ? "Кара" : "Smite",
+      imageUrl: "https://assets.example.test/smite.png",
+      tooltipImageUrl: "https://assets.example.test/smite.png",
+    };
+    const catalog = {
+      ...emptyCatalog,
+      spells: new Map([[locale === "ru-ru" ? "кара" : "smite", spell]]),
+    };
+    const changes = parseChanges("7.3", locale, `
+      <h2>${locale === "ru-ru" ? "ИЗМЕНЕНИЯ ИГРОВОГО ПРОЦЕССА" : "GAMEPLAY CHANGES"}</h2>
+      <h3>${heading}</h3><ul>${details.map((detail) => `<li>${detail}</li>`).join("")}</ul>
+    `, catalog);
+
+    assert.equal(changes.filter((change) => /^(?:изменения кары|smite adjustments)$/i.test(change.entityName)).length, 0);
+    assert.equal(changes.filter((change) => change.entityKind === "spell").length, 1);
+    const [row] = buildPatchChangeRows(changes, catalog).filter((change) => change.entityKind === "spell");
+    assert.equal(row.entitySlug, "smite");
+    assert.equal(row.changeType, "adjustment");
+    assert.ok(row.imageUrl?.includes("guide-summonerspell-smite-image"));
+    assert.deepEqual(row.details.map(({ text }) => text), details);
+    rows.push(row);
+  }
+
+  assert.deepEqual(rows.map(({ entityKind, entitySlug, changeType, details }) => [
+    entityKind,
+    entitySlug,
+    changeType,
+    details.length,
+  ]), [
+    ["spell", "smite", "adjustment", 2],
+    ["spell", "smite", "adjustment", 2],
+  ]);
+  assert.equal(rows[0].imageUrl, rows[1].imageUrl);
 });
 
 test("keeps patch 7.3b jungle monster names, explanation, and localized health details", () => {
