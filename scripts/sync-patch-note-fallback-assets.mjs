@@ -48,6 +48,7 @@ const FALLBACK_RUNE_SLUGS = [
   "item-crafting",
   "futures-market",
 ];
+const FALLBACK_SPELL_SLUGS = ["mark"];
 const FALLBACK_RUNE_IMAGE_SOURCES = new Map([
   ["legend-tenacity", "https://www.wildriftfire.com/images/runes/legend-tenacity.png"],
 ]);
@@ -86,6 +87,11 @@ async function main() {
       record: [...catalog.items.values()].find((item) => item.slug === (FALLBACK_ITEM_CATALOG_SLUGS.get(slug) || slug)),
     })),
     ...FALLBACK_RUNE_SLUGS.map((slug) => ({ kind: "rune", slug, record: catalog.runeRecords.find((rune) => rune.slug === slug) })),
+    ...FALLBACK_SPELL_SLUGS.map((slug) => ({
+      kind: "summonerSpell",
+      slug,
+      record: catalog.spellRecords.find((spell) => spell.slug === slug),
+    })),
   ]) {
     const sourceUrl = record?.tooltipImageUrl || record?.imageUrl || FALLBACK_RUNE_IMAGE_SOURCES.get(slug);
     if (!sourceUrl) throw new Error(`No catalog image source for ${slug}`);
