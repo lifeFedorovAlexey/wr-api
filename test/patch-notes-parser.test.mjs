@@ -442,29 +442,41 @@ test("parses 7.3 system sections in English and Russian while filtering mode row
       ["New Season Begins", "Evaluation system details.", "Adjusted the S/A rating algorithm."],
       ["Legendary Ranked", "Legendary Ranked details.", "Added the Legendary Trial event."],
       ["Champion Score System Update", "Champion Score details.", "Champion Record Score will no longer decrease after a loss."],
+      ["Priority Role Bonus", "Priority role details.", "Support, Jungle, and Any Position are bonus roles."],
       ["Champion Ban Rule Adjustments", "Ban rule details.", "Ranked matches from Platinum through Diamond will change from 3 bans per team to 5 bans per team."],
+      ["Teammate Augment Recommendation", "Ask premade teammates for Augment recommendations."],
+      ["New Player Rewards Revamped", "New Player Login and Special Offer events now share one interface."],
     ]],
     ["ru-ru", "ИГРОВЫЕ СИСТЕМЫ", [
       ["Новый сезон начинается", "Подробности системы оценки.", "Изменен алгоритм оценки S/A."],
       ["Легендарная очередь", "Подробности легендарной очереди.", "Добавлено событие легендарного испытания."],
       ["Обновление системы очков чемпиона", "Подробности об очках чемпиона.", "Счетчик побед за чемпиона больше не будет уменьшаться после поражения."],
+      ["Бонус приоритетной роли", "Подробности бонуса приоритетной роли.", "Бонусные роли: поддержка, лес и любая позиция."],
       ["Изменения правил блокировок чемпионов", "Подробности правил блокировок.", "В ранговых матчах с Платины до Алмаза количество блокировок на команду увеличится с 3 до 5."],
+      ["Рекомендации по выбору аугментации от союзников", "Можно попросить игроков из своей группы рекомендовать аугментацию."],
+      ["Изменение наград для новых игроков", "Награды за вход и особые предложения теперь находятся в одном интерфейсе."],
     ]],
   ];
 
   for (const [locale, systemHeading, expected] of inputs) {
+    const section = ([heading, description, detail]) => (
+      `<h3>${heading}</h3><p>${description}</p>${detail ? `<ol><li>${detail}</li></ol>` : ""}`
+    );
     const body = `
       <h2>${locale === "ru-ru" ? "ИЗМЕНЕНИЯ ИГРОВЫХ РЕЖИМОВ" : "GAME MODE CHANGES"}</h2>
       <h3>AAA ARAM</h3><p>Mode-only update.</p>
       <h2>${systemHeading}</h2><h3>${locale === "ru-ru" ? "НОВАЯ СИСТЕМА" : "NEW SYSTEM"}</h3>
-      ${expected.map(([heading, description, detail]) => (
-    `<h3>${heading}</h3><p>${description}</p><ol><li>${detail}</li></ol>`
-      )).join("")}
+      ${expected.map(([heading, description, detail], index) => {
+        const isRussianNestedSection = locale === "ru-ru" && [2, 3].includes(index);
+        return isRussianNestedSection
+          ? `<p>${heading}</p><p>${description}</p>${detail ? `<ol><li>${detail}</li></ol>` : ""}`
+          : section([heading, description, detail]);
+      }).join("")}
     `;
     const changes = parseChanges("7.3", locale, body);
     const systemRows = changes.filter((change) => change.entityKind === "system");
 
-    assert.equal(systemRows.length, 4);
+    assert.equal(systemRows.length, 7, `${locale}: ${systemRows.map(({ entityName }) => entityName).join(" | ")}`);
     assert.equal(changes.some((change) => /AAA ARAM|Mode-only/i.test(change.entityName || "")), false);
     assert.deepEqual(systemRows.map(({ entityName, details }) => [entityName, ...details.map(({ text }) => text)]), expected);
   }
