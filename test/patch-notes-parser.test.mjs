@@ -484,7 +484,6 @@ test("keeps every patch 7.2 non-mode system heading and its details separate in 
     ["highlights-auto-uninstallation-feature", "Highlights Auto-uninstallation Feature", "Функция автоматического удаления ярких моментов"],
     ["ranked-rules-for-sovereign-and-above", "RANKED RULES FOR SOVEREIGN AND ABOVE", "РАНГОВЫЕ ПРАВИЛА ДЛЯ РАНГА СУВЕРЕН И ВЫШЕ"],
     ["cache-cleanup", "CACHE CLEANUP", "ОЧИСТКА КЭША"],
-    ["loadout-system", "LOADOUT SYSTEM", "СИСТЕМА СНАРЯЖЕНИЯ"],
     ["friendship-store", "FRIENDSHIP STORE", "МАГАЗИН ДРУЖБЫ"],
     ["matchmaking-champion-score-cap", "MATCHMAKING CHAMPION SCORE CAP", "МАКСИМУМ ОЧКОВ ЧЕМПИОНА ПРИ ПОДБОРЕ ИГРОКОВ"],
     ["ranked-reward", "RANKED REWARD", "РАНГОВЫЕ НАГРАДЫ"],
@@ -504,11 +503,15 @@ test("keeps every patch 7.2 non-mode system heading and its details separate in 
     const tempo = locale === "en-us"
       ? "<h2>Battlefield Tempo</h2><p>First battlefield tempo detail.</p><p>Second battlefield tempo detail.</p>"
       : "<h2>Темп сражения</h2><p>Первая деталь темпа сражения.</p><p>Вторая деталь темпа сражения.</p>";
+    const aramLoadout = locale === "en-us"
+      ? "<h3>LOADOUT SYSTEM</h3><p>The new loadout is specific to ARAM.</p>"
+      : "<h3>СИСТЕМА СНАРЯЖЕНИЯ</h3><p>Новый набор снаряжения предназначен только для ARAM.</p>";
     const changes = parseChanges("7.2", locale, `
       <h2>${locale === "en-us" ? "BATTLEFIELD ADJUSTMENTS" : "ИЗМЕНЕНИЯ НА ПОЛЕ БОЯ"}</h2>
       ${headings}
       <h3>Battlefield Tempo Adjustments</h3><p>Stale article row must be canonicalized.</p>
       ${tempo}
+      ${aramLoadout}
       <h2>${locale === "en-us" ? "GAME MODE CHANGES" : "ИЗМЕНЕНИЯ ИГРОВЫХ РЕЖИМОВ"}</h2>
       <h3>AAA ARAM</h3><p>Mode-only detail must not be included.</p>
     `);
@@ -528,6 +531,8 @@ test("keeps every patch 7.2 non-mode system heading and its details separate in 
     assert.equal(tempoRow.details.length, 8);
     assert.equal(changes.filter((change) => change.entityKind === "system"
       && (change.entitySlug === "battlefield-tempo-adjustments" || /battlefield tempo adjustments/i.test(change.entityName))).length, 1);
+    assert.equal(changes.some((change) => change.entityKind === "system"
+      && /loadout-system|система-снаряжения/.test(change.entitySlug || "")), false);
   }
 });
 
