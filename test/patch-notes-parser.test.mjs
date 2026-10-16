@@ -124,6 +124,62 @@ test("classifies Dusk and Dawn as a nerf in both patch 7.3 locales", () => {
   }
 });
 
+test("classifies Sivir's mixed 7.3 champion changes as an adjustment in both locales", () => {
+  const inputs = [
+    ["en-us", "Sivir", "Base Stats", [
+      "Base Attack Damage: 58 → 60",
+      "Attack Speed Ratio: 0.625",
+      "Base Attack Speed: 0.625",
+      "Base Bonus Attack Speed: 0.3",
+      "Attack Speed per Level: 0.01",
+      "Movement Speed bonus: 31 - 45 (based on level) → 55 - 70 (based on level)",
+      "Damage: 10 / 30 / 50 / 70 + 75 / 80 / 85 / 90% Attack Damage + 60% Ability Power × 50% × Critical Rate → (70 / 100 / 130 / 160 + 70% × bonus Attack Damage + 60% Ability Power) × (1 + Critical Rate × 40% + (Critical Damage-2) × 40% × Critical Rate)",
+      "Non-champion damage ratio: 80% → 75%",
+      "Damage: 4 / 6 / 8 / 10 + 15 / 18 / 21 / 24% Attack Damage → 37.5% / 40% / 42.5% / 45% Attack Damage",
+      "Minion ratio: 75% → 70%",
+      "Initial Movement Speed bonus: 15% → 15 / 20 / 25%",
+      "Initial Movement Speed duration: 10 / 11 / 12 seconds → 8 / 10 / 12 seconds",
+      "Cooldown reduction ratio: 30 / 35 / 40% → 20 / 25 / 30%",
+      "Attack Damage per morale stack: 2 / 3 / 4 → 2 / 2.5 / 3",
+      "Re-triggering refreshes Hunt duration.",
+      "Movement Speed granted on re-trigger: 25% → 15 / 20 / 25%",
+    ]],
+    ["ru-ru", "Сивир", "Основные показатели", [
+      "Базовая сила атаки: 58 → 60",
+      "Коэффициент скорости атаки: 0,625",
+      "Базовая скорость атаки: 0,625",
+      "Базовая дополнительная скорость атаки: 0,3",
+      "Прирост скорости атаки: 0,01",
+      "Бонус к скорости передвижения: 31–45 (в зависимости от уровня) → 55–70 (в зависимости от уровня)",
+      "Урон: 10 / 30 / 50 / 70 + 75 / 80 / 85 / 90% от силы атаки + 60% от силы умений × 50% × шанс критического удара → (70 / 100 / 130 / 160 + 70% × дополнительная сила атаки + 60% от силы умений) × (1 + шанс критического удара × 40% + (критический урон – 2) × 40% × шанс критического удара)",
+      "Коэффициент урона целям, которые не являются чемпионами: 80% → 75%",
+      "Урон: 4 / 6 / 8 / 10 + 15 / 18 / 21 / 24% от силы атаки → 37,5% / 40% / 42,5% / 45% от силы атаки",
+      "Коэффициент урона миньонам: 75% → 70%",
+      "Изначальный бонус к скорости передвижения: 15% → 15 / 20 / 25%",
+      "Изначальная продолжительность скорости передвижения: 10 / 11 / 12 сек. → 8 / 10 / 12 сек.",
+      "Коэффициент сокращения перезарядки: 30 / 35 / 40% → 20 / 25 / 30%",
+      "Сила атаки за каждый заряд Боевого духа: 2 / 3 / 4 → 2 / 2,5 / 3",
+      "Повторное применение обновляет продолжительность Охоты.",
+      "Скорость передвижения при повторном применении: 25% → 15 / 20 / 25%",
+    ]],
+  ];
+  const sivir = { slug: "sivir", name: "Sivir", aliases: ["Sivir", "Сивир"] };
+  const catalog = {
+    ...emptyCatalog,
+    champions: new Map([["sivir", sivir], ["сивир", sivir]]),
+  };
+  for (const [locale, championName, statsLabel, details] of inputs) {
+    const sivirRow = parseChanges("7.3", locale, `
+      <h2>${locale === "ru-ru" ? "ИЗМЕНЕНИЯ ЧЕМПИОНОВ" : "CHAMPION CHANGES"}</h2>
+      <h3>${championName}</h3><p>${statsLabel}</p>
+      <ul>${details.map((detail) => `<li>${detail}</li>`).join("")}</ul>
+    `, catalog).find((change) => change.entityKind === "champion" && change.entityName === championName);
+    assert.ok(sivirRow, `${locale}: expected the Sivir champion row`);
+    assert.equal(sivirRow.details.length, 16, locale);
+    assert.equal(sivirRow.changeName, "adjustment", locale);
+  }
+});
+
 test("parses 7.3 Smite adjustments as the same localized spell in both locales", () => {
   const inputs = [
     ["en-us", "Smite Adjustments", [
@@ -214,7 +270,7 @@ test("keeps patch 7.3b jungle monster names, explanation, and localized health d
   }
 });
 
-test("adds localized 7.2 RU item rows and keeps the August mini-pass variant unreleased", () => {
+test("adds localized 7.2 RU items and preserves the single confirmed Scorpio Deity skin", () => {
   const body = [
     "<p><strong>Изменения предметов</strong></p><p>Посох Бездны</p><ul><li>Теперь предмет соответствует версии из ранговых матчей.</li></ul>",
     "<h4><strong>Завеса банши</strong></h4><p>Обновленный защитный предмет.</p><p>Основные параметры</p><ul><li>Стоимость: 3000</li></ul>",
@@ -223,13 +279,65 @@ test("adds localized 7.2 RU item rows and keeps the August mini-pass variant unr
   const changes = parseChanges("7.2", "ru-ru", body);
   const voidStaff = changes.find((change) => change.entityKind === "item" && change.entitySlug === "void-staff");
   const banshee = changes.find((change) => change.entityKind === "item" && change.entitySlug === "banshees-veil");
-  const variant = changes.find((change) => change.entityKind === "skin" && change.entitySlug === "skarner-scorpio-deity-ancient-wisdom-skarner");
+  const skarnerSkin = changes.find((change) => change.entityKind === "skin" && change.entitySlug === "skarner-scorpio-deity-skarner");
   assert.equal(voidStaff?.entityName, "Посох Бездны");
   assert.equal(voidStaff?.changeName, "adjustment");
   assert.equal(banshee?.entityName, "Завеса банши");
   assert.equal(banshee?.changeName, "rework");
-  assert.equal(variant?.entityName, "Космическое жало Скарнер (Древняя мудрость)");
-  assert.equal(variant?.changeName, null);
+  assert.equal(skarnerSkin?.entityName, "Космическое жало Скарнер");
+  assert.equal(skarnerSkin?.changeName, "new");
+  assert.equal(skarnerSkin?.sectionName, "Облики патча");
+  assert.match(skarnerSkin?.details[0].text || "", /27 августа/);
+  assert.equal(changes.some((change) => change.entitySlug === "skarner-scorpio-deity-ancient-wisdom-skarner"), false);
+});
+
+test("keeps both 7.2 Scorpio Deity skins as new English Wild Pass entries", () => {
+  const catalog = {
+    ...emptyCatalog,
+    champions: new Map([["skarner", { slug: "skarner", name: "Skarner", aliases: ["Skarner"] }]]),
+  };
+  const skins = parseChanges("7.2", "en-us", `
+    <h2>SKINS</h2>
+    <p>Scorpio Deity Skarner Releasing August 27 @ 00:01 UTC</p>
+    <p>Scorpio Deity Ancient Wisdom Skarner Releasing August 27 @ 00:01 UTC</p>
+  `, catalog).filter(({ entityKind }) => entityKind === "skin");
+
+  assert.deepEqual(skins.map(({ entitySlug, changeName, sectionName }) => [entitySlug, changeName, sectionName]), [
+    ["skarner-scorpio-deity-skarner", "new", "Patch Skins"],
+    ["skarner-scorpio-deity-ancient-wisdom-skarner", "new", "Patch Skins"],
+  ]);
+});
+
+test("normalizes 7.1g and 7.1e Russian skin slugs to their canonical English identities", () => {
+  const champions = [
+    ["aatrox", "Атрокс"], ["sion", "Сион"], ["samira", "Самира"],
+    ["norra", "Норра"], ["taliyah", "Талия"],
+  ];
+  const catalog = {
+    ...emptyCatalog,
+    champions: new Map(champions.map(([slug, name]) => [name, { slug, name, aliases: [name] }])),
+  };
+  const cases = [
+    ["7.1g", [
+      ["Механический Атрокс (изысканное издание)", "aatrox-mecha-aatrox-exquisite-edition"],
+      ["Защитник растений Сион", "sion-plant-protector-sion"],
+      ["Пепельная мстительница Самира", "samira-ashen-avenger-samira"],
+    ]],
+    ["7.1e", [
+      ["Норра из кафе красоты", "norra-cafe-cuties-norra"],
+      ["Тусовая Талия", "taliyah-pool-party-taliyah"],
+    ]],
+  ];
+
+  for (const [version, skins] of cases) {
+    const body = `<h2>ОБРАЗЫ</h2>${skins.map(([name]) => `<p>${name}</p>`).join("")}`;
+    const parsed = parseChanges(version, "ru-ru", body, catalog).filter(({ entityKind }) => entityKind === "skin");
+    for (const [name, canonicalSlug] of skins) {
+      const skin = parsed.find(({ entityName }) => entityName === name);
+      assert.ok(skin, `${version} RU should include ${name}`);
+      assert.equal(skin.entitySlug, canonicalSlug);
+    }
+  }
 });
 
 test("fills the 7.2 localized skin release and return rows from the official article text", () => {
@@ -353,6 +461,73 @@ test("preserves patch 7.2 non-mode bug fixes while excluding mode-only material"
     assert.ok(fixes);
     assert.equal(fixes.details.length, 8);
     assert.equal(fixes.details.some((detail) => /Mode-only|mode adjustment/i.test(detail.text)), false);
+  }
+});
+
+test("keeps every patch 7.2 non-mode system heading and its details separate in both locales", () => {
+  const expected = [
+    ["bounty-system-update", "Bounty System Update", "Изменения системы наград за голову"],
+    ["ahri-asu", "Ahri VGU", "ВТО Ари"],
+    ["soulflowers", "[Removed] Soulflowers", "[Удалено] Цветы души"],
+    ["item-data-tracking-system", "Item data Tracking System", "Система отслеживания данных предметов"],
+    ["end-of-match-system-improvements", "End-of-Match system Improvements", "Улучшения послеигровой статистики"],
+    ["champion-select-screen-optimization", "Champion Select Screen Optimization", "Оптимизация экрана выбора чемпиона"],
+    ["in-game-shop-interface-improvements", "In-Game Shop interface Improvements", "Улучшен интерфейс внутриигрового магазина"],
+    ["damage-amplification-mechanic-update", "Damage Amplification Mechanic Update", "Обновлена механика увеличения урона"],
+    ["seasonal-rift-update", "Seasonal Rift Update", "Новое время года в Ущелье"],
+    ["vision-score-system", "Vision Score System", "Система показателя обзора"],
+    ["champion-displacement-interrupt-rule-update", "Champion Displacement Interrupt Rule Update", "Обновление правил прерывания смещения чемпионов"],
+    ["honorary-medal-system", "HONORARY MEDAL SYSTEM", "СИСТЕМА ПОЧЕТНЫХ МЕДАЛЕЙ"],
+    ["omnichamp", "“Omnichamp”", "Знаток чемпионов"],
+    ["violation-penalty", "VIOLATION PENALTY", "ШТРАФЫ ЗА НАРУШЕНИЯ"],
+    ["auto-uninstallation-system", "Auto-uninstallation System", "Система автоматического удаления ресурсов"],
+    ["highlights-auto-uninstallation-feature", "Highlights Auto-uninstallation Feature", "Функция автоматического удаления ярких моментов"],
+    ["ranked-rules-for-sovereign-and-above", "RANKED RULES FOR SOVEREIGN AND ABOVE", "РАНГОВЫЕ ПРАВИЛА ДЛЯ РАНГА СУВЕРЕН И ВЫШЕ"],
+    ["cache-cleanup", "CACHE CLEANUP", "ОЧИСТКА КЭША"],
+    ["loadout-system", "LOADOUT SYSTEM", "СИСТЕМА СНАРЯЖЕНИЯ"],
+    ["friendship-store", "FRIENDSHIP STORE", "МАГАЗИН ДРУЖБЫ"],
+    ["matchmaking-champion-score-cap", "MATCHMAKING CHAMPION SCORE CAP", "МАКСИМУМ ОЧКОВ ЧЕМПИОНА ПРИ ПОДБОРЕ ИГРОКОВ"],
+    ["ranked-reward", "RANKED REWARD", "РАНГОВЫЕ НАГРАДЫ"],
+    ["stellacore-stats", "STELLACORE STATS", "ЗВЕЗДНЫЕ ЯДРА"],
+    ["button-ui-skin-feature-optimization", "BUTTON UI SKIN FEATURE OPTIMIZATION", "ОПТИМИЗАЦИЯ ОБРАЗОВ КНОПОК"],
+  ];
+  const detailTexts = expected.map(([slug]) => `Verified detail for ${slug}.`);
+  for (const [locale, nameIndex] of [["en-us", 1], ["ru-ru", 2]]) {
+    const headings = expected.map((row, index) => {
+      const bountyPart = row[0] === "bounty-system-update"
+        ? locale === "en-us"
+          ? "<h4>Positive Bounty</h4><p>Positive bounty formula detail.</p>"
+          : "<h4>Положительные награды</h4><p>Подробности положительной награды.</p>"
+        : "";
+      return `<h3>${row[nameIndex]}</h3><p>${detailTexts[index]}</p>${bountyPart}`;
+    }).join("\n");
+    const tempo = locale === "en-us"
+      ? "<h2>Battlefield Tempo</h2><p>First battlefield tempo detail.</p><p>Second battlefield tempo detail.</p>"
+      : "<h2>Темп сражения</h2><p>Первая деталь темпа сражения.</p><p>Вторая деталь темпа сражения.</p>";
+    const changes = parseChanges("7.2", locale, `
+      <h2>${locale === "en-us" ? "BATTLEFIELD ADJUSTMENTS" : "ИЗМЕНЕНИЯ НА ПОЛЕ БОЯ"}</h2>
+      ${headings}
+      <h3>Battlefield Tempo Adjustments</h3><p>Stale article row must be canonicalized.</p>
+      ${tempo}
+      <h2>${locale === "en-us" ? "GAME MODE CHANGES" : "ИЗМЕНЕНИЯ ИГРОВЫХ РЕЖИМОВ"}</h2>
+      <h3>AAA ARAM</h3><p>Mode-only detail must not be included.</p>
+    `);
+    for (const [index, [slug]] of expected.entries()) {
+      const rows = changes.filter((change) => change.entityKind === "system" && change.entitySlug === slug);
+      assert.equal(rows.length, 1, `${locale} should retain one independent row for ${slug}`);
+      assert.equal(rows[0].details.some((detail) => detail.text === detailTexts[index]), true, `${locale} should retain ${slug} detail`);
+      assert.equal(rows[0].details.some((detail) => /Mode-only detail/.test(detail.text)), false);
+    }
+    const bounty = changes.find((change) => change.entityKind === "system" && change.entitySlug === "bounty-system-update");
+    assert.ok(bounty.details.some((detail) => /bounty formula|положительной награды/i.test(detail.text)));
+    assert.ok(bounty.details.some((detail) => /Positive Bounty|Положительные награды/i.test(detail.component)));
+    const ahri = changes.find((change) => change.entityKind === "system" && change.entitySlug === "ahri-asu");
+    assert.equal(ahri.details.some((detail) => /battlefield tempo|темпа сражения/i.test(detail.text)), false);
+    const tempoRow = changes.find((change) => change.entityKind === "system" && change.entitySlug === "battlefield-tempo-adjustments");
+    assert.ok(tempoRow, `${locale} should retain the separate Battlefield Tempo row`);
+    assert.equal(tempoRow.details.length, 8);
+    assert.equal(changes.filter((change) => change.entityKind === "system"
+      && (change.entitySlug === "battlefield-tempo-adjustments" || /battlefield tempo adjustments/i.test(change.entityName))).length, 1);
   }
 });
 
@@ -716,6 +891,83 @@ test("localizes 7.1 champion and skin sections and keeps official skin release d
     <h2>Облики</h2><p>Pool Party Taliyah</p>
   `, catalog).find((change) => change.entityKind === "skin");
   assert.equal(localizedEnglishSkin.sectionName, "SKINS");
+});
+
+test("keeps official 7.1 and 7.1d skin release captions from Riot table markup", () => {
+  const champions = new Map([
+    ["viego", { slug: "viego", name: "Viego", aliases: ["Viego", "Виего"] }],
+    ["senna", { slug: "senna", name: "Senna", aliases: ["Senna", "Сенна"] }],
+    ["ambessa", { slug: "ambessa", name: "Ambessa", aliases: ["Ambessa", "Амбесса"] }],
+    ["viktor", { slug: "viktor", name: "Viktor", aliases: ["Viktor", "Виктор"] }],
+    ["varus", { slug: "varus", name: "Varus", aliases: ["Varus", "Варус"] }],
+    ["kaisa", { slug: "kaisa", name: "Kai'Sa", aliases: ["Kai'Sa", "Kai’Sa", "Кай'Са", "Кай’Са"] }],
+    ["hecarim", { slug: "hecarim", name: "Hecarim", aliases: ["Hecarim", "Гекарим"] }],
+    ["irelia", { slug: "irelia", name: "Irelia", aliases: ["Irelia", "Ирелия"] }],
+    ["aurora", { slug: "aurora", name: "Aurora", aliases: ["Aurora", "Аврора"] }],
+    ["zed", { slug: "zed", name: "Zed", aliases: ["Zed", "Зед"] }],
+    ["gragas", { slug: "gragas", name: "Gragas", aliases: ["Gragas", "Грагас"] }],
+  ]);
+  const catalog = { ...emptyCatalog, champions };
+  const articleImage = (hash) => `https://cmsassets.rgpub.io/sanity/images/dsfx7636/news_live/${hash}-1920x1080.jpg`;
+  const soulFighterRows = [
+    ["viego", "Soul Fighter Viego", "Боевая душа Виего", "f31d4b03f7ae81091282528bae1e2a3c134aab50"],
+    ["senna", "Soul Fighter Senna", "Боевая душа Сенна", "bce6372e31a55871f16847cbbc6c47b3bb31c564"],
+    ["ambessa", "Soul Fighter Ambessa", "Боевая душа Амбесса", "62bdd81521c5334586b3adc6bf6525ba63bf05d5"],
+    ["viktor", "Soul Fighter Viktor", "Боевая душа Виктор", "70724c3ec49172b9cd670a715c68b51ec0daebfb"],
+    ["varus", "Soul Fighter Varus", "Боевая душа Варус", "6965e72cedf3aba85bfd435a71be9154f2337277"],
+  ];
+  const neonRows = [
+    ["kaisa", "Neon Daredevil Kai’Sa", "Неоновая сорвиголова Кай'Са", "330ca33151570c73c47917f0c35c3fddd8544dc4"],
+    ["hecarim", "Neon Daredevil Hecarim", "Неоновый сорвиголова Гекарим", "43480500d96727af044a5febc97dc0a9c7cff2f6"],
+    ["irelia", "Neon Daredevil Irelia", "Неоновая сорвиголова Ирелия", "fc841cca3589bcbb8c4a1bd1f15d20d0f2abc3cb"],
+    ["aurora", "Neon Daredevil Aurora", "Неоновая сорвиголова Аврора", "b2cff22dec457fac1b93870c0682399b030d79d5"],
+    ["zed", "Neon Daredevil Zed", "Неоновый сорвиголова Зед", "ff99a430475c9aa479ee65d73d47be2a8a1d5417"],
+    ["gragas", "Neon Daredevil Gragas", "Неоновый сорвиголова Грагас", "53a22dd752f7b3c0333dd67b48f26e6924cb21a9"],
+    ["kaisa", "Prestige Select Neon Daredevil Kai’Sa", "Избранная Неоновая сорвиголова Кай'Са (престижное издание)", "299ada88515e5b331c373346d3b3f40efecb9fe8"],
+  ];
+  const skinCell = (image, title, releaseCaption, formatting = "plain") => {
+    const titleMarkup = formatting.includes("italic-meta-title") ? `<meta><i>${title}</i>`
+      : formatting.includes("meta-title") ? `<meta>${title}`
+        : formatting.includes("italic-title") ? `<i>${title}</i>` : title;
+    const blankCaption = formatting.includes("blank-meta") ? "<p style=\"text-align:center;\"><meta></p>" : "";
+    const releaseMarkup = formatting.includes("meta-release") ? `<meta><i>${releaseCaption}</i>` : `<i>${releaseCaption}</i>`;
+    return `<td colspan="1" rowspan="1"><p><img src="${image}" width="1920" height="1080"></p><p style="text-align:center;">${titleMarkup}</p>${blankCaption}<p style="text-align:center;">${releaseMarkup}</p></td>`;
+  };
+  const skinTable = (rows) => `<h2>SKINS</h2><figure class="table"><div class="table-wrapper"><table><tbody>${rows.map((cell) => `<tr>${cell}</tr>`).join("")}</tbody></table></div></figure>`;
+  const localizedInputs = [
+    {
+      version: "7.1", locale: "en-us", rows: soulFighterRows.map(([, en, , image]) =>
+        skinCell(articleImage(image), en, "Releasing April 09 @ 00:01 UTC")),
+      names: soulFighterRows.map(([, en]) => en), release: "Releasing April 09 @ 00:01 UTC",
+    },
+    {
+      version: "7.1", locale: "ru-ru", rows: soulFighterRows.map(([, , ru, image]) =>
+        skinCell(articleImage(image), ru, "Появится в игре 9&nbsp;апреля в 03:01 по московскому времени")),
+      names: soulFighterRows.map(([, , ru]) => ru), release: "Появится в игре 9 апреля в 03:01 по московскому времени",
+    },
+    {
+      version: "7.1d", locale: "en-us", rows: neonRows.map(([, en, , image], index) =>
+        skinCell(articleImage(image), en, "Releasing April 30 @ 00:01 UTC", ["plain", "meta-title blank-meta", "meta-title meta-release", "italic-meta-title blank-meta", "meta-title blank-meta", "italic-meta-title blank-meta", "plain"][index])),
+      names: neonRows.map(([, en]) => en), release: "Releasing April 30 @ 00:01 UTC",
+    },
+    {
+      version: "7.1d", locale: "ru-ru", rows: neonRows.map(([, , ru, image], index) =>
+        skinCell(articleImage(image), ru, "Появится в игре 30 апреля в 03:01 по московскому времени", ["plain", "plain blank-meta", "plain", "italic-title blank-meta", "plain blank-meta", "italic-title blank-meta", "plain"][index])),
+      names: neonRows.map(([, , ru]) => ru), release: "Появится в игре 30 апреля в 03:01 по московскому времени",
+    },
+  ];
+
+  for (const { version, locale, rows, names, release } of localizedInputs) {
+    const heading = locale === "ru-ru" ? "ОБЛИКИ" : "SKINS";
+    const changes = parseChanges(version, locale, skinTable(rows).replace("<h2>SKINS</h2>", `<h2>${heading}</h2>`), catalog)
+      .filter(({ entityKind }) => entityKind === "skin");
+    assert.equal(changes.length, names.length, `${version} ${locale} skin count`);
+    for (const name of names) {
+      const skin = changes.find(({ entityName }) => entityName === name);
+      assert.ok(skin, `${version} ${locale} parses ${name}`);
+      assert.equal(skin.details[0].text, release, `${name} release caption`);
+    }
+  }
 });
 
 test("restores every 7.1 skin announced across the official patch sections", () => {
