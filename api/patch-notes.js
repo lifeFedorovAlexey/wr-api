@@ -142,12 +142,18 @@ export default async function handler(req, res) {
   try {
     const version = String(req.params?.version || "").trim().toLowerCase();
     if (version) {
+      const requestedLocale = typeof req.query?.locale === "string" && req.query.locale.trim()
+        ? req.query.locale.trim().toLowerCase()
+        : "ru-ru";
+      if (!["ru-ru", "en-us"].includes(requestedLocale)) {
+        setNoStore(res);
+        return res.status(400).json({ error: "Unsupported locale" });
+      }
       const rows = await db
         .select(PUBLIC_FIELDS)
         .from(patchNotes)
         .where(eq(patchNotes.patchVersion, version));
-      const selected = rows.find((row) => row.locale === "ru-ru" && row.parsedPayload)
-        || rows.find((row) => row.locale === "en-us" && row.parsedPayload);
+      const selected = rows.find((row) => row.locale === requestedLocale && row.parsedPayload);
       if (!selected) {
         setNoStore(res);
         return res.status(404).json({ error: "Not Found" });
