@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import * as dbSchema from "../db/schema.js";
 import { client, db } from "../db/client.js";
 import { buildPatchChangeRows, loadPatchChangeCatalog } from "../lib/patchNotesChangeRecords.mjs";
+import { enrichPatchSkinImages } from "../lib/patchSkinImages.mjs";
 import {
   parsePatchArticle,
   parsePatchIndex,
@@ -89,7 +90,8 @@ async function markParsed(item, locale, hash, parsed, catalog) {
     `;
     englishChanges = englishRows[0]?.parsed_payload?.changes || [];
   }
-  const changes = buildPatchChangeRows(parsed.changes, catalog, englishChanges);
+  parsed.changes = await enrichPatchSkinImages(parsed.changes, englishChanges);
+  const changes = buildPatchChangeRows(parsed.changes, catalog, englishChanges, item.version);
   parsed.changes = changes;
 
   await client.begin(async (transaction) => {
@@ -97,6 +99,8 @@ async function markParsed(item, locale, hash, parsed, catalog) {
       update patch_notes set
         title = ${parsed.title}, description = ${parsed.description || item.description || null},
         source_url = ${parsed.sourceUrl || item.url}, published_at = ${parsed.publishedAt || item.publishedAt || null},
+        effective_date = ${parsed.effectiveDate || null}, effective_region = ${parsed.effectiveRegion || null},
+        effective_date_source_url = ${parsed.effectiveDateSourceUrl || null},
         image_url = ${parsed.imageUrl || item.imageUrl || null}, content_hash = ${hash},
         parser_version = ${PATCH_NOTES_PARSER_VERSION}, parse_status = 'parsed', parse_error = null,
         parsed_payload = ${transaction.json(JSON.stringify(parsed))}, updated_at = now()
