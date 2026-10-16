@@ -11,6 +11,9 @@ async function main() {
       description text,
       source_url text not null,
       published_at timestamptz,
+      effective_date date,
+      effective_region text,
+      effective_date_source_url text,
       image_url text,
       raw_html text not null,
       content_hash text not null,
@@ -25,6 +28,9 @@ async function main() {
       check (parse_status in ('pending', 'parsed', 'failed'))
     );
   `;
+  await client`alter table patch_notes add column if not exists effective_date date;`;
+  await client`alter table patch_notes add column if not exists effective_region text;`;
+  await client`alter table patch_notes add column if not exists effective_date_source_url text;`;
   await client`create index if not exists patch_notes_published_at_idx on patch_notes (published_at desc);`;
   await client`create index if not exists patch_notes_status_idx on patch_notes (parse_status, parser_version);`;
   await client`
@@ -44,7 +50,7 @@ async function main() {
       updated_at timestamptz not null default now(),
       unique (patch_version, locale, ordinal),
       check (locale in ('en-us', 'ru-ru')),
-      check (entity_kind in ('champion', 'item', 'rune', 'system', 'skin')),
+      check (entity_kind in ('champion', 'item', 'rune', 'spell', 'system', 'skin')),
       check (change_type in ('buff', 'nerf', 'rework', 'adjustment'))
     );
   `;
@@ -52,7 +58,7 @@ async function main() {
   await client`
     alter table patch_note_changes
     add constraint patch_note_changes_entity_kind_check
-    check (entity_kind in ('champion', 'item', 'rune', 'system', 'skin'));
+    check (entity_kind in ('champion', 'item', 'rune', 'spell', 'system', 'skin'));
   `;
   await client`alter table patch_note_changes drop constraint if exists patch_note_changes_change_type_check;`;
   await client`

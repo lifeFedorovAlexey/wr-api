@@ -33,6 +33,7 @@
     "setup:news": "node ./scripts/setup-news-tables.mjs",
     "setup:patch-notes": "node ./scripts/setup-patch-notes-tables.mjs",
     "sync:patch-notes": "node ./scripts/sync-patch-notes.mjs",
+    "sync:patch-note-skin-assets": "node ./scripts/sync-patch-note-skin-assets.mjs",
     "sync:patch-note-fallback-assets": "node ./scripts/sync-patch-note-fallback-assets.mjs",
     "setup:quizzes": "node ./scripts/setup-quiz-tables.mjs",
     "setup:quiz-media-storage": "node ./scripts/setup-quiz-media-storage.mjs",

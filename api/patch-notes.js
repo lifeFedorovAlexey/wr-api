@@ -1,4 +1,4 @@
-import { and, desc, eq, isNotNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
 
 import { db } from "../db/client.js";
 import { champions, guideEntities, patchNoteChanges, patchNotes } from "../db/schema.js";
@@ -22,6 +22,9 @@ function toPublicPatch(row, changes = []) {
     description: row.description,
     sourceUrl: row.sourceUrl,
     publishedAt: row.publishedAt,
+    effectiveDate: row.effectiveDate,
+    effectiveRegion: row.effectiveRegion,
+    effectiveDateSourceUrl: row.effectiveDateSourceUrl,
     imageUrl: row.imageUrl,
     changes,
   };
@@ -34,6 +37,9 @@ const PUBLIC_FIELDS = {
   description: patchNotes.description,
   sourceUrl: patchNotes.sourceUrl,
   publishedAt: patchNotes.publishedAt,
+  effectiveDate: patchNotes.effectiveDate,
+  effectiveRegion: patchNotes.effectiveRegion,
+  effectiveDateSourceUrl: patchNotes.effectiveDateSourceUrl,
   imageUrl: patchNotes.imageUrl,
   parsedPayload: patchNotes.parsedPayload,
 };
@@ -58,18 +64,19 @@ function storedGuideAssetKey(imageUrl) {
 }
 
 async function loadImageCatalog() {
-  const [championRows, itemRows] = await Promise.all([
+  const [championRows, guideRows] = await Promise.all([
     db.select({ slug: champions.slug, icon: champions.icon }).from(champions),
     db.select({
+      kind: guideEntities.kind,
       slug: guideEntities.slug,
       imageUrl: guideEntities.imageUrl,
       tooltipImageUrl: guideEntities.tooltipImageUrl,
-    }).from(guideEntities).where(eq(guideEntities.kind, "item")),
+    }).from(guideEntities).where(inArray(guideEntities.kind, ["item", "rune", "summonerSpell"])),
   ]);
 
   return {
     champions: new Map(championRows.map((row) => [row.slug, row])),
-    items: new Map(itemRows.map((row) => [row.slug, row])),
+    guideEntities: new Map(guideRows.map((row) => [`${row.kind}:${row.slug}`, row])),
   };
 }
 
@@ -80,13 +87,23 @@ function resolveChangeImageUrl(row, catalog) {
     if (sourceUrl) return buildPublicIconPath(row.entitySlug, sourceUrl);
   }
 
-  if (row.entityKind === "item" && row.entitySlug) {
-    const item = catalog.items.get(row.entitySlug);
+  if (["item", "rune", "spell"].includes(row.entityKind) && row.entitySlug) {
+    const kind = row.entityKind === "spell" ? "summonerSpell" : row.entityKind;
+    const item = catalog.guideEntities.get(`${kind}:${row.entitySlug}`);
     const sourceUrl = item?.tooltipImageUrl || item?.imageUrl || storedSource;
     if (sourceUrl) {
-      const assetKey = buildGuideAssetKey("guide", "item", row.entitySlug, "image");
+      const assetKey = buildGuideAssetKey("guide", kind, row.entitySlug, "image");
       return buildPublicGuideAssetPath(assetKey, sourceUrl);
     }
+  }
+
+  if (row.entityKind === "skin" && row.entitySlug) {
+    const sourceUrl = storedSource || directRiotSkinSource(row.imageUrl);
+    if (sourceUrl) {
+      const assetKey = buildGuideAssetKey("patch", "skin", row.entitySlug, "image");
+      return buildPublicGuideAssetPath(assetKey, sourceUrl);
+    }
+    return row.imageUrl;
   }
 
   // Older imports persisted proxy URLs. Resolve them through the same S3 asset
@@ -94,6 +111,15 @@ function resolveChangeImageUrl(row, catalog) {
   const assetKey = storedGuideAssetKey(row.imageUrl);
   if (assetKey && storedSource) return buildPublicGuideAssetPath(assetKey, storedSource);
   return row.imageUrl;
+}
+
+function directRiotSkinSource(value) {
+  try {
+    const url = new URL(String(value || ""));
+    return url.protocol === "https:" && url.hostname === "cmsassets.rgpub.io" ? url.toString() : null;
+  } catch {
+    return null;
+  }
 }
 
 function toPublicChange(row, catalog) {
@@ -179,10 +205,10 @@ export default async function handler(req, res) {
       if (!imageUrl) continue;
       const key = `${row.patchVersion}:${row.locale}`;
       const previews = previewsByPatch.get(key) || {
-        new: [], buff: [], adjustment: [], nerf: [], removed: [], seen: new Set(),
+        new: [], buff: [], adjustment: [], rework: [], nerf: [], removed: [], seen: new Set(),
       };
       const identity = `${row.entityKind}:${row.entitySlug || row.entityName}`;
-      const tone = ["new", "buff", "adjustment", "nerf", "removed"].includes(row.changeType)
+      const tone = ["new", "buff", "adjustment", "rework", "nerf", "removed"].includes(row.changeType)
         ? row.changeType
         : "adjustment";
       const previewKey = `${tone}:${identity}`;
@@ -207,15 +233,19 @@ export default async function handler(req, res) {
           description: selected.description,
           sourceUrl: selected.sourceUrl,
           publishedAt: selected.publishedAt,
+          effectiveDate: selected.effectiveDate,
+          effectiveRegion: selected.effectiveRegion,
+          effectiveDateSourceUrl: selected.effectiveDateSourceUrl,
           imageUrl: selected.imageUrl,
           availableLocales: Object.keys(locales),
           iconPreviews: (() => {
             const previews = previewsByPatch.get(`${patchVersion}:${selected.locale}`);
-            if (!previews) return { new: [], buff: [], adjustment: [], nerf: [], removed: [] };
+            if (!previews) return { new: [], buff: [], adjustment: [], rework: [], nerf: [], removed: [] };
             return {
               new: previews.new,
               buff: previews.buff,
               adjustment: previews.adjustment,
+              rework: previews.rework,
               nerf: previews.nerf,
               removed: previews.removed,
             };
