@@ -92,6 +92,22 @@ test("records Norra as the only non-mode entity in patch 7.0b", () => {
   }
 });
 
+test("marks catalog champions as new from a Riot New Champions section", () => {
+  const champions = new Map([
+    ["zorblax", { slug: "zorblax", name: "Zorblax", aliases: ["Zorblax"] }],
+  ]);
+  const changes = parseChanges("7.3", "en-us", `<h2>NEW CHAMPIONS</h2>
+    <h3>Zorblax, the Example</h3><p>Zorblax joins the Rift.</p>`, {
+    ...emptyCatalog,
+    champions,
+  });
+  const debut = changes.find(({ entitySlug }) => entitySlug === "zorblax");
+
+  assert.ok(debut);
+  assert.equal(debut.entityName, "Zorblax");
+  assert.equal(debut.changeName, "new");
+});
+
 test("does not parse correction of Morgana's skin availability as a new skin in 7.0a", () => {
   const champions = new Map([
     ["morgana", { slug: "morgana", name: "Morgana", aliases: ["Morgana", "Моргана"] }],
