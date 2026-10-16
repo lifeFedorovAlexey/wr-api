@@ -45,3 +45,38 @@ test("uses the fallback icon when a catalog rune has no image URL", () => {
 
   assert.match(row.imageUrl, /\/wr-api\/api\/assets\/guide-rune-legend-tenacity-image\?src=/);
 });
+
+test("classifies the 7.1f K'Sante All Out drawback increase as a nerf in both locales", () => {
+  const inputs = [
+    ["K'Sante", "All Out", [
+      ["Max Health lost", "25%", "30%"],
+      ["Bonus Armor lost", "70%", "80%"],
+      ["Bonus Magic Resist lost", "70%", "80%"],
+    ]],
+    ["К'Санте", "Высвобождение", [
+      ["Потеря максимального здоровья", "25%", "30%"],
+      ["Потеря дополнительной брони", "70%", "80%"],
+      ["Потеря дополнительного сопротивления магии", "70%", "80%"],
+    ]],
+  ];
+
+  for (const [entityName, changeName, details] of inputs) {
+    const [row] = buildPatchChangeRows([{
+      entityKind: "champion",
+      entitySlug: "ksante",
+      entityName,
+      changeName,
+      details: details.map(([label, before, after]) => ({
+        label,
+        before,
+        after,
+        text: `${label}: ${before} → ${after}`,
+        component: changeName,
+      })),
+    }], emptyCatalog, [], "7.1f");
+
+    assert.equal(row.changeType, "nerf");
+    assert.equal(row.changeName, changeName);
+    assert.ok(row.details.every((detail) => detail.component === changeName));
+  }
+});
