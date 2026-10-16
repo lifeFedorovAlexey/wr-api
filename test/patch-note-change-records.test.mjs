@@ -46,7 +46,7 @@ test("uses the fallback icon when a catalog rune has no image URL", () => {
   assert.match(row.imageUrl, /\/wr-api\/api\/assets\/guide-rune-legend-tenacity-image\?src=/);
 });
 
-test("classifies the 7.1f K'Sante All Out drawback increase as a nerf in both locales", () => {
+test("classifies increased champion drawbacks as nerfs from stat labels in both locales", () => {
   const inputs = [
     ["K'Sante", "All Out", [
       ["Max Health lost", "25%", "30%"],
@@ -73,10 +73,32 @@ test("classifies the 7.1f K'Sante All Out drawback increase as a nerf in both lo
         text: `${label}: ${before} → ${after}`,
         component: changeName,
       })),
-    }], emptyCatalog, [], "7.1f");
+    }], emptyCatalog);
 
     assert.equal(row.changeType, "nerf");
     assert.equal(row.changeName, changeName);
     assert.ok(row.details.every((detail) => detail.component === changeName));
   }
+});
+
+test("reclassifies a new marker only when the entity appears in an earlier patch", () => {
+  const change = {
+    entityKind: "item",
+    entitySlug: "noonquiver",
+    entityName: "Noonquiver",
+    changeName: "new",
+    details: [],
+  };
+  const catalog = {
+    ...emptyCatalog,
+    historicalRows: [{ kind: "item", slug: "noonquiver", name: "Noonquiver", patchVersion: "7.2" }],
+  };
+
+  const [previouslyReleased] = buildPatchChangeRows([change], catalog, [], "7.3");
+  const [debut] = buildPatchChangeRows([change], emptyCatalog, [], "7.3");
+
+  assert.equal(previouslyReleased.changeType, "adjustment");
+  assert.equal(previouslyReleased.changeName, null);
+  assert.equal(debut.changeType, "new");
+  assert.equal(debut.changeName, "new");
 });

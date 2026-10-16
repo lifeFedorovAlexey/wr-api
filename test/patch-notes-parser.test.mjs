@@ -11,12 +11,26 @@ const emptyCatalog = {
   spells: new Map(),
 };
 
-function articleHtml(version, locale, body) {
+const skinChampionCatalog = {
+  ...emptyCatalog,
+  champions: new Map([
+    ["aatrox", "Aatrox", "Атрокс"], ["ambessa", "Ambessa", "Амбесса"], ["amumu", "Amumu", "Амуму"],
+    ["galio", "Galio", "Галио"], ["graves", "Graves", "Грейвз"], ["jax", "Jax", "Джакс"],
+    ["jayce", "Jayce", "Джейс"], ["khazix", "Kha'Zix", "Ка'Зикс"], ["lulu", "Lulu", "Лулу"],
+    ["master-yi", "Master Yi", "Мастер Йи"], ["nasus", "Nasus", "Насус"], ["ornn", "Ornn", "Орн"],
+    ["rakan", "Rakan", "Рэйкан"], ["renekton", "Renekton", "Ренектон"], ["ryze", "Ryze", "Райз"],
+    ["senna", "Senna", "Сенна"], ["skarner", "Skarner", "Скарнер"], ["varus", "Varus", "Варус"],
+    ["viego", "Viego", "Виего"], ["vi", "Vi", "Вай"], ["viktor", "Viktor", "Виктор"],
+    ["xayah", "Xayah", "Шая"], ["zoe", "Zoe", "Зои"],
+  ].map(([slug, name, ru]) => [name.toLowerCase(), { slug, name, nameLocalizations: { "ru-ru": ru } }])),
+};
+
+function articleHtml(version, locale, body, fragmentId = "ITEM ADJUSTMENTS") {
   const page = {
     url: `https://wildrift.leagueoflegends.com/${locale}/news/game-updates/wild-rift-patch-notes-7-1h/`,
     blades: [
       { type: "articleMasthead", title: `Wild Rift Patch Notes ${version}` },
-      { type: "articleRichText", fragmentId: "ITEM ADJUSTMENTS", richText: { body } },
+      { type: "articleRichText", fragmentId, richText: { body } },
     ],
   };
   return `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
@@ -24,13 +38,13 @@ function articleHtml(version, locale, body) {
   })}</script>`;
 }
 
-function parseChanges(version, locale, body, catalog = emptyCatalog) {
-  return parsePatchArticle(articleHtml(version, locale, body), version, locale, catalog).changes;
+function parseChanges(version, locale, body, catalog = emptyCatalog, fragmentId) {
+  return parsePatchArticle(articleHtml(version, locale, body, fragmentId), version, locale, catalog).changes;
 }
 
-test("adds official 7.0b to the patch index when Riot omits its tag", () => {
-  const patchCard = (version, locale, publishedAt) => ({
-    tags: [{ machineName: "patch_notes" }],
+test("recognizes patch-note cards by their title and URL when Riot omits the tag", () => {
+  const patchCard = (version, locale, publishedAt, tagged = true) => ({
+    ...(tagged ? { tags: [{ machineName: "patch_notes" }] } : {}),
     action: { payload: { url: `https://wildrift.leagueoflegends.com/${locale}/news/game-updates/wild-rift-patch-notes-${version.replace(".", "-")}/` } },
     title: locale === "en-us" ? `Wild Rift Patch Notes ${version}` : `Описание обновления ${version} для Wild Rift`,
     publishedAt,
@@ -41,6 +55,7 @@ test("adds official 7.0b to the patch index when Riot omits its tag", () => {
   ]) {
     const page = { blades: [{ type: "articleCardGrid", items: [
       patchCard("7.0c", locale, "2026-02-10T10:00:00.000Z"),
+      patchCard("7.0b", locale, "2026-02-03T10:00:00.000Z", false),
       patchCard("7.0a", locale, "2026-01-28T10:00:00.000Z"),
     ] }] };
     const html = `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
@@ -64,7 +79,7 @@ test("records Norra as the only non-mode entity in patch 7.0b", () => {
   const bodies = [
     ["en-us", `<h2>NEW CHAMPION</h2><h3>NORRA, THE PORTAL MISTRESS</h3><p>Norra will be released on February 4 at 00:01 UTC.</p>
       <h2>GAME MODE CHANGES</h2><h3>Arena</h3><h4>Item Adjustments</h4><h5>Manamune/Winter's Approach/Archangel's Staff</h5><ul><li>Mana: 30/36/45 → 100</li></ul>`],
-    ["ru-ru", `<h2>НОВЫЙ ЧЕМПИОН</h2><h3>ПОВЕЛИТЕЛЬНИЦА ПОРТАЛОВ</h3><p>Норра появится в игре 4 февраля в 03:01.</p>
+    ["ru-ru", `<h2>НОВЫЙ ЧЕМПИОН</h2><h3>НОРРА, ПОВЕЛИТЕЛЬНИЦА ПОРТАЛОВ</h3><p>Норра появится в игре 4 февраля в 03:01.</p>
       <h2>ИЗМЕНЕНИЯ ИГРОВЫХ РЕЖИМОВ</h2><h3>Арена</h3><h4>Изменения предметов</h4><h5>Манамунэ / Вестник зимы / Посох архангела</h5><ul><li>Мана: 30/36/45 → 100</li></ul>`],
   ];
 
@@ -77,7 +92,14 @@ test("records Norra as the only non-mode entity in patch 7.0b", () => {
       ],
     };
     const html = `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({ props: { pageProps: { page } } })}</script>`;
-    const { changes } = parsePatchArticle(html, "7.0b", locale, emptyCatalog);
+    const norraCatalog = {
+      ...emptyCatalog,
+      champions: new Map([
+        ["norra", { slug: "norra", name: "Norra", aliases: ["Norra", "Норра"] }],
+        ["норра", { slug: "norra", name: "Norra", aliases: ["Norra", "Норра"] }],
+      ]),
+    };
+    const { changes } = parsePatchArticle(html, "7.0b", locale, norraCatalog);
 
     assert.equal(changes.length, 1, `${locale}: ${changes.map(({ entityKind, entityName }) => `${entityKind}:${entityName}`).join(", ")}`);
     assert.equal(changes[0].entityKind, "champion");
@@ -177,7 +199,7 @@ test("does not parse correction of Morgana's skin availability as a new skin in 
   }
 });
 
-test("marks Ziggs as adjusted and Lord Dominik's Regards as new in patch 7.1", () => {
+test("keeps the source change type and classifies catalog items from article sections", () => {
   for (const [locale, name] of [["en-us", "Ziggs"], ["ru-ru", "Зиггс"]]) {
     const championBody = `<h2>${locale === "en-us" ? "CHAMPION CHANGES" : "ИЗМЕНЕНИЯ ЧЕМПИОНОВ"}</h2>
       <h3>${name}</h3><h4>${locale === "en-us" ? "Nerf" : "Ослабление"}</h4><ul>
@@ -187,11 +209,18 @@ test("marks Ziggs as adjusted and Lord Dominik's Regards as new in patch 7.1", (
       ...emptyCatalog,
       champions: new Map([[name.toLowerCase(), { slug: "ziggs", name, aliases: [name] }]]),
     });
-    assert.equal(changes.find(({ entityKind, entityName }) => entityKind === "champion" && entityName === name)?.changeName, "adjustment");
+    assert.equal(changes.find(({ entityKind, entityName }) => entityKind === "champion" && entityName === name)?.changeName,
+      locale === "ru-ru" ? "Ослабление" : "Nerf");
 
-    const items = parseChanges("7.1", locale, `<h2>${locale === "en-us" ? "NEW ITEMS" : "НОВЫЕ ПРЕДМЕТЫ"}</h2>
-      <h3>${locale === "en-us" ? "Lord Dominik's Regards" : "Поклон лорда Доминика"}</h3>`);
-    const lordDominik = items.find(({ entitySlug }) => entitySlug === "lord-dominiks-regard");
+    const itemName = locale === "en-us" ? "Lord Dominik's Regards" : "Поклон лорда Доминика";
+    const items = parseChanges("9.0", locale, `<h2>${locale === "en-us" ? "NEW ITEMS" : "НОВЫЕ ПРЕДМЕТЫ"}</h2>
+      <h3>${itemName}</h3>`, {
+      ...emptyCatalog,
+      items: new Map([[locale === "en-us" ? "lord dominik s regards" : "поклон лорда доминика", {
+        slug: "lord-dominiks-regards", name: "Lord Dominik's Regards", aliases: ["Lord Dominik's Regards", "Поклон лорда Доминика"],
+      }]]),
+    });
+    const lordDominik = items.find(({ entitySlug }) => entitySlug === "lord-dominiks-regards");
     assert.ok(lordDominik);
     assert.equal(lordDominik.changeName, "new");
     assert.equal(lordDominik.entityName, locale === "en-us" ? "Lord Dominik's Regards" : "Поклон лорда Доминика");
@@ -273,25 +302,159 @@ test("uses English skin fallback text for English listed skins", () => {
 
 test("captures Skarner's patch 7.3 durability changes in EN and RU", () => {
   const inputs = [
-    ["en-us", "<h4>Skarner</h4><p><i>Base Stats</i></p><ul><li>Base Health: 690 → 660</li><li>Health per Level: 128 → 132</li></ul>"],
-    ["ru-ru", "<h4>Скарнер</h4><p><i>Основные показатели</i></p><ul><li>Базовый запас здоровья: 690 → 660</li><li>Прирост здоровья: 128 → 132</li></ul>"],
+    ["en-us", "<h2>CHAMPION CHANGES</h2><h4>Skarner</h4><p><i>Base Stats</i></p><ul><li>Base Health: 690 → 660</li><li>Health per Level: 128 → 132</li></ul>"],
+    ["ru-ru", "<h2>ИЗМЕНЕНИЯ ЧЕМПИОНОВ</h2><h4>Скарнер</h4><p><i>Основные показатели</i></p><ul><li>Базовый запас здоровья: 690 → 660</li><li>Прирост здоровья: 128 → 132</li></ul>"],
   ];
+  const catalog = {
+    ...emptyCatalog,
+    champions: new Map([
+      ["skarner", { slug: "skarner", name: "Skarner", aliases: ["Skarner", "Скарнер"] }],
+      ["скарнер", { slug: "skarner", name: "Skarner", aliases: ["Skarner", "Скарнер"] }],
+    ]),
+  };
   for (const [locale, body] of inputs) {
-    const skarner = parseChanges("7.3", locale, body).find((change) => change.entityKind === "champion" && change.entitySlug === "skarner");
+    const skarner = parseChanges("7.3", locale, body, catalog).find((change) => change.entityKind === "champion" && change.entitySlug === "skarner");
     assert.ok(skarner);
     assert.deepEqual(skarner.details.map(({ before, after }) => [before, after]), [["690", "660"], ["128", "132"]]);
   }
 });
 
+test("recovers catalog champion stat headings in arbitrary future patches", () => {
+  const inputs = [
+    ["en-us", "Zorblax", "Base Health: 690 → 660", "Health per Level: 128 → 132"],
+    ["ru-ru", "Зорблакс", "Базовый запас здоровья: 690 → 660", "Прирост здоровья: 128 → 132"],
+  ];
+  const catalog = {
+    ...emptyCatalog,
+    champions: new Map([
+      ["zorblax", { slug: "zorblax", name: "Zorblax", aliases: ["Zorblax", "Зорблакс"] }],
+      ["зорблакс", { slug: "zorblax", name: "Zorblax", aliases: ["Zorblax", "Зорблакс"] }],
+    ]),
+  };
+  for (const [locale, name, health, growth] of inputs) {
+    const change = parseChanges("9.0", locale, `<h2>${locale === "en-us" ? "CHAMPION CHANGES" : "ИЗМЕНЕНИЯ ЧЕМПИОНОВ"}</h2>
+      <h4>${name}</h4><p>${locale === "en-us" ? "Base Stats" : "Основные показатели"}</p>
+      <ul><li>${health}</li><li>${growth}</li></ul>`, catalog)
+      .find((entry) => entry.entityKind === "champion" && entry.entitySlug === "zorblax");
+    assert.ok(change, `${locale}: missing recovered champion stats`);
+    assert.deepEqual(change.details.map(({ before, after }) => [before, after]), [["690", "660"], ["128", "132"]]);
+  }
+});
+
+test("keeps nested component labels in the champion-stat fallback walker", () => {
+  const catalog = {
+    ...emptyCatalog,
+    champions: new Map([["zorblax", { slug: "zorblax", name: "Zorblax", aliases: ["Zorblax"] }]]),
+  };
+  const change = parseChanges("9.0", "en-us", `
+    <h3>Zorblax</h3><h4>Base Stats</h4><ul><li>Base Health: 690 → 660</li></ul>
+    <h4>Passive</h4><ul><li>Damage: 10 → 12</li></ul>
+  `, catalog, "champion-stat-adjustments").find((entry) => entry.entityKind === "champion");
+
+  assert.ok(change);
+  assert.deepEqual(change.details.map(({ text, component }) => [text, component]), [
+    ["Base Health: 690 → 660", "Base Stats"],
+    ["Damage: 10 → 12", "Passive"],
+  ]);
+});
+
+test("keeps champion stat recovery inside champion sections and merges missing details", () => {
+  const catalog = {
+    ...emptyCatalog,
+    champions: new Map([["zorblax", { slug: "zorblax", name: "Zorblax", aliases: ["Zorblax"] }]]),
+  };
+  const systemChange = parseChanges("9.0", "en-us", `
+    <h2>GAMEPLAY SYSTEMS</h2><h3>Zorblax</h3><p>Base Stats</p>
+    <ul><li>Base Health: 690 → 660</li></ul>
+  `, catalog);
+  assert.equal(systemChange.some((change) => change.entityKind === "champion" && change.entitySlug === "zorblax"), false);
+
+  const championChanges = parseChanges("9.0", "en-us", `
+    <h2>CHAMPION CHANGES</h2><h3>Zorblax</h3><ul><li>Damage: 10 → 20</li></ul>
+    <h4>Zorblax</h4><p>Base Stats</p><ul><li>Base Health: 690 → 660</li></ul>
+  `, catalog).filter((change) => change.entityKind === "champion" && change.entitySlug === "zorblax");
+  assert.equal(championChanges.length, 1);
+  assert.ok(championChanges[0].details.some(({ text }) => text === "Damage: 10 → 20"));
+  assert.ok(championChanges[0].details.some(({ text }) => text === "Base Health: 690 → 660"));
+});
+
 test("classifies Dusk and Dawn as a nerf in both patch 7.3 locales", () => {
+  const catalog = {
+    ...emptyCatalog,
+    champions: skinChampionCatalog.champions,
+    items: new Map([
+      ["dusk and dawn", { slug: "dusk-and-dawn", name: "Dusk and Dawn" }],
+      ["рассвет и закат", { slug: "dusk-and-dawn", name: "Dusk and Dawn" }],
+    ]),
+  };
   const inputs = [
     ["en-us", "<h4>Dusk and Dawn</h4><p>Base Stats</p><ul><li>Ability Power: 70 → 60</li></ul>"],
     ["ru-ru", "<h4>Рассвет и закат</h4><p>Основные параметры</p><ul><li>Сила умений: 70 → 60</li></ul>"],
   ];
   for (const [locale, body] of inputs) {
-    const item = parseChanges("7.3", locale, body).find((change) => change.entityKind === "item" && change.entitySlug === "dusk-and-dawn");
+    const item = parseChanges("9.0", locale, body, catalog).find((change) => change.entityKind === "item" && change.entitySlug === "dusk-and-dawn");
     assert.equal(item?.changeName, "nerf");
   }
+});
+
+test("scans deeply nested item adjustment sections without duplicating nested components", () => {
+  const catalog = {
+    ...emptyCatalog,
+    items: new Map([["prismatic resolver", { slug: "prismatic-resolver", name: "Prismatic Resolver" }]]),
+  };
+  const changes = parseChanges("9.0", "en-us", `
+    <h2>GAMEPLAY UPDATES</h2><h3>ITEM ADJUSTMENTS</h3><h4>Prismatic Resolver</h4>
+    <ul><li>Ability Power: 40 → 50</li><li>Cooldown: 10 → 8</li></ul>
+    <h5>Passive</h5><ul><li>Damage: 20 → 25</li></ul>
+    <h5>Uncatalogued Component</h5><ul><li>Attack Damage: 10 → 12</li></ul>
+  `, catalog);
+  const item = changes.find((change) => change.entitySlug === "prismatic-resolver");
+
+  assert.ok(item);
+  assert.equal(item.changeName, "adjustment");
+  assert.equal(item.details.some(({ text }) => text === "Damage: 20 → 25"), true);
+  assert.equal(changes.some((change) => change.entityName === "Uncatalogued Component"), false);
+});
+
+test("does not infer an item buff or nerf from cooldown direction alone", () => {
+  const changes = parseChanges("9.0", "en-us", `
+    <h2>ITEM ADJUSTMENTS</h2><h3>Prismatic Resolver</h3>
+    <ul><li>Cooldown: 10 → 8</li></ul>
+  `, {
+    ...emptyCatalog,
+    items: new Map([["prismatic resolver", { slug: "prismatic-resolver", name: "Prismatic Resolver" }]]),
+  });
+
+  assert.equal(changes.find((change) => change.entitySlug === "prismatic-resolver")?.changeName, "adjustment");
+});
+
+test("supports h4 item sections, nested catalog items, and ambiguous stat directions", () => {
+  const catalog = {
+    ...emptyCatalog,
+    items: new Map([
+      ["prismatic resolver", { slug: "prismatic-resolver", name: "Prismatic Resolver" }],
+      ["starlit core", { slug: "starlit-core", name: "Starlit Core" }],
+    ]),
+  };
+  const changes = parseChanges("9.0", "en-us", `
+    <h2>GAMEPLAY UPDATES</h2><h3>ITEM ADJUSTMENTS</h3>
+    <h4>Prismatic Resolver</h4><ul><li>Ability Power: 40 → 50</li></ul>
+    <h5>Starlit Core</h5><ul><li>Cooldown: 10 → 8</li></ul>
+    <h4>OTHER ITEMS</h4><h5>Starlit Core</h5><ul><li>Health: 100 → 120</li></ul>
+  `, catalog);
+  const parent = changes.find((change) => change.entitySlug === "prismatic-resolver");
+  const child = changes.find((change) => change.entitySlug === "starlit-core");
+
+  assert.ok(parent, "h5 item under an h4 item category is recovered");
+  assert.ok(child, "a nested catalog item is not discarded as a component");
+  assert.equal(parent.changeName, "buff");
+  assert.equal(child.changeName, "adjustment");
+
+  const ambiguous = parseChanges("9.0", "en-us", `
+    <h2>ITEM ADJUSTMENTS</h2><h3>Prismatic Resolver</h3>
+    <ul><li>Ability Power: 40 → 50</li><li>Cooldown: 10 → 12</li></ul>
+  `, catalog).find((change) => change.entitySlug === "prismatic-resolver");
+  assert.equal(ambiguous?.changeName, "adjustment");
 });
 
 test("classifies Sivir's mixed 7.3 champion changes as an adjustment in both locales", () => {
@@ -440,7 +603,49 @@ test("keeps patch 7.3b jungle monster names, explanation, and localized health d
   }
 });
 
+test("collects grouped jungle monster stat rows regardless of patch version", () => {
+  const body = `<h2>GAME MODE CHANGES</h2><h3>Arena</h3><h4>Jungle Monsters</h4>
+    <p>Arena-only monster durability.</p><p>Silver Raptor</p><ul><li>Base Health: 700 → 750</li></ul>
+    <h2>Other Battlefield Content</h2><h4>Jungle Monsters</h4>
+    <p>Monsters receive a durability update.</p>
+    <p>Silver Raptor</p><ul><li>Base Health: 700 → 750</li><li>Health per level: 70 → 80</li></ul>`;
+  const jungle = parseChanges("9.0", "en-us", body)
+    .find((change) => change.entityKind === "system" && change.entityName === "Jungle Monsters");
+
+  assert.ok(jungle);
+  assert.equal(jungle.details[0].text, "Monsters receive a durability update.");
+  assert.deepEqual(jungle.details.filter((detail) => detail.before && detail.after).map((detail) => [
+    detail.component,
+    detail.label,
+    detail.before,
+    detail.after,
+  ]), [
+    ["Silver Raptor", "Base Health", "700", "750"],
+    ["Silver Raptor", "Health per level", "70", "80"],
+  ]);
+  assert.equal(jungle.details.some(({ text }) => /Arena-only/.test(text)), false);
+  assert.equal(jungle.details.filter(({ label }) => label === "Base Health").length, 1);
+});
+
+test("does not duplicate a guild leaderboard row already recovered from its heading", () => {
+  const name = "Guild Leaderboard Settlement Rules Optimization";
+  const changes = parseChanges("7.3b", "en-us", `
+    <h2>OTHER ADJUSTMENTS</h2><h3>${name}</h3>
+    <p>Guild Leaderboard points are calculated at 11:55 PM every Sunday, and the leaderboard refreshes at 12:00 AM.</p>
+  `);
+  assert.equal(changes.filter((change) => change.entityKind === "system" && change.entityName === name).length, 1);
+});
+
 test("adds localized 7.2 tier 3 items and preserves the single confirmed Scorpio Deity skin", () => {
+  const catalog = {
+    ...emptyCatalog,
+    items: new Map([
+      ["void staff", { slug: "void-staff", name: "Void Staff" }],
+      ["посох бездны", { slug: "void-staff", name: "Void Staff" }],
+      ["banshee s veil", { slug: "banshees-veil", name: "Banshee's Veil" }],
+      ["завеса банши", { slug: "banshees-veil", name: "Banshee's Veil" }],
+    ]),
+  };
   const bodies = [
     ["en-us", [
       "<h2>ITEM ADJUSTMENTS</h2><h4>Void Staff</h4><p>Void Staff remains a late-game magic penetration item.</p>",
@@ -454,7 +659,7 @@ test("adds localized 7.2 tier 3 items and preserves the single confirmed Scorpio
     ].join("")],
   ];
   for (const [locale, body] of bodies) {
-    const changes = parseChanges("7.2", locale, body);
+    const changes = parseChanges("7.2", locale, body, catalog);
     const voidRows = changes.filter((change) => change.entityKind === "item" && change.entitySlug === "void-staff");
     const bansheeRows = changes.filter((change) => change.entityKind === "item" && change.entitySlug === "banshees-veil");
     const voidStaff = voidRows[0];
@@ -469,13 +674,26 @@ test("adds localized 7.2 tier 3 items and preserves the single confirmed Scorpio
     assert.ok(banshee?.details.some((detail) => detail.text.includes(locale === "ru-ru" ? "объединили эффект" : "folded Crown")));
     const skarnerSkin = changes.find((change) => change.entityKind === "skin" && change.entitySlug === "skarner-scorpio-deity-skarner");
     if (locale === "ru-ru") {
-      assert.equal(skarnerSkin?.entityName, "Космическое жало Скарнер");
+      assert.equal(skarnerSkin?.entityName, "Космическое жало Скарнер", changes.filter(({ entityKind }) => entityKind === "skin").map(({ entityName, entitySlug }) => `${entityName} (${entitySlug})`).join(" | "));
       assert.equal(skarnerSkin?.changeName, "new");
       assert.equal(skarnerSkin?.sectionName, "Облики патча");
       assert.match(skarnerSkin?.details[0].text || "", /27 августа/);
       assert.equal(changes.some((change) => change.entitySlug === "skarner-scorpio-deity-ancient-wisdom-skarner"), false);
     }
   }
+});
+
+test("extracts an unseen item's stats from an arbitrary patch item-adjustments section", () => {
+  const changes = parseChanges("9.0", "en-us", `
+    <h2>ITEM ADJUSTMENTS</h2><h4>Prismatic Resolver</h4>
+    <h5>Base Stats</h5><ul><li>Ability Power: 70 → 80</li></ul>
+  `);
+  const item = changes.find((entry) => entry.entityKind === "item" && entry.entityName === "Prismatic Resolver");
+
+  assert.ok(item);
+  assert.equal(item.entitySlug, undefined);
+  assert.equal(item.changeName, "buff");
+  assert.equal(item.details[0].after, "80");
 });
 
 test("keeps both 7.2 Scorpio Deity skins as new English Wild Pass entries", () => {
@@ -490,8 +708,29 @@ test("keeps both 7.2 Scorpio Deity skins as new English Wild Pass entries", () =
   `, catalog).filter(({ entityKind }) => entityKind === "skin");
 
   assert.deepEqual(skins.map(({ entitySlug, changeName, sectionName }) => [entitySlug, changeName, sectionName]), [
-    ["skarner-scorpio-deity-skarner", "new", "Patch Skins"],
-    ["skarner-scorpio-deity-ancient-wisdom-skarner", "new", "Patch Skins"],
+    ["skarner-scorpio-deity-skarner", "new", "SKINS"],
+    ["skarner-scorpio-deity-ancient-wisdom-skarner", "new", "SKINS"],
+  ]);
+});
+
+test("extracts named skins from probability tables without patch-specific rules", () => {
+  const catalog = {
+    ...emptyCatalog,
+    champions: new Map([["ahri", { slug: "ahri", name: "Ahri", aliases: ["Ahri"] }]]),
+  };
+  const changes = parseChanges("9.0", "en-us", `
+    <h2>OTHER ADJUSTMENTS</h2>
+    <p>The festival chest contains six cosmetic variants.</p>
+    <table><tbody>
+      <tr><td>Festival Chest with Ahri</td><td>5%</td></tr>
+      <tr><td>Festival Ahri Ruby</td><td>12.5%</td></tr>
+      <tr><td>Festival Ahri Sapphire</td><td>12.5%</td></tr>
+    </tbody></table>
+  `, catalog).filter((change) => change.entityKind === "skin");
+
+  assert.deepEqual(changes.map(({ entityName, entitySlug, changeName }) => [entityName, entitySlug, changeName]), [
+    ["Festival Ahri Ruby", "ahri-festival-ahri-ruby", "available"],
+    ["Festival Ahri Sapphire", "ahri-festival-ahri-sapphire", "available"],
   ]);
 });
 
@@ -543,7 +782,7 @@ test("fills the 7.2 localized skin release and return rows from the official art
       ["jayce-superhero-jayce", "returning"], ["jayce-ascended-superhero-jayce", "returning"],
       ["xayah-elderwood-xayah", "returning"], ["xayah-elderwood-xayah-indigo", "returning"],
       ["rakan-elderwood-rakan", "returning"], ["rakan-elderwood-rakan-turquoise", "returning"],
-      ["zoe-cyber-pop-zoe-chromas", "available"], ["nasus-battlecast-nasus", null], ["lulu-purple-garlic-lulu", "new"],
+      ["zoe-cyber-pop-zoe-chromas", "available"], ["nasus-battlecast-nasus", "returning"], ["lulu-purple-garlic-lulu", "new"],
     ]],
     ["ru-ru", `
       <p>Эксклюзивный образ «Блистательная знаменитость Ренектон» появится в игре 10 июля.</p>
@@ -559,40 +798,27 @@ test("fills the 7.2 localized skin release and return rows from the official art
       ["jayce-superhero-jayce", "returning"], ["jayce-ascended-superhero-jayce", "returning"],
       ["xayah-elderwood-xayah", "returning"], ["xayah-elderwood-xayah-indigo", "returning"],
       ["rakan-elderwood-rakan", "returning"], ["rakan-elderwood-rakan-turquoise", "returning"],
-      ["zoe-cyber-pop-zoe-chromas", "available"], ["nasus-battlecast-nasus", null], ["lulu-purple-garlic-lulu", "new"],
+      ["zoe-cyber-pop-zoe-chromas", "available"], ["nasus-battlecast-nasus", "returning"], ["lulu-purple-garlic-lulu", "new"],
     ]],
   ];
 
   for (const [locale, body, expected] of inputs) {
-    const changes = parseChanges("7.2", locale, body);
+    const changes = parseChanges("7.2", locale, body, skinChampionCatalog);
     for (const [slug, status] of expected) {
       const matches = changes.filter((change) => change.entityKind === "skin" && change.entitySlug === slug);
-      assert.equal(matches.length, 1, `${locale} should emit one row for ${slug}`);
+      assert.equal(matches.length, 1, `${locale} should emit one row for ${slug}; found ${changes.filter(({ entityKind }) => entityKind === "skin").map(({ entityName, entitySlug, changeName }) => `${entityName} (${entitySlug}, ${changeName})`).join(" | ")}`);
       assert.equal(matches[0].changeName, status, `${locale} status for ${slug}`);
     }
   }
 });
 
-test("keeps all seven 7.2 tier-three boot upgrades and classifies Mercury's Treads as adjusted", () => {
-  const bootSlugs = [
-    "spellslingers-shoes", "chainlaced-crushers", "gunmetal-greaves", "armored-advance",
-    "immortal-treads", "armorcrusher-boots", "crimson-lucidity",
-  ];
-  for (const locale of ["en-us", "ru-ru"]) {
-    const changes = parseChanges("7.2", locale, "<h2>BOOTS ADJUSTMENTS</h2><p>Tier 3 boots.</p>");
-    for (const slug of bootSlugs) {
-      const row = changes.find((change) => change.entityKind === "item" && change.entitySlug === slug);
-      assert.ok(row, `${locale} should include ${slug}`);
-      assert.equal(row.changeName, "new");
-    }
-  }
-
+test("infers item adjustment type from the article's changed stats", () => {
   const catalog = {
     ...emptyCatalog,
     items: new Map([["mercury s treads", { slug: "mercurys-treads", name: "Mercury's Treads" }]]),
   };
   const mercury = parseChanges("7.2", "en-us", `
-    <h2>BOOTS ADJUSTMENTS</h2><h4>Mercury's Treads</h4><p>Base Stats</p>
+    <h2>ITEM ADJUSTMENTS</h2><h3>Mercury's Treads</h3><p>Base Stats</p>
     <ul><li>Price: 900 → 1200</li><li>Tenacity: 0 → 15%</li></ul>
   `, catalog).find((change) => change.entityKind === "item" && change.entitySlug === "mercurys-treads");
   assert.equal(mercury?.changeName, "adjustment");
@@ -651,6 +877,24 @@ test("preserves patch 7.2 non-mode bug fixes while excluding mode-only material"
   }
 });
 
+test("filters nested Battlefest content without dropping general bug fixes", () => {
+  const changes = parseChanges("6.3", "en-us", `
+    <h1>BATTLEFEST SEASON 3</h1>
+    <h2>New Gameplay</h2><h3>Unbound Frenzy</h3>
+    <h4>New Champions</h4><h5>Poppy</h5><p>Mode-only champion changes.</p>
+    <h2>AAA ARAM</h2><h3>New Items</h3><h4>Rite of Ruin</h4><p>Mode-only item stats.</p>
+    <h2>Arena</h2><h3>New Item</h3><h4>Guinsoo's Rageblade</h4><p>Mode-only item stats.</p>
+    <h2>Bug Fixes</h2><ul><li>Fixed a general Rift bug.</li></ul>
+    <h2>SKINS</h2><ul><li>Superhero Vi</li></ul>
+  `, skinChampionCatalog);
+
+  assert.equal(changes.some((change) => /Poppy|Rite of Ruin|Guinsoo/i.test(change.entityName)), false);
+  const fixes = changes.find((change) => change.entityKind === "system" && change.sectionName === "Bug Fixes");
+  assert.ok(fixes);
+  assert.deepEqual(fixes.details.map((detail) => detail.text), ["Fixed a general Rift bug."]);
+  assert.ok(changes.some((change) => change.entityKind === "skin" && /superhero vi/i.test(change.entityName)));
+});
+
 test("keeps every patch 7.2 non-mode system heading and its details separate in both locales", () => {
   const expected = [
     ["bounty-system-update", "Bounty System Update", "Изменения системы наград за голову"],
@@ -688,15 +932,14 @@ test("keeps every patch 7.2 non-mode system heading and its details separate in 
       return `<h3>${row[nameIndex]}</h3><p>${detailTexts[index]}</p>${bountyPart}`;
     }).join("\n");
     const tempo = locale === "en-us"
-      ? "<h2>Battlefield Tempo</h2><p>First battlefield tempo detail.</p><p>Second battlefield tempo detail.</p>"
-      : "<h2>Темп сражения</h2><p>Первая деталь темпа сражения.</p><p>Вторая деталь темпа сражения.</p>";
+      ? "<h2>Battlefield Tempo Adjustments</h2><p>First battlefield tempo detail.</p><p>Second battlefield tempo detail.</p>"
+      : "<h2>Изменения темпа матча</h2><p>Первая деталь темпа сражения.</p><p>Вторая деталь темпа сражения.</p>";
     const aramLoadout = locale === "en-us"
       ? "<h3>LOADOUT SYSTEM</h3><p>The new loadout is specific to ARAM.</p>"
       : "<h3>СИСТЕМА СНАРЯЖЕНИЯ</h3><p>Новый набор снаряжения предназначен только для ARAM.</p>";
     const changes = parseChanges("7.2", locale, `
       <h2>${locale === "en-us" ? "BATTLEFIELD ADJUSTMENTS" : "ИЗМЕНЕНИЯ НА ПОЛЕ БОЯ"}</h2>
       ${headings}
-      <h3>Battlefield Tempo Adjustments</h3><p>Stale article row must be canonicalized.</p>
       ${tempo}
       ${aramLoadout}
       <h2>${locale === "en-us" ? "GAME MODE CHANGES" : "ИЗМЕНЕНИЯ ИГРОВЫХ РЕЖИМОВ"}</h2>
@@ -715,7 +958,9 @@ test("keeps every patch 7.2 non-mode system heading and its details separate in 
     assert.equal(ahri.details.some((detail) => /battlefield tempo|темпа сражения/i.test(detail.text)), false);
     const tempoRow = changes.find((change) => change.entityKind === "system" && change.entitySlug === "battlefield-tempo-adjustments");
     assert.ok(tempoRow, `${locale} should retain the separate Battlefield Tempo row`);
-    assert.equal(tempoRow.details.length, 8);
+    assert.deepEqual(tempoRow.details.map(({ text }) => text), locale === "en-us"
+      ? ["First battlefield tempo detail.", "Second battlefield tempo detail."]
+      : ["Первая деталь темпа сражения.", "Вторая деталь темпа сражения."]);
     assert.equal(changes.filter((change) => change.entityKind === "system"
       && (change.entitySlug === "battlefield-tempo-adjustments" || /battlefield tempo adjustments/i.test(change.entityName))).length, 1);
     assert.equal(changes.some((change) => change.entityKind === "system"
@@ -723,12 +968,19 @@ test("keeps every patch 7.2 non-mode system heading and its details separate in 
   }
 });
 
-test("filters the 7.1a mode-only augment fix from general system rows", () => {
-  const changes = parseChanges("7.1a", "en-us", `
-    <h2>BUG FIXES</h2><ul><li>Fixed an issue where augments could be switched in AAA ARAM champion select.</li></ul>
+test("filters explicitly mode-specific system notes without filtering unrelated augment notes", () => {
+  const changes = parseChanges("9.0", "en-us", `
+    <h2>BUG FIXES</h2><ul>
+      <li>Fixed an issue where augments could be switched in AAA ARAM champion select.</li>
+      <li>Fixed an issue where an augment description was incorrect in Ranked.</li>
+    </ul>
     <h2>GAME MODE CHANGES</h2><h3>AAA ARAM</h3><p>Mode changes.</p>
   `);
-  assert.equal(changes.some((change) => change.entityKind === "system"), false);
+  const systemRows = changes.filter((change) => change.entityKind === "system");
+  assert.equal(systemRows.length, 1);
+  assert.deepEqual(systemRows[0].details.map(({ text }) => text), [
+    "Fixed an issue where an augment description was incorrect in Ranked.",
+  ]);
 });
 
 test("adds the two non-mode system changes from patch 7.1 in both locales", () => {
@@ -747,13 +999,26 @@ test("adds the two non-mode system changes from patch 7.1 in both locales", () =
 
   for (const [locale, body, names] of inputs) {
     const changes = parseChanges("7.1", locale, body);
+    const futureChanges = parseChanges("9.0", locale, body);
     for (const name of names) {
       const row = changes.find((change) => change.entityKind === "system" && change.entityName === name);
       assert.ok(row, `${locale} should include ${name}`);
+      assert.ok(futureChanges.some((change) => change.entityKind === "system" && change.entityName === name), `${locale}: future parser missed ${name}`);
       assert.equal(row.details.length, 1);
       assert.match(row.details[0].text, /kill|убийств|aggro|агрессия/i);
     }
   }
+});
+
+test("does not turn a system fragment category heading into an entity row", () => {
+  const changes = parseChanges("9.0", "en-us", `
+    <h2>OTHER ADJUSTMENTS</h2>
+    <h3>Audio Upgrade</h3><p>New sound effects.</p>
+  `, emptyCatalog, "OTHER ADJUSTMENTS");
+
+  assert.equal(changes.filter((change) => change.entityKind === "system").length, 1);
+  assert.equal(changes.some((change) => change.entityName === "Other Adjustments"), false);
+  assert.equal(changes.find((change) => change.entityName === "Audio Upgrade")?.details[0].text, "New sound effects.");
 });
 
 test("preserves the five emoji-only minion notes in 7.0g and filters mode notes", () => {
@@ -791,7 +1056,17 @@ test("preserves the five emoji-only minion notes in 7.0g and filters mode notes"
     assert.deepEqual(minionRows.map((change) => change.details.map((detail) => detail.text)), locale === "ru-ru"
       ? [["🔪🐶🛡️"], ["🐶🪄"], ["🚀🐶", "🛡️"], ["🚗🐶", "🔪🛡️🔪"], ["🛡️💪🐶🗡️"]]
       : [["🔪🐶🛡️"], ["🐶🪄"], ["🚀🐶", "🛡️"], ["🚗🐶", "🔪🛡️🔪"], ["🛡️💪🐶🗡️"]]);
+    assert.equal(parseChanges("9.0", locale, body).filter((change) => names.includes(change.entityName)).length, 5);
   }
+});
+
+test("does not recover emoji-only minion rows from an Arena subsection", () => {
+  const changes = parseChanges("9.0", "en-us", `
+    <h2>GAME MODE CHANGES</h2><h3>Arena</h3>
+    <h4>Melee Minion</h4><p>🔪🐶🛡️</p>
+  `);
+
+  assert.equal(changes.some((change) => change.entityKind === "system" && change.entityName === "Melee Minion"), false);
 });
 
 test("parses 7.2d champion loadout recommendations in both locales", () => {
@@ -984,11 +1259,11 @@ test("preserves all 13 general bug fixes from patch 7.1f in both locales", () =>
   }
 });
 
-test("keeps the 7.1g Red Brambleback burn level scaling in English", () => {
-  const changes = parseChanges("7.1g", "en-us", `
+test("parses jungle monster entities and preserves article stat wording", () => {
+  const changes = parseChanges("9.0", "en-us", `
     <h2>JUNGLE CHANGES</h2><h3>Red Brambleback</h3>
-    <p>Burn damage to champions: 6–34 → 5–15 at all levels.</p>
-    <p>Burn damage to non-champions: 3–17 → 5–15 at all levels.</p>
+    <p>Burn damage to champions: 6–34 → 5–15 (scales starting at level 6).</p>
+    <p>Burn damage to non-champions: 3–17 → 5–15 (scales starting at level 6).</p>
   `);
   const brambleback = changes.find((change) => change.entityKind === "system" && change.entitySlug === "red-brambleback");
   assert.ok(brambleback);
@@ -1037,15 +1312,15 @@ test("localizes 7.1 champion and skin sections and keeps official skin release d
 
   const patch71hTaliyah = parseChanges("7.1h", "en-us", `
     <h2>CHAMPION CHANGES</h2><h3>Taliyah</h3>
-    <h4>nerf</h4><ul><li>Movement Speed: 355 → 350</li></ul>
-    <h4>nerf</h4><ul><li>Movement Speed: 10%/15%/25%/40% → 5%/10%/20%/35%</li></ul>
-    <h4>nerf</h4><ul><li>Cooldown reduction on Worked Ground: 50% → 30%</li></ul>
+    <h4>Base Stats</h4><ul><li>Movement Speed: 355 → 350</li></ul>
+    <h4>Rock Surfing</h4><ul><li>Movement Speed: 10%/15%/25%/40% → 5%/10%/20%/35%</li></ul>
+    <h4>Threaded Volley</h4><ul><li>Cooldown reduction on Worked Ground: 50% → 30%</li></ul>
   `, catalog).find((change) => change.entityKind === "champion" && /taliyah/i.test(change.entityName));
   assert.equal(patch71hTaliyah.changeName, "Base Stats");
   assert.deepEqual(patch71hTaliyah.details.map(({ component }) => component), ["Base Stats", "Rock Surfing", "Threaded Volley"]);
 
   const patch71fKsante = parseChanges("7.1f", "en-us", `
-    <h2>CHAMPION CHANGES</h2><h3>K'Sante</h3><h4>nerf</h4>
+    <h2>CHAMPION CHANGES</h2><h3>K'Sante</h3><h4>All Out</h4>
     <ul><li>Max Health lost: 25% → 30%</li><li>Bonus Armor lost: 70% → 80%</li></ul>
   `, catalog).find((change) => change.entityKind === "champion" && /k.?sante/i.test(change.entityName));
   assert.equal(patch71fKsante.changeName, "All Out");
@@ -1197,18 +1472,31 @@ test("restores every 7.1 skin announced across the official patch sections", () 
       "Боевая душа Виего", "Боевая душа Сенна", "Боевая душа Амбесса", "Боевая душа Виктор",
     ],
   };
-
   for (const [locale, expectedNames] of skinsByLocale) {
-    const changes = parseChanges("7.1", locale, `<h2>SKINS</h2><ul>${sourceNames[locale].map((name) => `<li>${name}</li>`).join("")}</ul>`);
+    const heading = locale === "ru-ru" ? "ОБЛИКИ" : "SKINS";
+    const newNames = locale === "ru-ru"
+      ? ["Блистательная знаменитость Джакс", "Боевая душа Варус", "Вознесшаяся Боевая душа Варус", "Киберпоп-Зои", "Боевая душа Виего", "Боевая душа Сенна", "Боевая душа Амбесса", "Боевая душа Виктор"]
+      : ["Glorious Eminence Jax", "new skin Soul Fighter Varus", "Ascended Soul Fighter Varus", "Cyber Pop Zoe", "Soul Fighter Viego", "Soul Fighter Senna", "Soul Fighter Ambessa", "Soul Fighter Viktor"];
+    const returningNames = locale === "ru-ru"
+      ? ["Защитник Хекспедиции Галио", "Суперзлодей Грейвз", "Вознесшийся Суперзлодей Грейвз", "Супергероиня Вай", "Вознесшаяся Супергероиня Вай", "Похититель снов Насус", "Вознесшийся Похититель снов Насус", "Защитница в пижаме Лулу"]
+      : ["Hexplorer Galio", "Supervillain Graves", "Ascended Supervillain Graves", "Superhero Vi", "Ascended Superhero Vi", "Dream Raider Nasus", "Ascended Dream Raider Nasus", "Pajama Guardian Lulu"];
+    const availableNames = locale === "ru-ru" ? ["Машинист Орн", "Машинист Орн (желтый)"] : ["Choo-Choo Ornn", "Choo-Choo Ornn (Yellow)"];
+    const masterYi = sourceNames[locale].find((name) => /(?:master yi|мастер йи)/i.test(name));
+    const body = `<h2>${heading}</h2><h3>${locale === "ru-ru" ? "Новые облики" : "New Skins"}</h3><ul>${newNames.map((name) => `<li>${name}</li>`).join("")}</ul>`
+      + `<h3>${locale === "ru-ru" ? "Повторные облики" : "Returning Skins"}</h3><ul>${returningNames.map((name) => `<li>${name}</li>`).join("")}</ul>`
+      + `<h3>${locale === "ru-ru" ? "Облики" : "Skins"}</h3><ul>${[...availableNames, masterYi].map((name) => `<li>${name}</li>`).join("")}</ul>`;
+    const changes = parseChanges("7.1", locale, body, skinChampionCatalog);
     const skins = changes.filter(({ entityKind }) => entityKind === "skin");
-    assert.equal(skins.length, 19, locale);
+    assert.equal(skins.length, 19, `${locale}: ${skins.map(({ entityName, entitySlug, changeName }) => `${entityName} (${entitySlug}, ${changeName})`).join(" | ")}`);
     assert.deepEqual(new Set(skins.map(({ entityName }) => entityName)), new Set(expectedNames), locale);
+    const ascendedVarus = skins.find(({ entityName }) => /ascended soul fighter varus|вознесшаяся боевая душа варус/i.test(entityName));
+    assert.equal(ascendedVarus.entitySlug, "varus-ascended-soul-fighter-varus", locale);
     assert.equal(skins.find(({ entityName }) => entityName === (locale === "ru-ru"
       ? "Мастер Йи из Пси-отряда (особое издание)" : "Psy Ops Master Yi (Special Edition)"))?.sourceChampionSlug, "master-yi");
-    assert.equal(skins.filter(({ changeName }) => changeName === "new").length, 8, locale);
+    assert.equal(skins.filter(({ changeName }) => changeName === "new").length, 10, `${locale}: ${skins.map(({ entityName, changeName }) => `${entityName}=${changeName}`).join(" | ")}`);
     assert.equal(skins.filter(({ changeName }) => changeName === "returning").length, 8, locale);
-    assert.equal(skins.filter(({ changeName }) => changeName === "available").length, 2, locale);
-    assert.equal(skins.filter(({ changeName }) => changeName === null).length, 1, locale);
+    assert.equal(skins.filter(({ changeName }) => changeName === "available").length, 1, locale);
+    assert.equal(skins.filter(({ changeName }) => changeName === null).length, 0, locale);
     assert.ok(skins.filter(({ changeName }) => changeName === "returning").every(({ sectionName }) =>
       sectionName === (locale === "ru-ru" ? "Повторные облики" : "Returning Skins")));
     assert.ok(skins.filter(({ changeName }) => changeName !== "returning").every(({ sectionName }) =>
