@@ -36,6 +36,10 @@ const FALLBACK_ITEM_SLUGS = [
   "whispering-circlet",
   "echoes-of-helia",
 ];
+const FALLBACK_ITEM_CATALOG_SLUGS = new Map([
+  // Patch-note wording uses "At Wit's End", while the guide catalog uses the canonical "Wit's End" slug.
+  ["at-wits-end", "wits-end"],
+]);
 const FALLBACK_RUNE_SLUGS = [
   "relentless-hunter",
   "legend-haste",
@@ -68,7 +72,11 @@ async function main() {
   let skipped = 0;
 
   for (const { kind, slug, record } of [
-    ...FALLBACK_ITEM_SLUGS.map((slug) => ({ kind: "item", slug, record: [...catalog.items.values()].find((item) => item.slug === slug) })),
+    ...FALLBACK_ITEM_SLUGS.map((slug) => ({
+      kind: "item",
+      slug,
+      record: [...catalog.items.values()].find((item) => item.slug === (FALLBACK_ITEM_CATALOG_SLUGS.get(slug) || slug)),
+    })),
     ...FALLBACK_RUNE_SLUGS.map((slug) => ({ kind: "rune", slug, record: catalog.runeRecords.find((rune) => rune.slug === slug) })),
   ]) {
     const sourceUrl = record?.tooltipImageUrl || record?.imageUrl;
