@@ -15,7 +15,7 @@ const confirmedDates = new Map([
 
 const unconfirmedVersions = [
   "7.3b", "7.3a", "7.2f", "7.2e", "7.2d", "7.2c", "7.2a",
-  "7.1h", "7.1g", "7.1e", "7.1d", "7.1b", "7.1a", "7.0g", "7.0f",
+  "7.1h", "7.1g", "7.1e", "7.1d", "7.1b", "7.1a", "7.0g", "7.0f", "7.0b",
 ];
 
 test("returns only CN dates supported by actual rollout reports", () => {
