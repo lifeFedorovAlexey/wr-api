@@ -79,7 +79,7 @@ test("records Norra as the only non-mode entity in patch 7.0b", () => {
   const bodies = [
     ["en-us", `<h2>NEW CHAMPION</h2><h3>NORRA, THE PORTAL MISTRESS</h3><p>Norra will be released on February 4 at 00:01 UTC.</p>
       <h2>GAME MODE CHANGES</h2><h3>Arena</h3><h4>Item Adjustments</h4><h5>Manamune/Winter's Approach/Archangel's Staff</h5><ul><li>Mana: 30/36/45 → 100</li></ul>`],
-    ["ru-ru", `<h2>НОВЫЙ ЧЕМПИОН</h2><h3>НОРРА, ПОВЕЛИТЕЛЬНИЦА ПОРТАЛОВ</h3><p>Норра появится в игре 4 февраля в 03:01.</p>
+    ["ru-ru", `<h2>НОВЫЙ ЧЕМПИОН</h2><h3>ПОВЕЛИТЕЛЬНИЦА ПОРТАЛОВ</h3><p>Йордл Норра, Повелительница порталов, – чародейка. Норра мечтает вернуться домой вместе с кошечкой Юми.</p>
       <h2>ИЗМЕНЕНИЯ ИГРОВЫХ РЕЖИМОВ</h2><h3>Арена</h3><h4>Изменения предметов</h4><h5>Манамунэ / Вестник зимы / Посох архангела</h5><ul><li>Мана: 30/36/45 → 100</li></ul>`],
   ];
 
@@ -411,7 +411,7 @@ test("scans deeply nested item adjustment sections without duplicating nested co
   const item = changes.find((change) => change.entitySlug === "prismatic-resolver");
 
   assert.ok(item);
-  assert.equal(item.changeName, "adjustment");
+  assert.equal(item.changeName, "buff");
   assert.equal(item.details.some(({ text }) => text === "Damage: 20 → 25"), true);
   assert.equal(changes.some((change) => change.entityName === "Uncatalogued Component"), false);
 });
@@ -455,6 +455,32 @@ test("supports h4 item sections, nested catalog items, and ambiguous stat direct
     <ul><li>Ability Power: 40 → 50</li><li>Cooldown: 10 → 12</li></ul>
   `, catalog).find((change) => change.entitySlug === "prismatic-resolver");
   assert.equal(ambiguous?.changeName, "adjustment");
+});
+
+test("starts a new item at a deeper heading instead of folding it into the previous item", () => {
+  const catalog = {
+    ...emptyCatalog,
+    items: new Map([
+      ["youmuu s ghostblade", { slug: "youmuus-ghostblade", name: "Youmuu's Ghostblade" }],
+      ["locket of the iron solari", { slug: "locket-enchant", name: "Locket of the Iron Solari" }],
+      ["statikk shiv", { slug: "statikk-shiv", name: "Statikk Shiv" }],
+      ["yun tal wildarrows", { slug: "yun-tal-wildarrows", name: "Yun Tal Wildarrows" }],
+    ]),
+  };
+  const changes = parseChanges("9.0", "en-us", `
+    <h2>GAMEPLAY CHANGES</h2><h2>Items</h2>
+    <h4>Youmuu's Ghostblade</h4><p>Base Stats</p><ul><li>Price: 3000 → 2900</li></ul>
+    <h4>Locket of the Iron Solari</h4><p>Base Stats</p><ul><li>Price: 2600 → 2500</li><li>Health: 200 → 300</li></ul>
+    <h4>Statikk Shiv</h4><p>Base Stats</p><ul><li>Price: 3000 → 2900</li></ul>
+    <h4>Yun Tal Wildarrows</h4><p>Base Stats</p><ul><li>Price: 3100 → 3000</li></ul>
+  `, catalog).filter((change) => change.entityKind === "item");
+
+  assert.deepEqual(changes.map(({ entitySlug, details }) => [entitySlug, details.map(({ text }) => text)]), [
+    ["youmuus-ghostblade", ["Price: 3000 → 2900"]],
+    ["locket-enchant", ["Price: 2600 → 2500", "Health: 200 → 300"]],
+    ["statikk-shiv", ["Price: 3000 → 2900"]],
+    ["yun-tal-wildarrows", ["Price: 3100 → 3000"]],
+  ]);
 });
 
 test("classifies Sivir's mixed 7.3 champion changes as an adjustment in both locales", () => {

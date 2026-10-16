@@ -19,6 +19,22 @@ const REQUEST_TIMEOUT_MS = Number(process.env.PATCH_NOTES_REQUEST_TIMEOUT_MS || 
 const MAX_RETRIES = Number(process.env.PATCH_NOTES_FETCH_RETRIES || 3);
 const MAX_HISTORY = Number(process.env.PATCH_NOTES_MAX_HISTORY || 32);
 const FORCE_SOURCE_REFRESH = process.argv.includes("--refresh-source");
+const REPARSE_ARCHIVED = process.argv.includes("--reparse-archived");
+const REQUESTED_PATCH_VERSIONS = process.argv
+  .filter((argument) => argument.startsWith("--patch-version="))
+  .map((argument) => argument.slice("--patch-version=".length).trim());
+
+for (const version of REQUESTED_PATCH_VERSIONS) {
+  if (!/^\d+\.\d+[a-z]?$/i.test(version)) throw new Error(`Invalid --patch-version value: ${version}`);
+}
+
+function comparePatchVersions(left, right) {
+  const a = String(left).match(/^(\d+)\.(\d+)([a-z]?)$/i) || [];
+  const b = String(right).match(/^(\d+)\.(\d+)([a-z]?)$/i) || [];
+  return Number(b[1] || 0) - Number(a[1] || 0)
+    || Number(b[2] || 0) - Number(a[2] || 0)
+    || String(b[3] || "").localeCompare(String(a[3] || ""));
+}
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
@@ -185,16 +201,50 @@ async function loadIndex(locale) {
   return parsePatchIndex(html, locale).slice(0, MAX_HISTORY);
 }
 
+async function loadArchivedItems(locale, { all = false } = {}) {
+  const rows = await client`
+    select patch_version as version, locale, title, description, source_url as url,
+      published_at as "publishedAt", image_url as "imageUrl"
+    from patch_notes
+    where locale = ${locale} and raw_html is not null
+      and (${all} or parse_status <> 'parsed' or parser_version < ${PATCH_NOTES_PARSER_VERSION})
+    order by published_at desc nulls last, patch_version desc
+  `;
+  return rows;
+}
+
+function requestedPatchItem(version, locale) {
+  return {
+    version,
+    locale,
+    title: locale === "ru-ru" ? `Описание обновления ${version} для Wild Rift` : `Wild Rift Patch Notes ${version}`,
+    description: "",
+    url: `https://wildrift.leagueoflegends.com/${locale}/news/game-updates/wild-rift-patch-notes-${version.replace(".", "-")}/`,
+    publishedAt: null,
+    imageUrl: null,
+  };
+}
+
+function mergePatchItems(indexItems, archivedItems) {
+  const byVersion = new Map();
+  for (const item of archivedItems) byVersion.set(item.version, item);
+  for (const item of indexItems) byVersion.set(item.version, { ...byVersion.get(item.version), ...item });
+  return Array.from(byVersion.values()).sort((a, b) => comparePatchVersions(a.version, b.version));
+}
+
 async function main() {
   const catalog = await loadPatchChangeCatalog(dbSchema, db);
   console.log(`[patch-notes] entity catalogs loaded champions=${catalog.champions.size} items=${catalog.items.size}`);
   console.log("[patch-notes] English import phase started");
-  const englishItems = await loadIndex("en-us");
+  const englishIndex = REQUESTED_PATCH_VERSIONS.length ? [] : await loadIndex("en-us");
+  const englishItems = REQUESTED_PATCH_VERSIONS.length
+    ? REQUESTED_PATCH_VERSIONS.map((version) => requestedPatchItem(version, "en-us"))
+    : mergePatchItems(englishIndex, await loadArchivedItems("en-us", { all: REPARSE_ARCHIVED }));
   const latestEnglishVersion = englishItems[0]?.version;
   for (const item of englishItems) {
     try {
       await importPatch(item, "en-us", {
-        force: FORCE_SOURCE_REFRESH || item.version === latestEnglishVersion,
+        force: REQUESTED_PATCH_VERSIONS.includes(item.version) || FORCE_SOURCE_REFRESH || item.version === latestEnglishVersion,
         catalog,
       });
     } catch (error) {
@@ -210,14 +260,17 @@ async function main() {
   const englishVersions = new Set(readyEnglish.map((row) => row.patch_version));
 
   console.log("[patch-notes] Russian import phase started after English phase");
-  const russianItems = await loadIndex("ru-ru");
+  const russianIndex = REQUESTED_PATCH_VERSIONS.length ? [] : await loadIndex("ru-ru");
+  const russianItems = REQUESTED_PATCH_VERSIONS.length
+    ? REQUESTED_PATCH_VERSIONS.map((version) => requestedPatchItem(version, "ru-ru"))
+    : mergePatchItems(russianIndex, await loadArchivedItems("ru-ru", { all: REPARSE_ARCHIVED }));
   const russianByVersion = new Map(russianItems.map((item) => [item.version, item]));
   for (const version of englishVersions) {
     const item = russianByVersion.get(version);
     if (!item) continue;
     try {
       await importPatch(item, "ru-ru", {
-        force: FORCE_SOURCE_REFRESH || version === russianItems[0]?.version,
+        force: REQUESTED_PATCH_VERSIONS.includes(version) || FORCE_SOURCE_REFRESH || version === russianItems[0]?.version,
         catalog,
       });
     } catch (error) {
@@ -225,7 +278,7 @@ async function main() {
       await markFailed("ru-ru", version, error).catch(() => undefined);
     }
   }
-  console.log(`[patch-notes] finished: ${englishVersions.size} English versions available`);
+  console.log(`[patch-notes] finished: ${englishVersions.size} English versions available${REQUESTED_PATCH_VERSIONS.length ? `; explicitly requested ${REQUESTED_PATCH_VERSIONS.join(", ")}` : ""}`);
 }
 
 main()

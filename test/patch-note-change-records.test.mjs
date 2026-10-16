@@ -81,6 +81,67 @@ test("classifies increased champion drawbacks as nerfs from stat labels in both 
   }
 });
 
+test("treats collapsed per-level ranges and unequal value vectors as adjustments", () => {
+  const cases = [
+    {
+      entitySlug: "tryndamere",
+      entityName: "Tryndamere",
+      details: [
+        {
+          label: "Critical Strike Chance per Fury",
+          before: "0.3%-0.5% (based on level)",
+          after: "0.5%",
+          text: "Critical Strike Chance per Fury: 0.3%-0.5% (based on level) → 0.5%",
+        },
+        {
+          label: "Damage",
+          before: "80/120/160/200 + 100% Bonus Attack Damage + 80% Ability Power",
+          after: "80/130/180/230 + 110% Bonus Attack Damage + 80% Ability Power",
+          text: "Damage: 80/120/160/200 + 100% Bonus Attack Damage + 80% Ability Power → 80/130/180/230 + 110% Bonus Attack Damage + 80% Ability Power",
+        },
+      ],
+    },
+    {
+      entitySlug: "vector-champion",
+      entityName: "Vector Champion",
+      details: [{ label: "Damage by rank", before: "100/120/140", after: "110/110", text: "Damage by rank: 100/120/140 → 110/110" }],
+    },
+  ];
+
+  for (const change of cases) {
+    const [row] = buildPatchChangeRows([{
+      entityKind: "champion",
+      changeName: "Ability",
+      ...change,
+    }], emptyCatalog);
+    assert.equal(row.changeType, "adjustment", change.entityName);
+  }
+});
+
+test("classifies aligned vectors by their shared direction, ignoring unchanged ranks", () => {
+  const [row] = buildPatchChangeRows([{
+    entityKind: "champion",
+    entitySlug: "aligned-champion",
+    entityName: "Aligned Champion",
+    changeName: "Ability",
+    details: [{ label: "Damage", before: "80/120/160/200", after: "80/130/180/230", text: "Damage: 80/120/160/200 → 80/130/180/230" }],
+  }], emptyCatalog);
+
+  assert.equal(row.changeType, "buff");
+});
+
+test("classifies aligned rank vectors by their aggregate direction", () => {
+  const [row] = buildPatchChangeRows([{
+    entityKind: "champion",
+    entitySlug: "ranked-champion",
+    entityName: "Ranked Champion",
+    changeName: "Ability",
+    details: [{ label: "Damage", before: "20/30/40/50", after: "10/25/40/55", text: "Damage: 20/30/40/50 → 10/25/40/55" }],
+  }], emptyCatalog);
+
+  assert.equal(row.changeType, "nerf");
+});
+
 test("reclassifies a new marker only when the entity appears in an earlier patch", () => {
   const change = {
     entityKind: "item",
