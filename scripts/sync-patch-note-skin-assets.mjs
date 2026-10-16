@@ -7,7 +7,6 @@ import { champions, patchNoteChanges } from "../db/schema.js";
 import { extractRiotSkinImageSource, enrichPatchSkinImages } from "../lib/patchSkinImages.mjs";
 import {
   buildGuideAssetKey,
-  buildGuideAssetProxyPath,
   buildGuideAssetStorageKey,
   buildPublicGuideAssetPath,
   createGuideAssetStore,
@@ -197,7 +196,7 @@ function createSummary(options, run) {
 async function processAssetTask(task, options, run, summary) {
   if (task.sourceConflicts?.length) return;
   const imageUrl = publicImageUrl(task, options.mirrorApiOrigin);
-  const databaseImageUrl = buildGuideAssetProxyPath(task.assetKey, task.sourceUrl);
+  const databaseImageUrl = imageUrl;
   try {
     if (!options.apply) {
       console.log(`[patch-skin-assets] ${task.assetKey} <= ${task.sourceUrl} -> ${databaseImageUrl}`);
