@@ -4,6 +4,10 @@ on:
   schedule:
     - cron: "41 5 * * *"
   workflow_dispatch:
+  workflow_run:
+    workflows: ["API Pipeline"]
+    types: [completed]
+    branches: [main]
 
 concurrency:
   group: sync-patch-notes
@@ -11,6 +15,9 @@ concurrency:
 
 jobs:
   sync:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -36,3 +43,9 @@ jobs:
 
       - name: Import English, then Russian patch notes
         run: npm run sync:patch-notes
+
+      - name: Mirror missing patch item and rune icons to S3
+        run: npm run sync:patch-note-fallback-assets -- --mirror-api-origin=https://wildriftallstats.ru/wr-api
+
+      - name: Mirror missing patch skin artwork to S3
+        run: npm run sync:patch-note-skin-assets -- --apply --update-db --mirror-api-origin=https://wildriftallstats.ru/wr-api
