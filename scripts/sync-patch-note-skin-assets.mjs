@@ -110,32 +110,75 @@ async function resolveSkinSources(rows) {
   return enrichPatchSkinImages(withStoredSources);
 }
 
-function buildAssetTasks(rows) {
-  const groupsByKey = new Map();
+function collectStoredAssetMappings(rows) {
   const storedSourcesByKey = new Map();
-  const missingSourceRows = [];
+  const storedKeysBySource = new Map();
   for (const row of rows) {
     const sourceUrl = extractRiotSkinImageSource(row.sourceImageUrl);
     const storedAssetKey = getStoredPatchSkinAssetKey(row.imageUrl);
-    if (storedAssetKey) {
-      const sources = storedSourcesByKey.get(storedAssetKey) || new Set();
-      sources.add(sourceUrl);
-      storedSourcesByKey.set(storedAssetKey, sources);
+    if (!storedAssetKey) continue;
+
+    const sources = storedSourcesByKey.get(storedAssetKey) || new Set();
+    sources.add(sourceUrl);
+    storedSourcesByKey.set(storedAssetKey, sources);
+    if (sourceUrl) {
+      const keys = storedKeysBySource.get(sourceUrl) || new Set();
+      keys.add(storedAssetKey);
+      storedKeysBySource.set(sourceUrl, keys);
     }
+  }
+  return { storedSourcesByKey, storedKeysBySource };
+}
+
+function buildReusableKeyBySource(storedSourcesByKey, storedKeysBySource) {
+  const reusableKeyBySource = new Map();
+  for (const [sourceUrl, keys] of storedKeysBySource) {
+    const reusableKeys = Array.from(keys)
+      .filter((key) => storedSourcesByKey.get(key)?.size === 1)
+      .sort((left, right) => {
+        const suffixOrder = Number(left.includes("-source-")) - Number(right.includes("-source-"));
+        return suffixOrder || left.length - right.length || left.localeCompare(right);
+      });
+    if (reusableKeys.length) reusableKeyBySource.set(sourceUrl, reusableKeys[0]);
+  }
+  return reusableKeyBySource;
+}
+
+function getReusableStoredKey(row, sourceUrl, storedSourcesByKey, reusableKeyBySource) {
+  const storedAssetKey = getStoredPatchSkinAssetKey(row.imageUrl);
+  const storedImageSource = extractRiotSkinImageSource(row.imageUrl);
+  if (storedAssetKey && storedImageSource === sourceUrl
+    && storedSourcesByKey.get(storedAssetKey)?.size === 1) {
+    return reusableKeyBySource.get(sourceUrl) || storedAssetKey;
+  }
+  return reusableKeyBySource.get(sourceUrl) || null;
+}
+
+function addRowToAssetGroup(groupsByKey, assetKey, sourceUrl, row) {
+  const group = groupsByKey.get(assetKey) || { assetKey, sources: new Map() };
+  const sourceGroup = group.sources.get(sourceUrl) || { sourceUrl, rows: [] };
+  sourceGroup.rows.push(row);
+  group.sources.set(sourceUrl, sourceGroup);
+  groupsByKey.set(assetKey, group);
+}
+
+function buildAssetTasks(rows) {
+  const groupsByKey = new Map();
+  const missingSourceRows = [];
+  const { storedSourcesByKey, storedKeysBySource } = collectStoredAssetMappings(rows);
+  const reusableKeyBySource = buildReusableKeyBySource(storedSourcesByKey, storedKeysBySource);
+
+  for (const row of rows) {
+    const sourceUrl = extractRiotSkinImageSource(row.sourceImageUrl);
     if (!sourceUrl || !row.entitySlug) {
       missingSourceRows.push(row);
       continue;
     }
-    const storedImageSource = extractRiotSkinImageSource(row.imageUrl);
-    const reusableStoredKey = storedAssetKey && storedImageSource === sourceUrl ? storedAssetKey : null;
+    const reusableStoredKey = getReusableStoredKey(row, sourceUrl, storedSourcesByKey, reusableKeyBySource);
     const assetKey = reusableStoredKey || (row.sourceAssetSlug
       ? buildPatchSkinAssetKey(row.sourceAssetSlug, sourceUrl)
       : buildPatchSkinAssetKey(row.entitySlug, sourceUrl));
-    const group = groupsByKey.get(assetKey) || { assetKey, sources: new Map() };
-    const sourceGroup = group.sources.get(sourceUrl) || { sourceUrl, rows: [] };
-    sourceGroup.rows.push(row);
-    group.sources.set(sourceUrl, sourceGroup);
-    groupsByKey.set(assetKey, group);
+    addRowToAssetGroup(groupsByKey, assetKey, sourceUrl, row);
   }
   const tasks = [];
   for (const group of groupsByKey.values()) {
