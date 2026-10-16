@@ -108,6 +108,60 @@ test("marks catalog champions as new from a Riot New Champions section", () => {
   assert.equal(debut.changeName, "new");
 });
 
+test("classifies uncatalogued entities from new-object sections without patch-specific rules", () => {
+  const cases = [
+    ["en-us", ["CHAMPIONS ADDED", "ITEMS ADDED", "NEW RUNES", "NEW SUMMONER SPELLS"], [
+      ["champion", "Zorblax"], ["item", "Prismatic Resolver"], ["rune", "Afterglow"], ["spell", "Phase Shift"],
+    ]],
+    ["ru-ru", ["ДОБАВЛЕННЫЕ ЧЕМПИОНЫ", "ПРЕДМЕТЫ ДОБАВЛЕНЫ", "НОВЫЕ РУНЫ", "НОВЫЕ ЗАКЛИНАНИЯ"], [
+      ["champion", "Зорблакс"], ["item", "Призматический резолвер"], ["rune", "Послесвечение"], ["spell", "Фазовый сдвиг"],
+    ]],
+  ];
+
+  for (const [locale, headings, entities] of cases) {
+    const body = entities.map(([kind, name], index) => (
+      `<h2>${headings[index]}</h2><h3>${name}${kind === "champion" ? locale === "en-us" ? ", the Example" : ", Пример" : ""}</h3>`
+    )).join("");
+    const changes = parseChanges("9.0", locale, body);
+
+    for (const [kind, name] of entities) {
+      const change = changes.find((entry) => entry.entityKind === kind && entry.entityName === name);
+      assert.ok(change, `${locale}: missing ${kind} ${name}`);
+      assert.equal(change.changeName, "new", `${locale}: ${kind} ${name} was not marked new`);
+    }
+  }
+});
+
+test("limits section change markers to entity headings and supports suffix skin and summoner-spell sections", () => {
+  const body = `
+    <h2>NEW CHAMPIONS</h2><h3>Zorblax, the Example</h3><h4>Annie</h4><p>Nested champion text.</p><h5>Passive</h5>
+    <h2>SUMMONER SPELLS ADDED</h2><h3>Phase Shift</h3><h4>Flash</h4><p>Nested spell text.</p>
+    <h2>NEW RUNES</h2><h3>Afterglow</h3><h4>Fleet Footwork</h4><p>Nested rune text.</p>
+    <h2>SKINS ADDED</h2><h3>Solar Guardian</h3><h4>Availability</h4><p>Nested skin text.</p>
+  `;
+  const catalog = {
+    ...emptyCatalog,
+    champions: new Map([["annie", { slug: "annie", name: "Annie" }]]),
+    spells: new Map([["flash", { slug: "flash", name: "Flash" }]]),
+    runes: new Map([["fleet footwork", { slug: "fleet-footwork", name: "Fleet Footwork" }]]),
+  };
+  const changes = parseChanges("9.0", "en-us", body, catalog);
+
+  assert.ok(changes.some((entry) => entry.entityKind === "champion" && entry.entityName === "Zorblax" && entry.changeName === "new"));
+  assert.ok(changes.some((entry) => entry.entityKind === "spell" && entry.entityName === "Phase Shift" && entry.changeName === "new"));
+  assert.ok(changes.some((entry) => entry.entityKind === "skin" && entry.entityName === "Solar Guardian" && entry.changeName === "new"));
+  assert.equal(changes.some((entry) => ["Annie", "Passive", "Flash", "Fleet Footwork", "Availability"].includes(entry.entityName)), false);
+});
+
+test("keeps nested headings under a restored system section as components", () => {
+  const changes = parseChanges("9.0", "en-us", `
+    <h2>GAME MODE CHANGES</h2><h3>Arena</h3>
+    <h4>Summoner's Rift</h4><h5>Jungle</h5><p>Jungle system detail.</p>
+  `);
+
+  assert.equal(changes.some((entry) => entry.entityName === "Jungle"), false);
+});
+
 test("does not parse correction of Morgana's skin availability as a new skin in 7.0a", () => {
   const champions = new Map([
     ["morgana", { slug: "morgana", name: "Morgana", aliases: ["Morgana", "Моргана"] }],
