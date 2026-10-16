@@ -54,6 +54,10 @@ test("adds official 7.0b to the patch index when Riot omits its tag", () => {
     assert.equal(results[1].imageUrl, null);
     assert.equal(results[1].description, "");
   }
+  const emptyIndex = `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+    props: { pageProps: { page: { blades: [{ type: "articleCardGrid", items: [] }] } } },
+  })}</script>`;
+  assert.throws(() => parsePatchIndex(emptyIndex, "en-us"), /no valid patch-note cards/);
 });
 
 test("records Norra as the only non-mode entity in patch 7.0b", () => {
