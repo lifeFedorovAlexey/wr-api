@@ -42,10 +42,14 @@ const FALLBACK_ITEM_CATALOG_SLUGS = new Map([
 ]);
 const FALLBACK_RUNE_SLUGS = [
   "relentless-hunter",
+  "legend-tenacity",
   "legend-haste",
   "item-crafting",
   "futures-market",
 ];
+const FALLBACK_RUNE_IMAGE_SOURCES = new Map([
+  ["legend-tenacity", "https://www.wildriftfire.com/images/runes/legend-tenacity.png"],
+]);
 
 function getMirrorApiOrigin() {
   const option = process.argv.find((argument) => argument.startsWith("--mirror-api-origin="));
@@ -60,8 +64,9 @@ async function mirrorThroughApi(assetKey, sourceUrl, mirrorApiOrigin) {
 
 async function main() {
   const mirrorApiOrigin = getMirrorApiOrigin();
-  const objectStorage = mirrorApiOrigin ? null : createObjectStorageClient(process.env);
+  const objectStorage = createObjectStorageClient(process.env);
   if (!mirrorApiOrigin && !objectStorage) throw new Error("S3 env or --mirror-api-origin is required");
+  const useDirectStorage = Boolean(objectStorage);
 
   const catalog = await loadPatchChangeCatalog(dbSchema, db);
   const assetStore = objectStorage ? await createGuideAssetStore(process.env, {
@@ -79,11 +84,11 @@ async function main() {
     })),
     ...FALLBACK_RUNE_SLUGS.map((slug) => ({ kind: "rune", slug, record: catalog.runeRecords.find((rune) => rune.slug === slug) })),
   ]) {
-    const sourceUrl = record?.tooltipImageUrl || record?.imageUrl;
+    const sourceUrl = record?.tooltipImageUrl || record?.imageUrl || FALLBACK_RUNE_IMAGE_SOURCES.get(slug);
     if (!sourceUrl) throw new Error(`No catalog image source for ${slug}`);
 
     const assetKey = buildGuideAssetKey("guide", kind, slug, "image");
-    if (mirrorApiOrigin) {
+    if (mirrorApiOrigin && !useDirectStorage) {
       await mirrorThroughApi(assetKey, sourceUrl, mirrorApiOrigin);
       uploaded += 1;
       console.log(`[patch-note-assets] ${slug} -> checked/mirrored through API`);

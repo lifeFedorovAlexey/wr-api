@@ -1,12 +1,17 @@
 import "dotenv/config";
+import { createHash } from "node:crypto";
 
 import { and, eq, inArray } from "drizzle-orm";
 
 import { client, db } from "../db/client.js";
 import { champions, patchNoteChanges } from "../db/schema.js";
-import { extractRiotSkinImageSource, enrichPatchSkinImages } from "../lib/patchSkinImages.mjs";
 import {
-  buildGuideAssetKey,
+  buildPatchSkinAssetKey,
+  extractRiotSkinImageSource,
+  enrichPatchSkinImages,
+  getStoredPatchSkinAssetKey,
+} from "../lib/patchSkinImages.mjs";
+import {
   buildGuideAssetStorageKey,
   buildPublicGuideAssetPath,
   createGuideAssetStore,
@@ -105,7 +110,7 @@ async function resolveSkinSources(rows) {
 }
 
 function buildAssetTasks(rows) {
-  const tasksByKey = new Map();
+  const groupsByKey = new Map();
   const missingSourceRows = [];
   for (const row of rows) {
     const sourceUrl = extractRiotSkinImageSource(row.sourceImageUrl);
@@ -113,15 +118,34 @@ function buildAssetTasks(rows) {
       missingSourceRows.push(row);
       continue;
     }
-    const assetKey = buildGuideAssetKey("patch", "skin", row.entitySlug, "image");
-    const task = tasksByKey.get(assetKey) || { assetKey, sourceUrl, rows: [] };
-    if (task.sourceUrl !== sourceUrl) {
-      task.sourceConflicts = Array.from(new Set([...(task.sourceConflicts || [task.sourceUrl]), sourceUrl]));
-    }
-    task.rows.push(row);
-    tasksByKey.set(assetKey, task);
+    const storedAssetKey = getStoredPatchSkinAssetKey(row.imageUrl);
+    const storedImageSource = extractRiotSkinImageSource(row.imageUrl);
+    const reusableStoredKey = storedAssetKey && storedImageSource === sourceUrl ? storedAssetKey : null;
+    const assetKey = reusableStoredKey || (row.sourceAssetSlug
+      ? buildPatchSkinAssetKey(row.sourceAssetSlug, sourceUrl)
+      : buildPatchSkinAssetKey(row.entitySlug, sourceUrl));
+    const group = groupsByKey.get(assetKey) || { assetKey, sources: new Map() };
+    const sourceGroup = group.sources.get(sourceUrl) || { sourceUrl, rows: [] };
+    sourceGroup.rows.push(row);
+    group.sources.set(sourceUrl, sourceGroup);
+    groupsByKey.set(assetKey, group);
   }
-  return { tasks: Array.from(tasksByKey.values()), missingSourceRows };
+  const tasks = [];
+  for (const group of groupsByKey.values()) {
+    const sourceGroups = Array.from(group.sources.values());
+    for (const sourceGroup of sourceGroups) {
+      const sourceHash = createHash("sha256").update(sourceGroup.sourceUrl).digest("hex").slice(0, 12);
+      const matchingStoredKey = sourceGroup.rows
+        .map((row) => getStoredPatchSkinAssetKey(row.imageUrl))
+        .find(Boolean);
+      tasks.push({
+        assetKey: matchingStoredKey || (sourceGroups.length === 1 ? group.assetKey : `${group.assetKey}-source-${sourceHash}`),
+        sourceUrl: sourceGroup.sourceUrl,
+        rows: sourceGroup.rows,
+      });
+    }
+  }
+  return { tasks, missingSourceRows };
 }
 
 function publicImageUrl(task, mirrorApiOrigin) {
@@ -177,7 +201,6 @@ async function prepareRun(options) {
 }
 
 function createSummary(options, run) {
-  const sourceConflicts = run.tasks.filter((task) => task.sourceConflicts?.length);
   return {
     mode: options.apply ? options.mirrorApiOrigin ? "remote-api-mirror" : "s3-mirror" : "dry-run",
     updateDatabase: options.updateDatabase,
@@ -187,14 +210,13 @@ function createSummary(options, run) {
     uniqueAssets: run.tasks.length,
     mirrored: [],
     alreadyExists: [],
-    sourceConflicts: sourceConflicts.map(({ assetKey, sourceUrl, sourceConflicts: urls }) => ({ assetKey, sources: urls || [sourceUrl] })),
+    sourceConflicts: [],
     missingSourceRows: run.missingSourceRows.map((row) => ({ patchVersion: row.patchVersion, locale: row.locale, entitySlug: row.entitySlug, entityName: row.entityName })),
     failed: [],
   };
 }
 
 async function processAssetTask(task, options, run, summary) {
-  if (task.sourceConflicts?.length) return;
   const imageUrl = publicImageUrl(task, options.mirrorApiOrigin);
   const databaseImageUrl = imageUrl;
   try {
@@ -222,7 +244,7 @@ async function main() {
   console.log(`[patch-skin-assets] ${summary.mode}: versions=${run.versions.join(",") || "none"} rows=${run.storedRows.length} assets=${run.tasks.length}`);
   for (const task of run.tasks) await processAssetTask(task, options, run, summary);
   console.log(JSON.stringify(summary, null, 2));
-  if (summary.failed.length || summary.sourceConflicts.length) process.exitCode = 1;
+  if (summary.failed.length) process.exitCode = 1;
 }
 
 main()

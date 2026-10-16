@@ -4,6 +4,7 @@ import { db } from "../db/client.js";
 import { champions, guideEntities, patchNoteChanges, patchNotes } from "../db/schema.js";
 import { buildPublicIconPath } from "../lib/championIcons.mjs";
 import { buildGuideAssetKey, buildPublicGuideAssetPath } from "../lib/guideAssets.mjs";
+import { buildPatchSkinAssetKey } from "../lib/patchSkinImages.mjs";
 import { setCors } from "./utils/cors.js";
 
 function setPublicCache(res) {
@@ -100,7 +101,7 @@ function resolveChangeImageUrl(row, catalog) {
   if (row.entityKind === "skin" && row.entitySlug) {
     const sourceUrl = storedSource || directRiotSkinSource(row.imageUrl);
     if (sourceUrl) {
-      const assetKey = buildGuideAssetKey("patch", "skin", row.entitySlug, "image");
+      const assetKey = storedGuideAssetKey(row.imageUrl) || buildPatchSkinAssetKey(row.entitySlug, sourceUrl);
       return buildPublicGuideAssetPath(assetKey, sourceUrl);
     }
     return row.imageUrl;
