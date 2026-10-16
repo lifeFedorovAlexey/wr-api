@@ -4,6 +4,7 @@ import * as dbSchema from "../db/schema.js";
 import { client, db } from "../db/client.js";
 import {
   buildGuideAssetKey,
+  buildGuideAssetMirrorApiUrl,
   buildGuideAssetStorageKey,
   createGuideAssetStore,
 } from "../lib/guideAssets.mjs";
@@ -57,9 +58,11 @@ function getMirrorApiOrigin() {
 }
 
 async function mirrorThroughApi(assetKey, sourceUrl, mirrorApiOrigin) {
-  const url = `${mirrorApiOrigin}/assets/${encodeURIComponent(assetKey)}?src=${encodeURIComponent(sourceUrl)}`;
+  const url = buildGuideAssetMirrorApiUrl(assetKey, sourceUrl, mirrorApiOrigin);
   const response = await fetch(url, { method: "HEAD", signal: AbortSignal.timeout(60_000) });
-  if (!response.ok) throw new Error(`Mirror API returned HTTP ${response.status} for ${assetKey}`);
+  if (!response.ok) {
+    throw new Error(`Mirror API returned HTTP ${response.status} for ${assetKey} at ${new URL(url).pathname}`);
+  }
 }
 
 async function main() {

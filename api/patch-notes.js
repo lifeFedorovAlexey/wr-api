@@ -59,9 +59,13 @@ function sourceFromStoredImage(imageUrl) {
 }
 
 function storedGuideAssetKey(imageUrl) {
-  const pathname = String(imageUrl || "").split("?", 1)[0];
-  const match = pathname.match(/^\/wr-api\/assets\/([^/]+)$/);
-  return match ? decodeURIComponent(match[1]) : null;
+  try {
+    const url = new URL(String(imageUrl || ""), "https://wildriftallstats.ru");
+    const match = url.pathname.match(/(?:^|\/)wr-api\/(?:api\/)?assets\/([^/]+)$/);
+    return match ? decodeURIComponent(match[1]) : null;
+  } catch {
+    return null;
+  }
 }
 
 async function loadImageCatalog() {

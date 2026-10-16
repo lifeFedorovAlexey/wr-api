@@ -12,11 +12,12 @@ import {
   getStoredPatchSkinAssetKey,
 } from "../lib/patchSkinImages.mjs";
 import {
+  buildGuideAssetMirrorApiUrl,
   buildGuideAssetStorageKey,
   buildPublicGuideAssetPath,
   createGuideAssetStore,
 } from "../lib/guideAssets.mjs";
-import { createObjectStorageClient, shouldUseS3PublicUrls } from "../lib/objectStorage.mjs";
+import { buildObjectStoragePublicUrl, createObjectStorageClient, shouldUseS3PublicUrls } from "../lib/objectStorage.mjs";
 
 const DEFAULT_PATCH_LIMIT = 20;
 const MAX_PATCH_LIMIT = 20;
@@ -164,7 +165,7 @@ function buildAssetTasks(rows) {
 
 function publicImageUrl(task, mirrorApiOrigin) {
   if (mirrorApiOrigin) {
-    return `${mirrorApiOrigin}/assets/${encodeURIComponent(task.assetKey)}?src=${encodeURIComponent(task.sourceUrl)}`;
+    return buildGuideAssetMirrorApiUrl(task.assetKey, task.sourceUrl, mirrorApiOrigin);
   }
   return buildPublicGuideAssetPath(task.assetKey, task.sourceUrl);
 }
@@ -177,10 +178,46 @@ async function mirrorThroughApi(task, mirrorApiOrigin) {
 
 async function mirrorThroughStorage(task, objectStorage, guideAssetStore) {
   const storageKey = buildGuideAssetStorageKey(task.assetKey, task.sourceUrl);
-  if (await objectStorage.objectExists(storageKey)) return { storageKey, alreadyExists: true };
+  if (await objectStorage.objectExists(storageKey)) {
+    const publicUrl = buildObjectStoragePublicUrl(storageKey, process.env);
+    if (!publicUrl || !(await isPublicAssetMissing(publicUrl))) {
+      return { assetKey: task.assetKey, storageKey, alreadyExists: true };
+    }
+
+    const sourceHash = createHash("sha256").update(task.sourceUrl).digest("hex").slice(0, 12);
+    const fallbackTask = { ...task, assetKey: `${task.assetKey}-source-${sourceHash}` };
+    const fallbackStorageKey = buildGuideAssetStorageKey(fallbackTask.assetKey, fallbackTask.sourceUrl);
+    const fallbackAlreadyExists = await objectStorage.objectExists(fallbackStorageKey);
+    if (!fallbackAlreadyExists) {
+      await guideAssetStore.mirror(fallbackTask.assetKey, fallbackTask.sourceUrl);
+    }
+    if (!(await objectStorage.objectExists(fallbackStorageKey))) {
+      throw new Error(`S3 object missing after mirror: ${fallbackStorageKey}`);
+    }
+    const fallbackPublicUrl = buildObjectStoragePublicUrl(fallbackStorageKey, process.env);
+    if (fallbackPublicUrl && !(await isPublicAssetReadable(fallbackPublicUrl))) {
+      throw new Error(`S3 object is not publicly readable after mirror: ${fallbackStorageKey}`);
+    }
+    return {
+      assetKey: fallbackTask.assetKey,
+      storageKey: fallbackStorageKey,
+      alreadyExists: fallbackAlreadyExists,
+    };
+  }
   await guideAssetStore.mirror(task.assetKey, task.sourceUrl);
   if (!(await objectStorage.objectExists(storageKey))) throw new Error(`S3 object missing after mirror: ${storageKey}`);
-  return { storageKey, alreadyExists: false };
+  return { assetKey: task.assetKey, storageKey, alreadyExists: false };
+}
+
+async function isPublicAssetMissing(publicUrl) {
+  const response = await fetch(publicUrl, { method: "HEAD", signal: AbortSignal.timeout(30_000) });
+  if (response.status >= 500) throw new Error(`Public S3 check returned HTTP ${response.status}`);
+  return response.status === 403 || response.status === 404;
+}
+
+async function isPublicAssetReadable(publicUrl) {
+  const response = await fetch(publicUrl, { method: "HEAD", signal: AbortSignal.timeout(30_000) });
+  return response.ok;
 }
 
 async function updateRows(rows, imageUrl) {
@@ -232,18 +269,20 @@ function createSummary(options, run) {
 
 async function processAssetTask(task, options, run, summary) {
   const imageUrl = publicImageUrl(task, options.mirrorApiOrigin);
-  const databaseImageUrl = imageUrl;
   try {
     if (!options.apply) {
-      console.log(`[patch-skin-assets] ${task.assetKey} <= ${task.sourceUrl} -> ${databaseImageUrl}`);
+      console.log(`[patch-skin-assets] ${task.assetKey} <= ${task.sourceUrl} -> ${imageUrl}`);
       return;
     }
 
     const result = options.mirrorApiOrigin
       ? (await mirrorThroughApi(task, options.mirrorApiOrigin), null)
       : await mirrorThroughStorage(task, run.objectStorage, run.guideAssetStore);
-    if (result?.alreadyExists) summary.alreadyExists.push({ assetKey: task.assetKey, storageKey: result.storageKey });
-    else if (result) summary.mirrored.push({ assetKey: task.assetKey, storageKey: result.storageKey });
+    const databaseImageUrl = result?.assetKey && result.assetKey !== task.assetKey
+      ? publicImageUrl({ ...task, assetKey: result.assetKey }, options.mirrorApiOrigin)
+      : imageUrl;
+    if (result?.alreadyExists) summary.alreadyExists.push({ assetKey: result.assetKey, storageKey: result.storageKey });
+    else if (result) summary.mirrored.push({ assetKey: result.assetKey, storageKey: result.storageKey });
     else summary.mirrored.push({ assetKey: task.assetKey, mirrorUrl: imageUrl });
     if (options.updateDatabase) await updateRows(task.rows, databaseImageUrl);
   } catch (error) {

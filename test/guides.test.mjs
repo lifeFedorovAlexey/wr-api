@@ -87,7 +87,7 @@ test("guide asset helpers build stable proxied paths", () => {
   assert.equal(assetKey, "guide-lux-q-ability");
   assert.equal(
     buildPublicGuideAssetPath(assetKey, "https://example.com/lux-q.png"),
-    "/wr-api/assets/guide-lux-q-ability?src=https%3A%2F%2Fexample.com%2Flux-q.png",
+    "/wr-api/api/assets/guide-lux-q-ability?src=https%3A%2F%2Fexample.com%2Flux-q.png",
   );
 });
 
