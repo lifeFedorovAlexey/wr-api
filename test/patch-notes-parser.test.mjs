@@ -376,6 +376,100 @@ test("preserves the five emoji-only minion notes in 7.0g and filters mode notes"
   }
 });
 
+test("parses 7.2d champion loadout recommendations in both locales", () => {
+  const inputs = [
+    ["en-us", [
+      ["Akali", "akali", ["Build 2: Stormsurge, Infinity Orb, Rabadon's Deathcap, Void Staff, Zhonya's Hourglass, Spellslinger's Shoes"]],
+      ["Vladimir", "vladimir", [
+        "Build 1: Hextech Rocketbelt, Riftmaker, Rabadon's Deathcap, Cryptbloom, Infinity Orb, Crimson Lucidity",
+        "Build 2: Hextech Rocketbelt, Stormsurge, Rabadon's Deathcap, Void Staff, Infinity Orb, Spellslinger's Shoes",
+        "Build 3: Cosmic Drive, Riftmaker, Rabadon's Deathcap, Void Staff, Zhonya's Hourglass, Spellslinger's Shoes",
+      ]],
+      ["Lee Sin", "leesin", [
+        "Build 1: Trinity Force, Eclipse, Black Cleaver, Guardian Angel, Death's Dance, Armored Advance",
+        "Build 2: Youmuu's Ghostblade, Trinity Force, Serpent's Fang, Serylda's Grudge, Guardian Angel, Immortal Treads",
+        "Rune 3: Battle Zeal, Cut Down, Legend: Alacrity，Overgrowth",
+      ]],
+    ]],
+    ["ru-ru", [
+      ["Акали", "akali", ["Сборка 2: Штормовой прилив, Сфера бесконечности, Смертельная шляпа Рабадона, Посох Бездны, Песочные часы Жони, Сапоги заклинателя"]],
+      ["Владимир", "vladimir", [
+        "Сборка 1: Хекстековый ракетный ремень, Творец разломов, Смертельная шляпа Рабадона, Могильный цветок, Сфера бесконечности, Алое просветление",
+        "Сборка 2: Хекстековый ракетный ремень, Штормовой прилив, Смертельная шляпа Рабадона, Посох Бездны, Сфера бесконечности, Сапоги заклинателя",
+        "Сборка 3: Космический ускоритель, Творец разломов, Смертельная шляпа Рабадона, Посох Бездны, Песочные часы Жони, Сапоги заклинателя",
+      ]],
+      ["Ли Син", "leesin", [
+        "Сборка 1: Тройственный Союз, Затмение, Черная секира, Ангел-хранитель, Танец смерти, Тяжелое наступление",
+        "Сборка 2: Призрачный клинок Йомуу, Тройственный Союз, Змеиный клык, Злоба Серильды, Ангел-хранитель, Бессмертные шаги",
+        "Руна 3: Боевое рвение, Реванш, Легенда: рвение, Разрастание",
+      ]],
+    ]],
+  ];
+
+  for (const [locale, expected] of inputs) {
+    const champions = new Map(expected.map(([name, slug]) => [name.toLowerCase(), {
+      slug,
+      name: locale === "ru-ru" ? slug === "leesin" ? "Ли Син" : name : slug === "leesin" ? "Lee Sin" : name,
+    }]));
+    const body = expected.map(([name, , details]) => (
+      `<p>${name}</p><p>${locale === "ru-ru" ? "Изменения сборки" : "Loadout Adjustments"}</p>`
+      + `<ul>${details.map((detail) => `<li>${detail}</li>`).join("")}</ul><p>&nbsp;</p>`
+    )).join("");
+    const page = {
+      url: `https://wildrift.leagueoflegends.com/${locale}/news/game-updates/wild-rift-patch-notes-7-2d/`,
+      blades: [
+        { type: "articleMasthead", title: `Wild Rift Patch Notes 7.2d` },
+        { type: "articleRichText", fragmentId: locale === "ru-ru" ? "Изменения сборки" : "Loadout Adjustments", richText: { body } },
+      ],
+    };
+    const html = `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({ props: { pageProps: { page } } })}</script>`;
+    const changes = parsePatchArticle(html, "7.2d", locale, { ...emptyCatalog, champions }).changes;
+
+    assert.equal(changes.length, expected.length);
+    for (const [index, [name, slug, details]] of expected.entries()) {
+      assert.equal(changes[index].entityKind, "champion");
+      assert.equal(changes[index].entitySlug, slug);
+      assert.equal(changes[index].entityName, locale === "ru-ru" ? name : slug === "leesin" ? "Lee Sin" : name);
+      assert.equal(changes[index].changeName, locale === "ru-ru" ? "Изменения сборки" : "Loadout Adjustments");
+      assert.deepEqual(changes[index].details.map(({ text }) => text), details);
+    }
+  }
+});
+
+test("parses 7.3 system sections in English and Russian while filtering mode rows", () => {
+  const inputs = [
+    ["en-us", "SYSTEM", [
+      ["New Season Begins", "Evaluation system details.", "Adjusted the S/A rating algorithm."],
+      ["Legendary Ranked", "Legendary Ranked details.", "Added the Legendary Trial event."],
+      ["Champion Score System Update", "Champion Score details.", "Champion Record Score will no longer decrease after a loss."],
+      ["Champion Ban Rule Adjustments", "Ban rule details.", "Ranked matches from Platinum through Diamond will change from 3 bans per team to 5 bans per team."],
+    ]],
+    ["ru-ru", "ИГРОВЫЕ СИСТЕМЫ", [
+      ["Новый сезон начинается", "Подробности системы оценки.", "Изменен алгоритм оценки S/A."],
+      ["Легендарная очередь", "Подробности легендарной очереди.", "Добавлено событие легендарного испытания."],
+      ["Обновление системы очков чемпиона", "Подробности об очках чемпиона.", "Счетчик побед за чемпиона больше не будет уменьшаться после поражения."],
+      ["Изменения правил блокировок чемпионов", "Подробности правил блокировок.", "В ранговых матчах с Платины до Алмаза количество блокировок на команду увеличится с 3 до 5."],
+    ]],
+  ];
+
+  for (const [locale, systemHeading, expected] of inputs) {
+    const body = `
+      <h2>${locale === "ru-ru" ? "ИЗМЕНЕНИЯ ИГРОВЫХ РЕЖИМОВ" : "GAME MODE CHANGES"}</h2>
+      <h3>AAA ARAM</h3><p>Mode-only update.</p>
+      <h2>${systemHeading}</h2><h3>${locale === "ru-ru" ? "НОВАЯ СИСТЕМА" : "NEW SYSTEM"}</h3>
+      ${expected.map(([heading, description, detail]) => (
+    `<h3>${heading}</h3><p>${description}</p><ol><li>${detail}</li></ol>`
+      )).join("")}
+    `;
+    const changes = parseChanges("7.3", locale, body);
+    const systemRows = changes.filter((change) => change.entityKind === "system");
+
+    assert.equal(systemRows.length, 4);
+    assert.equal(changes.some((change) => /AAA ARAM|Mode-only/i.test(change.entityName || "")), false);
+    assert.deepEqual(systemRows.map(({ entityName, details }) => [entityName, ...details.map(({ text }) => text)]), expected);
+  }
+});
+
 test("keeps the non-mode bug fixes from 7.1h, 7.1g, and 7.1e in each locale", () => {
   const inputs = [
     ["7.1h", "en-us", [
@@ -503,10 +597,12 @@ test("localizes 7.1 champion and skin sections and keeps official skin release d
     };
     return `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({ props: { pageProps: { page } } })}</script>`;
   };
-  for (const locale of ["en-us", "ru-ru"]) {
-    const champion = parsePatchArticle(characterPage("7.1g", locale), "7.1g", locale, catalog).changes
-      .find((change) => change.entityKind === "champion");
-    assert.equal(champion.sectionName, locale === "ru-ru" ? "ИЗМЕНЕНИЯ ЧЕМПИОНОВ" : "Champions");
+  for (const version of ["7.1d", "7.1e", "7.1f", "7.1g", "7.1h"]) {
+    for (const locale of ["en-us", "ru-ru"]) {
+      const champion = parsePatchArticle(characterPage(version, locale), version, locale, catalog).changes
+        .find((change) => change.entityKind === "champion");
+      assert.equal(champion.sectionName, locale === "ru-ru" ? "ИЗМЕНЕНИЯ ЧЕМПИОНОВ" : "Champions");
+    }
   }
 
   const patch71hTaliyah = parseChanges("7.1h", "en-us", `
@@ -557,4 +653,56 @@ test("localizes 7.1 champion and skin sections and keeps official skin release d
     <h2>Облики</h2><p>Pool Party Taliyah</p>
   `, catalog).find((change) => change.entityKind === "skin");
   assert.equal(localizedEnglishSkin.sectionName, "SKINS");
+});
+
+test("restores every 7.1 skin announced across the official patch sections", () => {
+  const skinsByLocale = new Map([
+    ["en-us", [
+      "Glorious Eminence Jax", "Soul Fighter Varus", "Ascended Soul Fighter Varus", "Hexplorer Galio",
+      "Supervillain Graves", "Ascended Supervillain Graves", "Superhero Vi", "Ascended Superhero Vi",
+      "Dream Raider Nasus", "Ascended Dream Raider Nasus", "Pajama Guardian Lulu", "Choo-Choo Ornn",
+      "Choo-Choo Ornn (Yellow)", "Cyber Pop Zoe", "Psy Ops Master Yi (Special Edition)", "Soul Fighter Viego",
+      "Soul Fighter Senna", "Soul Fighter Ambessa", "Soul Fighter Viktor",
+    ]],
+    ["ru-ru", [
+      "Блистательная знаменитость Джакс", "Боевая душа Варус", "Вознесшаяся Боевая душа Варус",
+      "Защитник хекспедиции Галио", "Суперзлодей Грейвз", "Вознесшийся Суперзлодей Грейвз",
+      "Супергероиня Вай", "Вознесшаяся Супергероиня Вай", "Похититель снов Насус",
+      "Вознесшийся Похититель снов Насус", "Защитница в пижаме Лулу", "Машинист Орн",
+      "Машинист Орн (желтый)", "Киберпоп-Зои", "Мастер Йи из Пси-отряда (особое издание)",
+      "Боевая душа Виего", "Боевая душа Сенна", "Боевая душа Амбесса", "Боевая душа Виктор",
+    ]],
+  ]);
+  const sourceNames = {
+    "en-us": [
+      "Glorious Eminence Jax", "new skin Soul Fighter Varus", "Ascended Soul Fighter Varus",
+      "Hexplorer Galio", "Supervillain Graves", "Ascended Supervillain Graves", "Superhero Vi",
+      "Ascended Superhero Vi", "Dream Raider Nasus", "Ascended Dream Raider Nasus", "Pajama Guardian Lulu",
+      "Choo-Choo Ornn", "Choo-Choo Ornn (Yellow)", "Cyber Pop Zoe", "Psy Ops Master Yi (Special Edition)",
+      "Soul Fighter Viego", "Soul Fighter Senna", "Soul Fighter Ambessa", "Soul Fighter Viktor",
+    ],
+    "ru-ru": [
+      "Блистательная знаменитость Джакс", "Боевая душа Варус", "Вознесшаяся Боевая душа Варус",
+      "Защитник Хекспедиции Галио", "Суперзлодей Грейвз", "Вознесшийся Суперзлодей Грейвз",
+      "Супергероиня Вай", "Вознесшаяся Супергероиня Вай", "Похититель снов Насус",
+      "Вознесшийся Похититель снов Насус", "Защитница в пижаме Лулу", "Машинист Орн",
+      "Машинист Орн (желтый)", "Киберпоп Зои", "Мастер Йи из Пси-отряда (особое издание)",
+      "Боевая душа Виего", "Боевая душа Сенна", "Боевая душа Амбесса", "Боевая душа Виктор",
+    ],
+  };
+
+  for (const [locale, expectedNames] of skinsByLocale) {
+    const changes = parseChanges("7.1", locale, `<h2>SKINS</h2><ul>${sourceNames[locale].map((name) => `<li>${name}</li>`).join("")}</ul>`);
+    const skins = changes.filter(({ entityKind }) => entityKind === "skin");
+    assert.equal(skins.length, 19, locale);
+    assert.deepEqual(new Set(skins.map(({ entityName }) => entityName)), new Set(expectedNames), locale);
+    assert.equal(skins.filter(({ changeName }) => changeName === "new").length, 8, locale);
+    assert.equal(skins.filter(({ changeName }) => changeName === "returning").length, 8, locale);
+    assert.equal(skins.filter(({ changeName }) => changeName === "available").length, 2, locale);
+    assert.equal(skins.filter(({ changeName }) => changeName === null).length, 1, locale);
+    assert.ok(skins.filter(({ changeName }) => changeName === "returning").every(({ sectionName }) =>
+      sectionName === (locale === "ru-ru" ? "Повторные облики" : "Returning Skins")));
+    assert.ok(skins.filter(({ changeName }) => changeName !== "returning").every(({ sectionName }) =>
+      sectionName === (locale === "ru-ru" ? "Облики патча" : "SKINS")));
+  }
 });
