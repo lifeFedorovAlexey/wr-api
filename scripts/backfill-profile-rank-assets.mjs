@@ -164,7 +164,7 @@ async function main() {
       const key = `assets/${fileName}`;
       const outputPath = path.join(tempDir, fileName);
       const publicUrl =
-        buildObjectStoragePublicUrl(key, process.env) || `/wr-api/assets/${fileName}`;
+        buildObjectStoragePublicUrl(key, process.env) || `/wr-api/api/assets/${fileName}`;
 
       summary.total += 1;
 

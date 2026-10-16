@@ -1,17 +1,23 @@
 import "dotenv/config";
+import { createHash } from "node:crypto";
 
 import { and, eq, inArray } from "drizzle-orm";
 
 import { client, db } from "../db/client.js";
 import { champions, patchNoteChanges } from "../db/schema.js";
-import { extractRiotSkinImageSource, enrichPatchSkinImages } from "../lib/patchSkinImages.mjs";
 import {
-  buildGuideAssetKey,
+  buildPatchSkinAssetKey,
+  extractRiotSkinImageSource,
+  enrichPatchSkinImages,
+  getStoredPatchSkinAssetKey,
+} from "../lib/patchSkinImages.mjs";
+import {
+  buildGuideAssetMirrorApiUrl,
   buildGuideAssetStorageKey,
   buildPublicGuideAssetPath,
   createGuideAssetStore,
 } from "../lib/guideAssets.mjs";
-import { createObjectStorageClient, shouldUseS3PublicUrls } from "../lib/objectStorage.mjs";
+import { buildObjectStoragePublicUrl, createObjectStorageClient, shouldUseS3PublicUrls } from "../lib/objectStorage.mjs";
 
 const DEFAULT_PATCH_LIMIT = 20;
 const MAX_PATCH_LIMIT = 20;
@@ -104,29 +110,108 @@ async function resolveSkinSources(rows) {
   return enrichPatchSkinImages(withStoredSources);
 }
 
-function buildAssetTasks(rows) {
-  const tasksByKey = new Map();
-  const missingSourceRows = [];
+function collectStoredAssetMappings(rows) {
+  const storedSourcesByKey = new Map();
+  const storedKeysBySource = new Map();
   for (const row of rows) {
+    const sourceUrl = extractRiotSkinImageSource(row.sourceImageUrl);
+    const storedAssetKey = getStoredPatchSkinAssetKey(row.imageUrl);
+    if (!storedAssetKey) continue;
+
+    const sources = storedSourcesByKey.get(storedAssetKey) || new Set();
+    sources.add(sourceUrl);
+    storedSourcesByKey.set(storedAssetKey, sources);
+    if (sourceUrl) {
+      const keys = storedKeysBySource.get(sourceUrl) || new Set();
+      keys.add(storedAssetKey);
+      storedKeysBySource.set(sourceUrl, keys);
+    }
+  }
+  return { storedSourcesByKey, storedKeysBySource };
+}
+
+function buildReusableKeyBySource(storedSourcesByKey, storedKeysBySource) {
+  const reusableKeyBySource = new Map();
+  for (const [sourceUrl, keys] of storedKeysBySource) {
+    const reusableKeys = Array.from(keys)
+      .filter((key) => storedSourcesByKey.get(key)?.size === 1)
+      .sort((left, right) => {
+        const suffixOrder = Number(left.includes("-source-")) - Number(right.includes("-source-"));
+        return suffixOrder || left.length - right.length || left.localeCompare(right);
+      });
+    if (reusableKeys.length) reusableKeyBySource.set(sourceUrl, reusableKeys[0]);
+  }
+  return reusableKeyBySource;
+}
+
+function getReusableStoredKey(row, sourceUrl, storedSourcesByKey, reusableKeyBySource) {
+  const storedAssetKey = getStoredPatchSkinAssetKey(row.imageUrl);
+  const storedImageSource = extractRiotSkinImageSource(row.imageUrl);
+  if (storedAssetKey && storedImageSource === sourceUrl
+    && storedSourcesByKey.get(storedAssetKey)?.size === 1) {
+    return reusableKeyBySource.get(sourceUrl) || storedAssetKey;
+  }
+  return reusableKeyBySource.get(sourceUrl) || null;
+}
+
+function addRowToAssetGroup(groupsByKey, assetKey, sourceUrl, row) {
+  const group = groupsByKey.get(assetKey) || { assetKey, sources: new Map() };
+  const sourceGroup = group.sources.get(sourceUrl) || { sourceUrl, rows: [] };
+  sourceGroup.rows.push(row);
+  group.sources.set(sourceUrl, sourceGroup);
+  groupsByKey.set(assetKey, group);
+}
+
+function buildAssetTasks(rows) {
+  const groupsByKey = new Map();
+  const missingSourceRows = [];
+  const { storedSourcesByKey, storedKeysBySource } = collectStoredAssetMappings(rows);
+  const reusableKeyBySource = buildReusableKeyBySource(storedSourcesByKey, storedKeysBySource);
+
+  for (const row of rows) {
+    // Ignore long promotional copy accidentally parsed as a skin entity.
+    if (String(row.entityName || "").length > 100) continue;
+
     const sourceUrl = extractRiotSkinImageSource(row.sourceImageUrl);
     if (!sourceUrl || !row.entitySlug) {
       missingSourceRows.push(row);
       continue;
     }
-    const assetKey = buildGuideAssetKey("patch", "skin", row.entitySlug, "image");
-    const task = tasksByKey.get(assetKey) || { assetKey, sourceUrl, rows: [] };
-    if (task.sourceUrl !== sourceUrl) {
-      task.sourceConflicts = Array.from(new Set([...(task.sourceConflicts || [task.sourceUrl]), sourceUrl]));
-    }
-    task.rows.push(row);
-    tasksByKey.set(assetKey, task);
+    const reusableStoredKey = getReusableStoredKey(row, sourceUrl, storedSourcesByKey, reusableKeyBySource);
+    const assetKey = reusableStoredKey || (row.sourceAssetSlug
+      ? buildPatchSkinAssetKey(row.sourceAssetSlug, sourceUrl)
+      : buildPatchSkinAssetKey(row.entitySlug, sourceUrl));
+    addRowToAssetGroup(groupsByKey, assetKey, sourceUrl, row);
   }
-  return { tasks: Array.from(tasksByKey.values()), missingSourceRows };
+  const tasks = [];
+  for (const group of groupsByKey.values()) {
+    const sourceGroups = Array.from(group.sources.values());
+    for (const sourceGroup of sourceGroups) {
+      const sourceHash = createHash("sha256").update(sourceGroup.sourceUrl).digest("hex").slice(0, 12);
+      const matchingStoredKey = sourceGroup.rows
+        .filter((row) => {
+          const storedKey = getStoredPatchSkinAssetKey(row.imageUrl);
+          return extractRiotSkinImageSource(row.imageUrl) === sourceGroup.sourceUrl
+            && storedSourcesByKey.get(storedKey)?.size === 1;
+        })
+        .map((row) => getStoredPatchSkinAssetKey(row.imageUrl))
+        .find(Boolean);
+      const storedSources = storedSourcesByKey.get(group.assetKey);
+      tasks.push({
+        assetKey: matchingStoredKey || (sourceGroups.length === 1 && (!storedSources || storedSources.size === 1)
+          ? group.assetKey
+          : `${group.assetKey}-source-${sourceHash}`),
+        sourceUrl: sourceGroup.sourceUrl,
+        rows: sourceGroup.rows,
+      });
+    }
+  }
+  return { tasks, missingSourceRows };
 }
 
 function publicImageUrl(task, mirrorApiOrigin) {
   if (mirrorApiOrigin) {
-    return `${mirrorApiOrigin}/assets/${encodeURIComponent(task.assetKey)}?src=${encodeURIComponent(task.sourceUrl)}`;
+    return buildGuideAssetMirrorApiUrl(task.assetKey, task.sourceUrl, mirrorApiOrigin);
   }
   return buildPublicGuideAssetPath(task.assetKey, task.sourceUrl);
 }
@@ -139,10 +224,51 @@ async function mirrorThroughApi(task, mirrorApiOrigin) {
 
 async function mirrorThroughStorage(task, objectStorage, guideAssetStore) {
   const storageKey = buildGuideAssetStorageKey(task.assetKey, task.sourceUrl);
-  if (await objectStorage.objectExists(storageKey)) return { storageKey, alreadyExists: true };
+  if (await objectStorage.objectExists(storageKey)) {
+    const publicUrl = buildObjectStoragePublicUrl(storageKey, process.env);
+    if (publicUrl && !(await isPublicAssetMissing(publicUrl))) {
+      return { assetKey: task.assetKey, storageKey, alreadyExists: true };
+    }
+
+    const sourceHash = createHash("sha256").update(task.sourceUrl).digest("hex").slice(0, 12);
+    const fallbackTask = { ...task, assetKey: `${task.assetKey}-source-${sourceHash}` };
+    const fallbackStorageKey = buildGuideAssetStorageKey(fallbackTask.assetKey, fallbackTask.sourceUrl);
+    const fallbackAlreadyExists = await objectStorage.objectExists(fallbackStorageKey);
+    if (!fallbackAlreadyExists) {
+      await guideAssetStore.mirror(fallbackTask.assetKey, fallbackTask.sourceUrl);
+    }
+    if (!(await objectStorage.objectExists(fallbackStorageKey))) {
+      throw new Error(`S3 object missing after mirror: ${fallbackStorageKey}`);
+    }
+    const fallbackPublicUrl = buildObjectStoragePublicUrl(fallbackStorageKey, process.env);
+    if (!fallbackPublicUrl || !(await isPublicAssetReadable(fallbackPublicUrl))) {
+      throw new Error(`S3 object is not publicly readable after mirror: ${fallbackStorageKey}`);
+    }
+    return {
+      assetKey: fallbackTask.assetKey,
+      storageKey: fallbackStorageKey,
+      alreadyExists: fallbackAlreadyExists,
+    };
+  }
   await guideAssetStore.mirror(task.assetKey, task.sourceUrl);
   if (!(await objectStorage.objectExists(storageKey))) throw new Error(`S3 object missing after mirror: ${storageKey}`);
-  return { storageKey, alreadyExists: false };
+  const publicUrl = buildObjectStoragePublicUrl(storageKey, process.env);
+  if (!publicUrl || !(await isPublicAssetReadable(publicUrl))) {
+    throw new Error(`S3 object is not publicly readable after mirror: ${storageKey}`);
+  }
+  return { assetKey: task.assetKey, storageKey, alreadyExists: false };
+}
+
+async function isPublicAssetMissing(publicUrl) {
+  const response = await fetch(publicUrl, { method: "HEAD", signal: AbortSignal.timeout(30_000) });
+  if (response.status === 403 || response.status === 404) return true;
+  if (!response.ok) throw new Error(`Public S3 check returned HTTP ${response.status}`);
+  return false;
+}
+
+async function isPublicAssetReadable(publicUrl) {
+  const response = await fetch(publicUrl, { method: "HEAD", signal: AbortSignal.timeout(30_000) });
+  return response.ok;
 }
 
 async function updateRows(rows, imageUrl) {
@@ -177,7 +303,6 @@ async function prepareRun(options) {
 }
 
 function createSummary(options, run) {
-  const sourceConflicts = run.tasks.filter((task) => task.sourceConflicts?.length);
   return {
     mode: options.apply ? options.mirrorApiOrigin ? "remote-api-mirror" : "s3-mirror" : "dry-run",
     updateDatabase: options.updateDatabase,
@@ -187,27 +312,28 @@ function createSummary(options, run) {
     uniqueAssets: run.tasks.length,
     mirrored: [],
     alreadyExists: [],
-    sourceConflicts: sourceConflicts.map(({ assetKey, sourceUrl, sourceConflicts: urls }) => ({ assetKey, sources: urls || [sourceUrl] })),
+    sourceConflicts: [],
     missingSourceRows: run.missingSourceRows.map((row) => ({ patchVersion: row.patchVersion, locale: row.locale, entitySlug: row.entitySlug, entityName: row.entityName })),
     failed: [],
   };
 }
 
 async function processAssetTask(task, options, run, summary) {
-  if (task.sourceConflicts?.length) return;
   const imageUrl = publicImageUrl(task, options.mirrorApiOrigin);
-  const databaseImageUrl = imageUrl;
   try {
     if (!options.apply) {
-      console.log(`[patch-skin-assets] ${task.assetKey} <= ${task.sourceUrl} -> ${databaseImageUrl}`);
+      console.log(`[patch-skin-assets] ${task.assetKey} <= ${task.sourceUrl} -> ${imageUrl}`);
       return;
     }
 
     const result = options.mirrorApiOrigin
       ? (await mirrorThroughApi(task, options.mirrorApiOrigin), null)
       : await mirrorThroughStorage(task, run.objectStorage, run.guideAssetStore);
-    if (result?.alreadyExists) summary.alreadyExists.push({ assetKey: task.assetKey, storageKey: result.storageKey });
-    else if (result) summary.mirrored.push({ assetKey: task.assetKey, storageKey: result.storageKey });
+    const databaseImageUrl = result?.assetKey && result.assetKey !== task.assetKey
+      ? publicImageUrl({ ...task, assetKey: result.assetKey }, options.mirrorApiOrigin)
+      : imageUrl;
+    if (result?.alreadyExists) summary.alreadyExists.push({ assetKey: result.assetKey, storageKey: result.storageKey });
+    else if (result) summary.mirrored.push({ assetKey: result.assetKey, storageKey: result.storageKey });
     else summary.mirrored.push({ assetKey: task.assetKey, mirrorUrl: imageUrl });
     if (options.updateDatabase) await updateRows(task.rows, databaseImageUrl);
   } catch (error) {
@@ -222,7 +348,10 @@ async function main() {
   console.log(`[patch-skin-assets] ${summary.mode}: versions=${run.versions.join(",") || "none"} rows=${run.storedRows.length} assets=${run.tasks.length}`);
   for (const task of run.tasks) await processAssetTask(task, options, run, summary);
   console.log(JSON.stringify(summary, null, 2));
-  if (summary.failed.length || summary.sourceConflicts.length) process.exitCode = 1;
+  if (summary.missingSourceRows.length) {
+    console.error(`[patch-skin-assets] Missing Riot image sources for ${summary.missingSourceRows.length} skin rows`);
+  }
+  if (summary.failed.length || summary.missingSourceRows.length) process.exitCode = 1;
 }
 
 main()

@@ -4,6 +4,7 @@ import { db } from "../db/client.js";
 import { champions, guideEntities, patchNoteChanges, patchNotes } from "../db/schema.js";
 import { buildPublicIconPath } from "../lib/championIcons.mjs";
 import { buildGuideAssetKey, buildPublicGuideAssetPath } from "../lib/guideAssets.mjs";
+import { buildPatchSkinAssetKey } from "../lib/patchSkinImages.mjs";
 import { setCors } from "./utils/cors.js";
 
 function setPublicCache(res) {
@@ -58,9 +59,13 @@ function sourceFromStoredImage(imageUrl) {
 }
 
 function storedGuideAssetKey(imageUrl) {
-  const pathname = String(imageUrl || "").split("?", 1)[0];
-  const match = pathname.match(/^\/wr-api\/assets\/([^/]+)$/);
-  return match ? decodeURIComponent(match[1]) : null;
+  try {
+    const url = new URL(String(imageUrl || ""), "https://wildriftallstats.ru");
+    const match = url.pathname.match(/(?:^|\/)wr-api\/(?:api\/)?assets\/([^/]+)$/);
+    return match ? decodeURIComponent(match[1]) : null;
+  } catch {
+    return null;
+  }
 }
 
 async function loadImageCatalog() {
@@ -100,7 +105,7 @@ function resolveChangeImageUrl(row, catalog) {
   if (row.entityKind === "skin" && row.entitySlug) {
     const sourceUrl = storedSource || directRiotSkinSource(row.imageUrl);
     if (sourceUrl) {
-      const assetKey = buildGuideAssetKey("patch", "skin", row.entitySlug, "image");
+      const assetKey = storedGuideAssetKey(row.imageUrl) || buildPatchSkinAssetKey(row.entitySlug, sourceUrl);
       return buildPublicGuideAssetPath(assetKey, sourceUrl);
     }
     return row.imageUrl;
@@ -137,12 +142,21 @@ export default async function handler(req, res) {
   try {
     const version = String(req.params?.version || "").trim().toLowerCase();
     if (version) {
+      const localeQuery = req.query?.locale;
+      if (localeQuery !== undefined && typeof localeQuery !== "string") {
+        setNoStore(res);
+        return res.status(400).json({ error: "Unsupported locale" });
+      }
+      const requestedLocale = localeQuery?.trim().toLowerCase() || "ru-ru";
+      if (!["ru-ru", "en-us"].includes(requestedLocale)) {
+        setNoStore(res);
+        return res.status(400).json({ error: "Unsupported locale" });
+      }
       const rows = await db
         .select(PUBLIC_FIELDS)
         .from(patchNotes)
         .where(eq(patchNotes.patchVersion, version));
-      const selected = rows.find((row) => row.locale === "ru-ru" && row.parsedPayload)
-        || rows.find((row) => row.locale === "en-us" && row.parsedPayload);
+      const selected = rows.find((row) => row.locale === requestedLocale && row.parsedPayload);
       if (!selected) {
         setNoStore(res);
         return res.status(404).json({ error: "Not Found" });
