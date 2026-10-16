@@ -8,12 +8,14 @@ const confirmedDates = new Map([
   ["7.3", ["2026-09-22", "https://game.xiaomi.com/viewpoint/1359077112_1790049273565_149"]],
   ["7.2b", ["2026-07-30", "https://m.wywyx.com/news/202607/581297.html"]],
   ["7.2", ["2026-07-09", "https://www.lolfun.cn/news/detail/22289.html"]],
+  ["7.1f", ["2026-05-28", "https://www.sohu.com/a/1028896436_122598898"]],
+  ["7.1c", ["2026-04-23", "https://www.wywyx.com/news/202604/560132.html"]],
   ["7.1", ["2026-04-09", "https://www.qieyou.com/content/155989"]],
 ]);
 
 const unconfirmedVersions = [
   "7.3b", "7.3a", "7.2f", "7.2e", "7.2d", "7.2c", "7.2a",
-  "7.1h", "7.1g", "7.1f", "7.1e", "7.1d", "7.1c", "7.1b", "7.1a", "7.0g", "7.0f", "7.0b",
+  "7.1h", "7.1g", "7.1e", "7.1d", "7.1b", "7.1a", "7.0g", "7.0f", "7.0b",
 ];
 
 test("returns only CN dates supported by actual rollout reports", () => {

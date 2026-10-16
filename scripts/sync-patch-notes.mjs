@@ -24,6 +24,23 @@ function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
+function carryForwardExistingImages(changes, existingRows) {
+  const images = new Map();
+  for (const row of existingRows) {
+    if (!row.imageUrl || !/^https:\/\/s3\.twcstorage\.ru\//i.test(row.imageUrl)) continue;
+    const kind = row.entityKind || "system";
+    if (row.entitySlug) images.set(`${kind}:slug:${row.entitySlug}`, row.imageUrl);
+    if (row.entityName) images.set(`${kind}:name:${row.entityName.trim().toLocaleLowerCase()}`, row.imageUrl);
+  }
+  for (const change of changes) {
+    if (change.imageUrl) continue;
+    const kind = change.entityKind || "system";
+    change.imageUrl = (change.entitySlug && images.get(`${kind}:slug:${change.entitySlug}`))
+      || (change.entityName && images.get(`${kind}:name:${change.entityName.trim().toLocaleLowerCase()}`))
+      || null;
+  }
+}
+
 async function fetchText(url) {
   let lastError;
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt += 1) {
@@ -92,9 +109,15 @@ async function markParsed(item, locale, hash, parsed, catalog) {
   }
   parsed.changes = await enrichPatchSkinImages(parsed.changes, englishChanges);
   const changes = buildPatchChangeRows(parsed.changes, catalog, englishChanges, item.version);
-  parsed.changes = changes;
 
   await client.begin(async (transaction) => {
+    const existingRows = await transaction`
+      select entity_kind as "entityKind", entity_slug as "entitySlug", entity_name as "entityName", image_url as "imageUrl"
+      from patch_note_changes
+      where patch_version = ${item.version} and locale = ${locale}
+    `;
+    carryForwardExistingImages(changes, existingRows);
+    parsed.changes = changes;
     await transaction`
       update patch_notes set
         title = ${parsed.title}, description = ${parsed.description || item.description || null},

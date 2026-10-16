@@ -366,25 +366,42 @@ test("keeps patch 7.3b jungle monster names, explanation, and localized health d
   }
 });
 
-test("adds localized 7.2 RU items and preserves the single confirmed Scorpio Deity skin", () => {
-  const body = [
-    "<p><strong>Изменения предметов</strong></p><p>Посох Бездны</p><ul><li>Теперь предмет соответствует версии из ранговых матчей.</li></ul>",
-    "<h4><strong>Завеса банши</strong></h4><p>Обновленный защитный предмет.</p><p>Основные параметры</p><ul><li>Стоимость: 3000</li></ul>",
-    "<p>Космическое жало Скарнер появится в игре 9 июля.</p><p>Мини-пропуск Wild Rift \"Космическое жало Скарнер\"</p><ul><li>27 августа выйдет мини-пропуск, где вас будет ждать Космическое жало Скарнер.</li></ul>",
-  ].join("");
-  const changes = parseChanges("7.2", "ru-ru", body);
-  const voidStaff = changes.find((change) => change.entityKind === "item" && change.entitySlug === "void-staff");
-  const banshee = changes.find((change) => change.entityKind === "item" && change.entitySlug === "banshees-veil");
-  const skarnerSkin = changes.find((change) => change.entityKind === "skin" && change.entitySlug === "skarner-scorpio-deity-skarner");
-  assert.equal(voidStaff?.entityName, "Посох Бездны");
-  assert.equal(voidStaff?.changeName, "adjustment");
-  assert.equal(banshee?.entityName, "Завеса банши");
-  assert.equal(banshee?.changeName, "rework");
-  assert.equal(skarnerSkin?.entityName, "Космическое жало Скарнер");
-  assert.equal(skarnerSkin?.changeName, "new");
-  assert.equal(skarnerSkin?.sectionName, "Облики патча");
-  assert.match(skarnerSkin?.details[0].text || "", /27 августа/);
-  assert.equal(changes.some((change) => change.entitySlug === "skarner-scorpio-deity-ancient-wisdom-skarner"), false);
+test("adds localized 7.2 tier 3 items and preserves the single confirmed Scorpio Deity skin", () => {
+  const bodies = [
+    ["en-us", [
+      "<h2>ITEM ADJUSTMENTS</h2><h4>Void Staff</h4><p>Void Staff remains a late-game magic penetration item.</p>",
+      "<h4>Banshee's Veil</h4><p>We've folded Crown of the Shattered Queen's effect into Banshee's Veil.</p><p>Base Stats:</p><ul><li>Price: 3000</li></ul><p>Annul:</p><ul><li>Grants a spell shield.</li></ul>",
+      "<h2>GAME MODE CHANGES</h2><h3>AAA ARAM</h3><p>Void Staff</p><p>Effects synchronized with Ranked.</p>",
+    ].join("")],
+    ["ru-ru", [
+      "<p><strong>Изменения предметов</strong></p><h4>Посох Бездны</h4><ul><li>Теперь предмет соответствует версии из ранговых матчей.</li></ul>",
+      "<h4><strong>Завеса банши</strong></h4><p>Мы объединили эффект Венца Расколотой королевы и Завесы банши.</p><p>Основные параметры</p><ul><li>Стоимость: 3000</li></ul>",
+      "<p>Космическое жало Скарнер появится в игре 9 июля.</p><p>Мини-пропуск Wild Rift \"Космическое жало Скарнер\"</p><ul><li>27 августа выйдет мини-пропуск, где вас будет ждать Космическое жало Скарнер.</li></ul>",
+    ].join("")],
+  ];
+  for (const [locale, body] of bodies) {
+    const changes = parseChanges("7.2", locale, body);
+    const voidRows = changes.filter((change) => change.entityKind === "item" && change.entitySlug === "void-staff");
+    const bansheeRows = changes.filter((change) => change.entityKind === "item" && change.entitySlug === "banshees-veil");
+    const voidStaff = voidRows[0];
+    const banshee = bansheeRows[0];
+    assert.equal(voidRows.length, 1);
+    assert.equal(voidStaff?.entityName, locale === "ru-ru" ? "Посох Бездны" : "Void Staff");
+    assert.equal(voidStaff?.changeName, "adjustment");
+    assert.equal(bansheeRows.length, 1);
+    assert.equal(banshee?.entityName, locale === "ru-ru" ? "Завеса банши" : "Banshee's Veil");
+    assert.equal(banshee?.changeName, "rework");
+    assert.ok(voidStaff?.details.some((detail) => detail.text.includes(locale === "ru-ru" ? "ранговых матчей" : "late-game")));
+    assert.ok(banshee?.details.some((detail) => detail.text.includes(locale === "ru-ru" ? "объединили эффект" : "folded Crown")));
+    const skarnerSkin = changes.find((change) => change.entityKind === "skin" && change.entitySlug === "skarner-scorpio-deity-skarner");
+    if (locale === "ru-ru") {
+      assert.equal(skarnerSkin?.entityName, "Космическое жало Скарнер");
+      assert.equal(skarnerSkin?.changeName, "new");
+      assert.equal(skarnerSkin?.sectionName, "Облики патча");
+      assert.match(skarnerSkin?.details[0].text || "", /27 августа/);
+      assert.equal(changes.some((change) => change.entitySlug === "skarner-scorpio-deity-ancient-wisdom-skarner"), false);
+    }
+  }
 });
 
 test("keeps both 7.2 Scorpio Deity skins as new English Wild Pass entries", () => {
@@ -1112,6 +1129,8 @@ test("restores every 7.1 skin announced across the official patch sections", () 
     const skins = changes.filter(({ entityKind }) => entityKind === "skin");
     assert.equal(skins.length, 19, locale);
     assert.deepEqual(new Set(skins.map(({ entityName }) => entityName)), new Set(expectedNames), locale);
+    assert.equal(skins.find(({ entityName }) => entityName === (locale === "ru-ru"
+      ? "Мастер Йи из Пси-отряда (особое издание)" : "Psy Ops Master Yi (Special Edition)"))?.sourceChampionSlug, "master-yi");
     assert.equal(skins.filter(({ changeName }) => changeName === "new").length, 8, locale);
     assert.equal(skins.filter(({ changeName }) => changeName === "returning").length, 8, locale);
     assert.equal(skins.filter(({ changeName }) => changeName === "available").length, 2, locale);
