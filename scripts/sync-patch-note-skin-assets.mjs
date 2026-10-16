@@ -223,7 +223,7 @@ async function mirrorThroughStorage(task, objectStorage, guideAssetStore) {
   const storageKey = buildGuideAssetStorageKey(task.assetKey, task.sourceUrl);
   if (await objectStorage.objectExists(storageKey)) {
     const publicUrl = buildObjectStoragePublicUrl(storageKey, process.env);
-    if (!publicUrl || !(await isPublicAssetMissing(publicUrl))) {
+    if (publicUrl && !(await isPublicAssetMissing(publicUrl))) {
       return { assetKey: task.assetKey, storageKey, alreadyExists: true };
     }
 
@@ -238,7 +238,7 @@ async function mirrorThroughStorage(task, objectStorage, guideAssetStore) {
       throw new Error(`S3 object missing after mirror: ${fallbackStorageKey}`);
     }
     const fallbackPublicUrl = buildObjectStoragePublicUrl(fallbackStorageKey, process.env);
-    if (fallbackPublicUrl && !(await isPublicAssetReadable(fallbackPublicUrl))) {
+    if (!fallbackPublicUrl || !(await isPublicAssetReadable(fallbackPublicUrl))) {
       throw new Error(`S3 object is not publicly readable after mirror: ${fallbackStorageKey}`);
     }
     return {
@@ -249,13 +249,18 @@ async function mirrorThroughStorage(task, objectStorage, guideAssetStore) {
   }
   await guideAssetStore.mirror(task.assetKey, task.sourceUrl);
   if (!(await objectStorage.objectExists(storageKey))) throw new Error(`S3 object missing after mirror: ${storageKey}`);
+  const publicUrl = buildObjectStoragePublicUrl(storageKey, process.env);
+  if (!publicUrl || !(await isPublicAssetReadable(publicUrl))) {
+    throw new Error(`S3 object is not publicly readable after mirror: ${storageKey}`);
+  }
   return { assetKey: task.assetKey, storageKey, alreadyExists: false };
 }
 
 async function isPublicAssetMissing(publicUrl) {
   const response = await fetch(publicUrl, { method: "HEAD", signal: AbortSignal.timeout(30_000) });
-  if (response.status >= 500) throw new Error(`Public S3 check returned HTTP ${response.status}`);
-  return response.status === 403 || response.status === 404;
+  if (response.status === 403 || response.status === 404) return true;
+  if (!response.ok) throw new Error(`Public S3 check returned HTTP ${response.status}`);
+  return false;
 }
 
 async function isPublicAssetReadable(publicUrl) {
