@@ -111,14 +111,20 @@ async function resolveSkinSources(rows) {
 
 function buildAssetTasks(rows) {
   const groupsByKey = new Map();
+  const storedSourcesByKey = new Map();
   const missingSourceRows = [];
   for (const row of rows) {
     const sourceUrl = extractRiotSkinImageSource(row.sourceImageUrl);
+    const storedAssetKey = getStoredPatchSkinAssetKey(row.imageUrl);
+    if (storedAssetKey) {
+      const sources = storedSourcesByKey.get(storedAssetKey) || new Set();
+      sources.add(sourceUrl);
+      storedSourcesByKey.set(storedAssetKey, sources);
+    }
     if (!sourceUrl || !row.entitySlug) {
       missingSourceRows.push(row);
       continue;
     }
-    const storedAssetKey = getStoredPatchSkinAssetKey(row.imageUrl);
     const storedImageSource = extractRiotSkinImageSource(row.imageUrl);
     const reusableStoredKey = storedAssetKey && storedImageSource === sourceUrl ? storedAssetKey : null;
     const assetKey = reusableStoredKey || (row.sourceAssetSlug
@@ -136,10 +142,18 @@ function buildAssetTasks(rows) {
     for (const sourceGroup of sourceGroups) {
       const sourceHash = createHash("sha256").update(sourceGroup.sourceUrl).digest("hex").slice(0, 12);
       const matchingStoredKey = sourceGroup.rows
+        .filter((row) => {
+          const storedKey = getStoredPatchSkinAssetKey(row.imageUrl);
+          return extractRiotSkinImageSource(row.imageUrl) === sourceGroup.sourceUrl
+            && storedSourcesByKey.get(storedKey)?.size === 1;
+        })
         .map((row) => getStoredPatchSkinAssetKey(row.imageUrl))
         .find(Boolean);
+      const storedSources = storedSourcesByKey.get(group.assetKey);
       tasks.push({
-        assetKey: matchingStoredKey || (sourceGroups.length === 1 ? group.assetKey : `${group.assetKey}-source-${sourceHash}`),
+        assetKey: matchingStoredKey || (sourceGroups.length === 1 && (!storedSources || storedSources.size === 1)
+          ? group.assetKey
+          : `${group.assetKey}-source-${sourceHash}`),
         sourceUrl: sourceGroup.sourceUrl,
         rows: sourceGroup.rows,
       });
