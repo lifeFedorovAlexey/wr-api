@@ -169,6 +169,9 @@ function buildAssetTasks(rows) {
   const reusableKeyBySource = buildReusableKeyBySource(storedSourcesByKey, storedKeysBySource);
 
   for (const row of rows) {
+    // Ignore long promotional copy accidentally parsed as a skin entity.
+    if (String(row.entityName || "").length > 100) continue;
+
     const sourceUrl = extractRiotSkinImageSource(row.sourceImageUrl);
     if (!sourceUrl || !row.entitySlug) {
       missingSourceRows.push(row);
@@ -345,7 +348,10 @@ async function main() {
   console.log(`[patch-skin-assets] ${summary.mode}: versions=${run.versions.join(",") || "none"} rows=${run.storedRows.length} assets=${run.tasks.length}`);
   for (const task of run.tasks) await processAssetTask(task, options, run, summary);
   console.log(JSON.stringify(summary, null, 2));
-  if (summary.failed.length) process.exitCode = 1;
+  if (summary.missingSourceRows.length) {
+    console.error(`[patch-skin-assets] Missing Riot image sources for ${summary.missingSourceRows.length} skin rows`);
+  }
+  if (summary.failed.length || summary.missingSourceRows.length) process.exitCode = 1;
 }
 
 main()
