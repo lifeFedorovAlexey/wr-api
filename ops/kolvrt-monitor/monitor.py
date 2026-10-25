@@ -57,18 +57,21 @@ def tver(data):
     active = live and (progress.get('activeSessions') or 0) > 0
     state = 'unknown' if not fresh else 'offline' if not data.get('vm', {}).get('running') or service.get('ActiveState') != 'active' else 'warning' if not live else 'running' if active else 'idle'
     sources = progress.get('sources') or []
-    if state == 'idle' and any(source.get('pause') for source in sources):
+    pauses = [source for source in sources if source.get('pause')]
+    if state == 'idle' and pauses:
         state = 'warning'
     history = [{'id': row.get('id'), 'job': row.get('engine') or 'обход', 'executor': 'kolvrt', 'status': row.get('status'),
                 'started_at': row.get('startedAt'), 'finished_at': row.get('finishedAt'),
+                'heartbeat_at': guest.get('observedAt') if live and row.get('id') == progress.get('runId') else None,
                 'result': row.get('reason') or '', 'log_tail': '\n'.join(row.get('errors') or [])}
                for row in guest.get('history', [])[:120]]
     session = (progress.get('sessions') or [{}])[0]
-    current = {'job': progress.get('scenario') or progress.get('nextSource') or 'обход', 'executor': 'kolvrt',
+    current = {'id': progress.get('runId'), 'job': progress.get('nextSource') or progress.get('scenario') or 'обход', 'executor': 'kolvrt',
                'step': session.get('stage') or progress.get('state'), 'result': session.get('detail')} if active else None
     return {'state': state, 'fresh': fresh, 'observedAt': data.get('collectedAt'), 'current': current,
             'history': history, 'jobs': [], 'nextAt': progress.get('nextSchedule'), 'sources': sources,
-            'processes': [{'Id': 'tver-journey (VM)', **service}], 'error': data.get('collector', {}).get('error') or (None if live else 'Нет свежего ответа процесса')}
+            'processes': [{'Id': 'tver-journey (VM)', **service}], 'error': data.get('collector', {}).get('error') or (None if live else 'Нет свежего ответа процесса'),
+            'notice': 'На паузе: ' + ', '.join(source.get('source', '') for source in pauses) if pauses else None}
 
 
 def collect(config):

@@ -23,11 +23,12 @@ function table(headers){const wrap=el('div',null,'table-scroll'),node=el('table'
 function detail(service) {
   const wrap=el('div');
   if(service.error)wrap.append(el('div',service.error,'notice'));
+  if(service.notice)wrap.append(el('div',service.notice,'notice'));
   const info=panel('Процесс');info.head.append(badge(service.state));const facts=el('div',null,'summary');
   facts.append(fact('Текущая задача',service.current ? names[service.current.job]||service.current.job : 'Нет активного запуска'),fact('Текущий шаг',service.current?.step),fact('Последний успех',date(lastSuccess(service)?.finished_at)),fact(service.fallbackHours?'Резерв GitHub':'Следующий запуск',service.fallbackHours?`После ${service.fallbackHours} ч без успеха`:date(service.nextAt)));
   info.node.append(facts);const processes=(service.processes||[]).map(unit=>`${unit.Id}: ${unit.ActiveState||'unknown'} / ${unit.SubState||'—'}`);if(processes.length)info.node.append(el('div',processes.join(' · '),'source-list'));wrap.append(info.node);
   if(service.jobs?.length){const jobs=panel('Расписание и состояние задач'),t=table(['Тип','Последний успех','Следующий по расписанию','Резерв доступен с','Исполнитель']);
-    for(const job of service.jobs){const row=el('tr');[job.title,date(job.last_success_at),date(job.nextAt),job.due?'Порог превышен':date(job.fallbackAt),job.last_executor||'—'].forEach(v=>row.append(el('td',v)));t.body.append(row);}jobs.node.append(t.wrap);wrap.append(jobs.node);}
+    for(const job of service.jobs){const row=el('tr');[job.title,date(job.last_success_at),date(job.nextAt),job.reason==='already-successful'?'Не требуется':job.due?'Порог превышен':date(job.fallbackAt),job.last_executor||'—'].forEach(v=>row.append(el('td',v)));t.body.append(row);}jobs.node.append(t.wrap);wrap.append(jobs.node);}
   const history=panel('История запусков'),filter=el('select');filter.setAttribute('aria-label','Тип задачи');const all=el('option','Все типы');all.value='';filter.append(all);for(const key of [...new Set((service.history||[]).map(row=>row.job))]){const option=el('option',names[key]||key);option.value=key;filter.append(option);}filter.value=selectedJob;filter.onchange=()=>{selectedJob=filter.value;render();};history.head.append(filter);
   const t=table(['Начало','Тип','Исполнитель','Длительность','Результат']);
   for(const run of (service.history||[]).filter(row=>!selectedJob||row.job===selectedJob)){const row=el('tr'),result=el('td');result.append(badge(displayStatus(run,service)));if(run.result)result.append(el('div',run.result,'muted'));
