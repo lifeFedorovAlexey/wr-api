@@ -3,9 +3,6 @@ name: Sync All Data
 on:
   schedule:
     - cron: "7,37 * * * *"
-    - cron: "17 * * * *"
-    - cron: "20 3 * * *"
-    - cron: "17 4 * * 0"
   workflow_dispatch:
     inputs:
       mode:
@@ -19,10 +16,14 @@ on:
           - guides
           - full
       slugs:
-        description: Optional champion slugs separated by spaces
+        description: Optional champion slugs; requires force
         required: false
         type: string
         default: ""
+      force:
+        description: Explicitly import now even when the last successful check is fresh
+        type: boolean
+        default: false
 
 concurrency:
   group: sync-all-data
@@ -30,135 +31,9 @@ concurrency:
 
 jobs:
   fallback:
-    if: vars.KOLVRT_PRIMARY_ENABLED == 'true' && (github.event_name == 'workflow_dispatch' || github.event.schedule == '7,37 * * * *')
     uses: ./.github/workflows/scrape-fallback.yml
     with:
       jobs: ${{ github.event_name != 'workflow_dispatch' && 'stats,riftgg,guides' || inputs.mode == 'champions-history' && 'stats' || inputs.mode == 'champions-history-riftgg' && 'stats,riftgg' || inputs.mode == 'guides' && 'guides' || 'stats,riftgg,guides' }}
-      force: ${{ github.event_name == 'workflow_dispatch' }}
+      force: ${{ github.event_name == 'workflow_dispatch' && inputs.force }}
       slugs: ${{ inputs.slugs || '' }}
     secrets: inherit
-  sync:
-    if: vars.KOLVRT_PRIMARY_ENABLED != 'true' && github.event.schedule != '7,37 * * * *'
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
-    env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      DATABASE_POOL_MAX: 3
-      S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
-      S3_BUCKET: ${{ secrets.S3_BUCKET }}
-      S3_PUBLIC_BASE_URL: ${{ secrets.S3_PUBLIC_BASE_URL }}
-      S3_FORCE_PATH_STYLE: ${{ secrets.S3_FORCE_PATH_STYLE }}
-      ASSET_PUBLIC_MODE: ${{ secrets.ASSET_PUBLIC_MODE }}
-      S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
-      S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
-      GUIDE_ASSETS_DIR: /tmp/wr-runtime/guide-assets
-      GUIDE_HERO_MEDIA_DIR: /tmp/wr-runtime/guide-hero-media
-      CHAMPION_ICONS_DIR: /tmp/wr-runtime/champion-icons
-      CN_FETCH_TIMEOUT_MS: 30000
-      CN_FETCH_RETRIES: 5
-      RIFTGG_IMPORT_CONCURRENCY: 4
-      RIFTGG_REQUEST_TIMEOUT_MS: 20000
-      RIFTGG_FETCH_RETRIES: 2
-
-    steps:
-      - name: Checkout UI repo
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          repository: lifeFedorovAlexey/wildriftchampionsData
-          ref: main
-          path: wildriftchampionsData
-
-      - name: Checkout WR API repo
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          path: wildriftchampionsData/wr-api
-
-      - name: Ensure workflow secrets are present
-        shell: bash
-        run: |
-          required=(DATABASE_URL S3_ENDPOINT S3_BUCKET S3_PUBLIC_BASE_URL S3_ACCESS_KEY_ID S3_SECRET_ACCESS_KEY)
-          missing=()
-          for name in "${required[@]}"; do
-            if [[ -z "${!name:-}" ]]; then
-              missing+=("$name")
-            fi
-          done
-
-          if (( ${#missing[@]} > 0 )); then
-            echo "Missing required secrets: ${missing[*]}" >&2
-            exit 1
-          fi
-
-      - name: Setup Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: 22.13.0
-          cache: npm
-          cache-dependency-path: |
-            wildriftchampionsData/package-lock.json
-            wildriftchampionsData/ui/package-lock.json
-            wildriftchampionsData/wr-api/package-lock.json
-
-      - name: Install root dependencies
-        working-directory: wildriftchampionsData
-        run: npm ci
-
-      - name: Install UI dependencies
-        working-directory: wildriftchampionsData/ui
-        run: npm ci
-
-      - name: Install WR API dependencies
-        working-directory: wildriftchampionsData/wr-api
-        run: npm ci
-
-      - name: Ensure stats schema is up to date
-        working-directory: wildriftchampionsData/wr-api
-        run: npm run setup:stats
-
-      - name: Resolve sync mode
-        id: sync_mode
-        shell: bash
-        run: |
-          requested_slugs=""
-
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            mode="${{ inputs.mode }}"
-            requested_slugs="${{ inputs.slugs }}"
-          elif [[ "${{ github.event.schedule }}" == "17 * * * *" ]]; then
-            mode="champions-history"
-          elif [[ "${{ github.event.schedule }}" == "20 3 * * *" ]]; then
-            mode="champions-history-riftgg"
-          else
-            mode="full"
-          fi
-
-          case "$mode" in
-            champions-history)
-              flags="--skip-riftgg --skip-guides"
-              ;;
-            champions-history-riftgg)
-              flags="--skip-guides"
-              ;;
-            guides)
-              flags="--skip-cn-history --skip-riftgg"
-              ;;
-            full)
-              flags=""
-              ;;
-            *)
-              echo "Unsupported sync mode: $mode" >&2
-              exit 1
-              ;;
-          esac
-
-          requested_slugs="$(echo "$requested_slugs" | xargs)"
-          if [[ -n "$requested_slugs" ]]; then
-            flags="$flags $requested_slugs"
-          fi
-
-          echo "mode=$mode" >> "$GITHUB_OUTPUT"
-          echo "flags=$flags" >> "$GITHUB_OUTPUT"
-
-      - name: Run unified sync pipeline
-        working-directory: wildriftchampionsData
-        run: npm run sync:data -- ${{ steps.sync_mode.outputs.flags }}
