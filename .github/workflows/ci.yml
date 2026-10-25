@@ -4,6 +4,35 @@ on:
   workflow_call:
 
 jobs:
+  scrape-coordination:
+    name: Scraper coordination and monitoring
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:18-bookworm
+        env:
+          POSTGRES_PASSWORD: integration-test-only
+          POSTGRES_DB: wildrift_dev
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22.13.0
+      - run: npm ci --omit=dev
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+      - run: node --test test/scrape-schedule.test.mjs test/scrape-store.integration.test.mjs
+        env:
+          SCRAPE_TEST_DATABASE_URL: postgres://postgres:integration-test-only@127.0.0.1:5432/wildrift_dev
+      - run: python3 ops/kolvrt-monitor/test_monitor.py
   test:
     runs-on: ubuntu-latest
     permissions:

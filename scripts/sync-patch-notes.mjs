@@ -5,6 +5,7 @@ import * as dbSchema from "../db/schema.js";
 import { client, db } from "../db/client.js";
 import { buildPatchChangeRows, loadPatchChangeCatalog } from "../lib/patchNotesChangeRecords.mjs";
 import { enrichPatchSkinImages } from "../lib/patchSkinImages.mjs";
+import { runPatchNotesImport } from "../lib/patchNotesImport.mjs";
 import {
   parsePatchArticle,
   parsePatchIndex,
@@ -26,14 +27,6 @@ const REQUESTED_PATCH_VERSIONS = process.argv
 
 for (const version of REQUESTED_PATCH_VERSIONS) {
   if (!/^\d+\.\d+[a-z]?$/i.test(version)) throw new Error(`Invalid --patch-version value: ${version}`);
-}
-
-function comparePatchVersions(left, right) {
-  const a = String(left).match(/^(\d+)\.(\d+)([a-z]?)$/i) || [];
-  const b = String(right).match(/^(\d+)\.(\d+)([a-z]?)$/i) || [];
-  return Number(b[1] || 0) - Number(a[1] || 0)
-    || Number(b[2] || 0) - Number(a[2] || 0)
-    || String(b[3] || "").localeCompare(String(a[3] || ""));
 }
 
 function sha256(value) {
@@ -169,9 +162,9 @@ async function markFailed(locale, version, error) {
   `;
 }
 
-async function importPatch(item, locale, { force = false, catalog } = {}) {
+async function importPatch(item, locale, { force = false, reparse = false, catalog } = {}) {
   const stored = await getStored(locale, item.version);
-  if (stored && !force && stored.parser_version === PATCH_NOTES_PARSER_VERSION && stored.parse_status === "parsed") {
+  if (stored && !force && !reparse && stored.parser_version === PATCH_NOTES_PARSER_VERSION && stored.parse_status === "parsed") {
     return "skipped";
   }
 
@@ -213,72 +206,20 @@ async function loadArchivedItems(locale, { all = false } = {}) {
   return rows;
 }
 
-function requestedPatchItem(version, locale) {
-  return {
-    version,
-    locale,
-    title: locale === "ru-ru" ? `Описание обновления ${version} для Wild Rift` : `Wild Rift Patch Notes ${version}`,
-    description: "",
-    url: `https://wildrift.leagueoflegends.com/${locale}/news/game-updates/wild-rift-patch-notes-${version.replace(".", "-")}/`,
-    publishedAt: null,
-    imageUrl: null,
-  };
-}
-
-function mergePatchItems(indexItems, archivedItems) {
-  const byVersion = new Map();
-  for (const item of archivedItems) byVersion.set(item.version, item);
-  for (const item of indexItems) byVersion.set(item.version, { ...byVersion.get(item.version), ...item });
-  return Array.from(byVersion.values()).sort((a, b) => comparePatchVersions(a.version, b.version));
-}
-
 async function main() {
   const catalog = await loadPatchChangeCatalog(dbSchema, db);
   console.log(`[patch-notes] entity catalogs loaded champions=${catalog.champions.size} items=${catalog.items.size}`);
-  console.log("[patch-notes] English import phase started");
-  const englishIndex = REQUESTED_PATCH_VERSIONS.length ? [] : await loadIndex("en-us");
-  const englishItems = REQUESTED_PATCH_VERSIONS.length
-    ? REQUESTED_PATCH_VERSIONS.map((version) => requestedPatchItem(version, "en-us"))
-    : mergePatchItems(englishIndex, await loadArchivedItems("en-us", { all: REPARSE_ARCHIVED }));
-  const latestEnglishVersion = englishItems[0]?.version;
-  for (const item of englishItems) {
-    try {
-      await importPatch(item, "en-us", {
-        force: REQUESTED_PATCH_VERSIONS.includes(item.version) || FORCE_SOURCE_REFRESH || item.version === latestEnglishVersion,
-        catalog,
-      });
-    } catch (error) {
-      console.error(`[patch-notes] en-us ${item.version}: ${error.stack || error}`);
-      await markFailed("en-us", item.version, error).catch(() => undefined);
-    }
-  }
-
-  const readyEnglish = await client`
-    select patch_version from patch_notes
-    where locale = 'en-us' and parse_status = 'parsed' and parsed_payload is not null
-  `;
-  const englishVersions = new Set(readyEnglish.map((row) => row.patch_version));
-
-  console.log("[patch-notes] Russian import phase started after English phase");
-  const russianIndex = REQUESTED_PATCH_VERSIONS.length ? [] : await loadIndex("ru-ru");
-  const russianItems = REQUESTED_PATCH_VERSIONS.length
-    ? REQUESTED_PATCH_VERSIONS.map((version) => requestedPatchItem(version, "ru-ru"))
-    : mergePatchItems(russianIndex, await loadArchivedItems("ru-ru", { all: REPARSE_ARCHIVED }));
-  const russianByVersion = new Map(russianItems.map((item) => [item.version, item]));
-  for (const version of englishVersions) {
-    const item = russianByVersion.get(version);
-    if (!item) continue;
-    try {
-      await importPatch(item, "ru-ru", {
-        force: REQUESTED_PATCH_VERSIONS.includes(version) || FORCE_SOURCE_REFRESH || version === russianItems[0]?.version,
-        catalog,
-      });
-    } catch (error) {
-      console.error(`[patch-notes] ru-ru ${version}: ${error.stack || error}`);
-      await markFailed("ru-ru", version, error).catch(() => undefined);
-    }
-  }
-  console.log(`[patch-notes] finished: ${englishVersions.size} English versions available${REQUESTED_PATCH_VERSIONS.length ? `; explicitly requested ${REQUESTED_PATCH_VERSIONS.join(", ")}` : ""}`);
+  await runPatchNotesImport({
+    loadIndex, loadArchived: loadArchivedItems, importPatch, markFailed, catalog,
+    forceRefresh: FORCE_SOURCE_REFRESH, reparseArchived: REPARSE_ARCHIVED, requestedVersions: REQUESTED_PATCH_VERSIONS,
+    loadReadyEnglish: async () => {
+      const rows = await client`
+        select patch_version from patch_notes
+        where locale = 'en-us' and parse_status = 'parsed' and parsed_payload is not null
+      `;
+      return rows.map(row => row.patch_version);
+    },
+  });
 }
 
 main()
