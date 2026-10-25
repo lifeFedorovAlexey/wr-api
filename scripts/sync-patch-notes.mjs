@@ -20,6 +20,14 @@ const REQUEST_TIMEOUT_MS = Number(process.env.PATCH_NOTES_REQUEST_TIMEOUT_MS || 
 const MAX_RETRIES = Number(process.env.PATCH_NOTES_FETCH_RETRIES || 3);
 const MAX_HISTORY = Number(process.env.PATCH_NOTES_MAX_HISTORY || 32);
 const FORCE_SOURCE_REFRESH = process.argv.includes("--refresh-source");
+const REPARSE_ARCHIVED = process.argv.includes("--reparse-archived");
+const REQUESTED_PATCH_VERSIONS = process.argv
+  .filter((argument) => argument.startsWith("--patch-version="))
+  .map((argument) => argument.slice("--patch-version=".length).trim());
+
+for (const version of REQUESTED_PATCH_VERSIONS) {
+  if (!/^\d+\.\d+[a-z]?$/i.test(version)) throw new Error(`Invalid --patch-version value: ${version}`);
+}
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
@@ -154,9 +162,9 @@ async function markFailed(locale, version, error) {
   `;
 }
 
-async function importPatch(item, locale, { force = false, catalog } = {}) {
+async function importPatch(item, locale, { force = false, reparse = false, catalog } = {}) {
   const stored = await getStored(locale, item.version);
-  if (stored && !force && stored.parser_version === PATCH_NOTES_PARSER_VERSION && stored.parse_status === "parsed") {
+  if (stored && !force && !reparse && stored.parser_version === PATCH_NOTES_PARSER_VERSION && stored.parse_status === "parsed") {
     return "skipped";
   }
 
@@ -186,11 +194,24 @@ async function loadIndex(locale) {
   return parsePatchIndex(html, locale).slice(0, MAX_HISTORY);
 }
 
+async function loadArchivedItems(locale, { all = false } = {}) {
+  const rows = await client`
+    select patch_version as version, locale, title, description, source_url as url,
+      published_at as "publishedAt", image_url as "imageUrl"
+    from patch_notes
+    where locale = ${locale} and raw_html is not null
+      and (${all} or parse_status <> 'parsed' or parser_version < ${PATCH_NOTES_PARSER_VERSION})
+    order by published_at desc nulls last, patch_version desc
+  `;
+  return rows;
+}
+
 async function main() {
   const catalog = await loadPatchChangeCatalog(dbSchema, db);
   console.log(`[patch-notes] entity catalogs loaded champions=${catalog.champions.size} items=${catalog.items.size}`);
   await runPatchNotesImport({
-    loadIndex, importPatch, markFailed, catalog, forceRefresh: FORCE_SOURCE_REFRESH,
+    loadIndex, loadArchived: loadArchivedItems, importPatch, markFailed, catalog,
+    forceRefresh: FORCE_SOURCE_REFRESH, reparseArchived: REPARSE_ARCHIVED, requestedVersions: REQUESTED_PATCH_VERSIONS,
     loadReadyEnglish: async () => {
       const rows = await client`
         select patch_version from patch_notes

@@ -68,3 +68,17 @@ test("keeps nested ability headings inside their champion when a sibling is miss
   }
 });
 
+test("comparisons in ordinary champion changes never announce another champion as new", () => {
+  const entries = [["annie", "Annie"], ["aatrox", "Aatrox"], ["annie", "Энни"], ["aatrox", "Атрокс"]];
+  for (const [locale, heading, name, description] of [
+    ["en-us", "CHAMPION CHANGES", "Annie", "Annie needs more power against Aatrox. Her damage against Aatrox is too low."],
+    ["ru-ru", "ИЗМЕНЕНИЯ ЧЕМПИОНОВ", "Энни", "Энни слаба против Атрокс. Соперник Атрокс побеждает слишком легко."],
+  ]) {
+    for (const version of ["3.4", "9.9z"]) {
+      const body = `<h2>${heading}</h2><h3>${name}</h3><p>${description}</p><h4>Ability</h4><ul><li>Damage: 80 → 90</li></ul>`;
+      const changes = parsePatchArticle(article(version, body), version, locale, catalog(entries)).changes;
+      assert.deepEqual(changes.map(row => row.entitySlug), ["annie"], `${locale} ${version}`);
+      assert.ok(changes.every(row => row.changeName !== "new"));
+    }
+  }
+});

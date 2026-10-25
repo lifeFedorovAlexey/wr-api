@@ -1,4 +1,5 @@
 // db/schema.js
+import { sql } from "drizzle-orm";
 import {
   boolean,
   pgTable,
@@ -13,6 +14,7 @@ import {
   uniqueIndex,
   index,
   primaryKey,
+  check,
 } from "drizzle-orm/pg-core";
 
 export const champions = pgTable("champions", {
@@ -498,6 +500,104 @@ export const patchNoteChanges = pgTable(
       .on(table.patchVersion, table.locale, table.ordinal),
     patchLocaleIdx: index("patch_note_changes_patch_locale_idx").on(table.patchVersion, table.locale),
     directionIdx: index("patch_note_changes_direction_idx").on(table.patchVersion, table.locale, table.changeType),
+  }),
+);
+
+export const patchDataSnapshots = pgTable(
+  "patch_data_snapshots",
+  {
+    patchVersion: text("patch_version").notNull(),
+    dataset: text("dataset").notNull(),
+    entityKind: text("entity_kind").notNull(),
+    entitySlug: text("entity_slug").notNull(),
+    state: jsonb("state").notNull(),
+    sourceKind: text("source_kind").notNull(),
+    sourceUrl: text("source_url").notNull(),
+    sourcePatchVersion: text("source_patch_version"),
+    sourceUpdatedAt: pgDate("source_updated_at", { mode: "string" }),
+    verificationStatus: text("verification_status").notNull().default("verified"),
+    sourceEvidence: jsonb("source_evidence").notNull().default([]),
+    contentHash: text("content_hash").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.patchVersion, table.dataset, table.entitySlug] }),
+    entityVersionIdx: index("patch_data_snapshots_entity_version_idx")
+      .on(table.entityKind, table.entitySlug, table.patchVersion),
+    datasetStatusIdx: index("patch_data_snapshots_dataset_status_idx")
+      .on(table.dataset, table.verificationStatus, table.patchVersion),
+  }),
+);
+
+export const patchDataTransitions = pgTable(
+  "patch_data_transitions",
+  {
+    id: serial("id").primaryKey(),
+    patchVersion: text("patch_version").notNull(),
+    locale: text("locale").notNull(),
+    mode: text("mode").notNull(),
+    dataset: text("dataset").notNull(),
+    entityKind: text("entity_kind").notNull(),
+    entitySlug: text("entity_slug").notNull(),
+    propertyPath: text("property_path").notNull(),
+    // For new/removed transitions this is the type of the non-null side.
+    valueType: text("value_type").notNull(),
+    beforeValue: jsonb("before_value").notNull(),
+    afterValue: jsonb("after_value").notNull(),
+    changeType: text("change_type").notNull(),
+    sourceKind: text("source_kind").notNull(),
+    sourceUrl: text("source_url").notNull(),
+    sourceEvidence: jsonb("source_evidence").notNull().default([]),
+    verificationStatus: text("verification_status").notNull().default("unresolved"),
+    reviewNote: text("review_note"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    uniqueTransition: uniqueIndex("patch_data_transitions_identity_uidx")
+      .on(table.patchVersion, table.locale, table.mode, table.dataset, table.entitySlug, table.propertyPath),
+    chainIdx: index("patch_data_transitions_chain_idx")
+      .on(table.dataset, table.mode, table.entityKind, table.entitySlug, table.patchVersion),
+    statusIdx: index("patch_data_transitions_status_idx").on(table.verificationStatus, table.patchVersion),
+    changeTypeCheck: check("patch_data_transitions_change_type_check", sql`
+      ${table.changeType} in ('new', 'buff', 'nerf', 'rework', 'adjustment', 'removed', 'unchanged')
+    `),
+    valuesCheck: check("patch_data_transitions_values_check", sql`
+      case ${table.changeType}
+        when 'new' then ${table.valueType} <> 'null'
+          and ${table.beforeValue} = 'null'::jsonb and jsonb_typeof(${table.afterValue}) = ${table.valueType}
+        when 'removed' then ${table.valueType} <> 'null'
+          and jsonb_typeof(${table.beforeValue}) = ${table.valueType} and ${table.afterValue} = 'null'::jsonb
+        else jsonb_typeof(${table.beforeValue}) = ${table.valueType}
+          and jsonb_typeof(${table.afterValue}) = ${table.valueType}
+          and (${table.changeType} <> 'unchanged' or ${table.beforeValue} = ${table.afterValue})
+      end
+    `),
+  }),
+);
+
+export const patchDataDiscrepancies = pgTable(
+  "patch_data_discrepancies",
+  {
+    id: serial("id").primaryKey(),
+    patchVersion: text("patch_version"),
+    entityKind: text("entity_kind").notNull(),
+    entitySlug: text("entity_slug"),
+    propertyPath: text("property_path").notNull(),
+    primarySourceKind: text("primary_source_kind").notNull(),
+    primaryValue: jsonb("primary_value").notNull(),
+    comparisonSourceKind: text("comparison_source_kind").notNull(),
+    comparisonValue: jsonb("comparison_value").notNull(),
+    selectedSourceKind: text("selected_source_kind"),
+    resolutionStatus: text("resolution_status").notNull().default("unresolved"),
+    note: text("note"),
+    sourceUrls: jsonb("source_urls").notNull().default([]),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    patchEntityIdx: index("patch_data_discrepancies_patch_entity_idx")
+      .on(table.patchVersion, table.entityKind, table.entitySlug),
+    statusIdx: index("patch_data_discrepancies_status_idx").on(table.resolutionStatus),
   }),
 );
 

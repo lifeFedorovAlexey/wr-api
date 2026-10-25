@@ -79,7 +79,7 @@ test("records Norra as the only non-mode entity in patch 7.0b", () => {
   const bodies = [
     ["en-us", `<h2>NEW CHAMPION</h2><h3>NORRA, THE PORTAL MISTRESS</h3><p>Norra will be released on February 4 at 00:01 UTC.</p>
       <h2>GAME MODE CHANGES</h2><h3>Arena</h3><h4>Item Adjustments</h4><h5>Manamune/Winter's Approach/Archangel's Staff</h5><ul><li>Mana: 30/36/45 → 100</li></ul>`],
-    ["ru-ru", `<h2>НОВЫЙ ЧЕМПИОН</h2><h3>НОРРА, ПОВЕЛИТЕЛЬНИЦА ПОРТАЛОВ</h3><p>Норра появится в игре 4 февраля в 03:01.</p>
+    ["ru-ru", `<h2>НОВЫЙ ЧЕМПИОН</h2><h3>ПОВЕЛИТЕЛЬНИЦА ПОРТАЛОВ</h3><p>Йордл Норра, Повелительница порталов, – чародейка. Норра мечтает вернуться домой вместе с кошечкой Юми.</p>
       <h2>ИЗМЕНЕНИЯ ИГРОВЫХ РЕЖИМОВ</h2><h3>Арена</h3><h4>Изменения предметов</h4><h5>Манамунэ / Вестник зимы / Посох архангела</h5><ul><li>Мана: 30/36/45 → 100</li></ul>`],
   ];
 
@@ -411,7 +411,7 @@ test("scans deeply nested item adjustment sections without duplicating nested co
   const item = changes.find((change) => change.entitySlug === "prismatic-resolver");
 
   assert.ok(item);
-  assert.equal(item.changeName, "adjustment");
+  assert.equal(item.changeName, "buff");
   assert.equal(item.details.some(({ text }) => text === "Damage: 20 → 25"), true);
   assert.equal(changes.some((change) => change.entityName === "Uncatalogued Component"), false);
 });
@@ -455,6 +455,32 @@ test("supports h4 item sections, nested catalog items, and ambiguous stat direct
     <ul><li>Ability Power: 40 → 50</li><li>Cooldown: 10 → 12</li></ul>
   `, catalog).find((change) => change.entitySlug === "prismatic-resolver");
   assert.equal(ambiguous?.changeName, "adjustment");
+});
+
+test("starts a new item at a deeper heading instead of folding it into the previous item", () => {
+  const catalog = {
+    ...emptyCatalog,
+    items: new Map([
+      ["youmuu s ghostblade", { slug: "youmuus-ghostblade", name: "Youmuu's Ghostblade" }],
+      ["locket of the iron solari", { slug: "locket-enchant", name: "Locket of the Iron Solari" }],
+      ["statikk shiv", { slug: "statikk-shiv", name: "Statikk Shiv" }],
+      ["yun tal wildarrows", { slug: "yun-tal-wildarrows", name: "Yun Tal Wildarrows" }],
+    ]),
+  };
+  const changes = parseChanges("9.0", "en-us", `
+    <h2>GAMEPLAY CHANGES</h2><h2>Items</h2>
+    <h4>Youmuu's Ghostblade</h4><p>Base Stats</p><ul><li>Price: 3000 → 2900</li></ul>
+    <h4>Locket of the Iron Solari</h4><p>Base Stats</p><ul><li>Price: 2600 → 2500</li><li>Health: 200 → 300</li></ul>
+    <h4>Statikk Shiv</h4><p>Base Stats</p><ul><li>Price: 3000 → 2900</li></ul>
+    <h4>Yun Tal Wildarrows</h4><p>Base Stats</p><ul><li>Price: 3100 → 3000</li></ul>
+  `, catalog).filter((change) => change.entityKind === "item");
+
+  assert.deepEqual(changes.map(({ entitySlug, details }) => [entitySlug, details.map(({ text }) => text)]), [
+    ["youmuus-ghostblade", ["Price: 3000 → 2900"]],
+    ["locket-enchant", ["Price: 2600 → 2500", "Health: 200 → 300"]],
+    ["statikk-shiv", ["Price: 3000 → 2900"]],
+    ["yun-tal-wildarrows", ["Price: 3100 → 3000"]],
+  ]);
 });
 
 test("classifies Sivir's mixed 7.3 champion changes as an adjustment in both locales", () => {
@@ -828,6 +854,38 @@ test("infers item adjustment type from the article's changed stats", () => {
     <ul><li>Price: 900 → 1200</li><li>Tenacity: 0 → 15%</li></ul>
   `, catalog).find((change) => change.entityKind === "item" && change.entitySlug === "mercurys-treads");
   assert.equal(mercury?.changeName, "adjustment");
+});
+
+test("maps prefixed item variants to catalog identities in old and new patch prose", () => {
+  const items = [
+    { slug: "infinity-orb", name: "Infinity Orb", aliases: ["Сфера бесконечности"] },
+    { slug: "seryldas-grudge", name: "Serylda's Grudge", aliases: ["Злоба Серильды"] },
+  ];
+  const catalog = {
+    ...emptyCatalog,
+    items: new Map(items.flatMap((item) => [
+      [item.name.toLowerCase().replace(/[’']/g, " "), item],
+      ...item.aliases.map((alias) => [alias.toLowerCase().replace(/[’']/g, " "), item]),
+    ])),
+  };
+  const inputs = [
+    ["en-us", `
+      <h2>GAMEPLAY CHANGES</h2><h3>ITEMS</h3>
+      <h4>Yordle Infinity Orb</h4><p>Damage is too high.</p><h5>Thunderfall</h5><ul><li>Damage: 50 → 40</li></ul>
+      <h4>Yordle Serylda's Grudge</h4><p>Ability damage is too high.</p><h5>Frostbite</h5><ul><li>Damage: 25 → 10</li></ul>
+    `],
+    ["ru-ru", `
+      <h2>ИЗМЕНЕНИЯ ИГРОВОГО ПРОЦЕССА</h2><h3>ПРЕДМЕТЫ</h3>
+      <h4>Йордловская Сфера бесконечности</h4><p>Урон слишком высок.</p><h5>Раскаты грома</h5><ul><li>Урон: 50 → 40</li></ul>
+      <h4>Йордловская Злоба Серильды</h4><p>Урон слишком высок.</p><h5>Обморожение</h5><ul><li>Урон: 25 → 10</li></ul>
+    `],
+  ];
+
+  for (const [locale, body] of inputs) {
+    const parsed = parseChanges("9.0", locale, body, catalog);
+    const rows = buildPatchChangeRows(parsed, catalog, [], "9.0").filter(({ entityKind }) => entityKind === "item");
+    assert.deepEqual(rows.map(({ entitySlug }) => entitySlug).sort(), ["infinity-orb", "seryldas-grudge"]);
+  }
 });
 
 test("preserves the six non-mode bug fixes for patch 7.1b in EN and RU", () => {

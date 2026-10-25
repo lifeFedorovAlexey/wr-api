@@ -1,10 +1,11 @@
-import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull } from "drizzle-orm";
 
 import { db } from "../db/client.js";
-import { champions, guideEntities, patchNoteChanges, patchNotes } from "../db/schema.js";
+import { champions, guideEntities, patchDataSnapshots, patchNoteChanges, patchNotes } from "../db/schema.js";
 import { buildPublicIconPath } from "../lib/championIcons.mjs";
 import { buildGuideAssetKey, buildPublicGuideAssetPath } from "../lib/guideAssets.mjs";
 import { buildPatchSkinAssetKey } from "../lib/patchSkinImages.mjs";
+import { buildPublicChampionStats } from "../lib/patchChampionStatSnapshots.mjs";
 import { setCors } from "./utils/cors.js";
 
 function setPublicCache(res) {
@@ -15,7 +16,7 @@ function setNoStore(res) {
   res.setHeader("Cache-Control", "no-store");
 }
 
-function toPublicPatch(row, changes = []) {
+function toPublicPatch(row, changes = [], championStats = null) {
   return {
     version: row.patchVersion,
     locale: row.locale,
@@ -28,6 +29,7 @@ function toPublicPatch(row, changes = []) {
     effectiveDateSourceUrl: row.effectiveDateSourceUrl,
     imageUrl: row.imageUrl,
     changes,
+    championStats,
   };
 }
 
@@ -180,10 +182,30 @@ export default async function handler(req, res) {
           eq(patchNoteChanges.locale, selected.locale),
         ))
         .orderBy(patchNoteChanges.ordinal);
+      const [statSnapshots, championRows] = await Promise.all([
+        db.select({
+          entitySlug: patchDataSnapshots.entitySlug,
+          state: patchDataSnapshots.state,
+          verificationStatus: patchDataSnapshots.verificationStatus,
+          sourceKind: patchDataSnapshots.sourceKind,
+          sourceUrl: patchDataSnapshots.sourceUrl,
+          sourcePatchVersion: patchDataSnapshots.sourcePatchVersion,
+          sourceUpdatedAt: patchDataSnapshots.sourceUpdatedAt,
+        })
+          .from(patchDataSnapshots)
+          .where(and(
+            eq(patchDataSnapshots.patchVersion, version),
+            eq(patchDataSnapshots.dataset, "champion-base-stats"),
+          ))
+          .orderBy(asc(patchDataSnapshots.entitySlug)),
+        db.select({ slug: champions.slug, name: champions.name }).from(champions),
+      ]);
+      const championStats = buildPublicChampionStats(statSnapshots, championRows, version);
       setPublicCache(res);
       return res.status(200).json(toPublicPatch(
         selected,
         changes.map((row) => toPublicChange(row, imageCatalog)),
+        championStats,
       ));
     }
 
