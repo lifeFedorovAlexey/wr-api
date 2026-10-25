@@ -69,7 +69,7 @@ test('Lux replies once in the source room, isolates authors and excludes private
     // A pre-fix job failed without publishing any acknowledgement.
     await sql`update lux_conversations set lease_token=null,lease_until=null where user_id=1`;
     await sql`update lux_turns set status='failed' where id=${oldFailure.claim.turn.id}`;
-    await sql`update lux_chat_queue set state='failed',lease_until=null where message_id=${silent.id}`;
+    await sql`update lux_chat_queue set state='failed',lease_until=null,created_at=now()-interval '1 hour' where message_id=${silent.id}`;
     assert.equal((await queue.retryFailed(silent.id)).retried,true);
     assert.equal((await queue.take()).messageId,silent.id);
     await sql`update lux_chat_queue set state='failed' where message_id=${silent.id}`;
