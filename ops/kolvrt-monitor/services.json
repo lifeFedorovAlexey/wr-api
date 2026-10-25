@@ -1,4 +1,4 @@
 [
-  {"id":"wildrift","title":"Wild Rift","description":"Статистика, гайды и патчноуты","adapter":"wildrift","snapshot":"/srv/data/wildrift-worker/status.json"},
+  {"id":"wildrift","title":"Wild Rift","description":"Статистика, гайды и патчноуты","adapter":"wildrift","snapshot":"/srv/data/wildrift-worker/status.json","assistantSnapshot":"/srv/data/wildrift-worker/assistant/status.json"},
   {"id":"tver-journey","title":"Обходчик сайта","description":"Tver Journey · Яндекс и Google","adapter":"tver","dashboard":"/opt/tver-journey-dashboard","snapshot":"/run/tver-dashboard/status.json"}
 ]
