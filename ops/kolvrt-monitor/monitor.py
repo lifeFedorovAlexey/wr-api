@@ -68,6 +68,16 @@ def wildrift(data):
             'notice': notice, 'error': data.get('error') or (None if fresh or state == 'unconfigured' else 'Нет свежего снимка из продовой БД')}
 
 
+def assistant_status(data):
+    running = bool(data.get('current'))
+    fresh = age(data.get('heartbeatAt')) <= (90 if running else 900)
+    return {**data, 'fresh': fresh, 'state': data.get('state', 'unknown') if fresh else 'unknown',
+            'current': data.get('current') if fresh else None,
+            'lastObservedAttempt': data.get('current') or next(iter(data.get('history', [])), None),
+            'history': data.get('history', [])[:5],
+            'notice': None if fresh else 'Нет свежего сигнала от исполнителя. Текущее выполнение не подтверждено.'}
+
+
 def crawler_summary(data):
     """Expose the original presenter's latest report without recreating its history UI."""
     view, guest = data['view'], data.get('guest') or {}
@@ -155,6 +165,14 @@ def collect(config, dashboards=None):
                 except (OSError, ValueError):
                     data = {}
                 base.update(wildrift(data))
+                if spec.get('assistantSnapshot'):
+                    try:
+                        assistant = load(spec['assistantSnapshot'])
+                        if not isinstance(assistant, dict):
+                            raise ValueError('Invalid assistant snapshot')
+                    except (OSError, ValueError):
+                        assistant = {}
+                    base['assistant'] = assistant_status(assistant)
             else:
                 raise ValueError('Unknown adapter')
         except (OSError, ValueError, KeyError, TypeError):

@@ -22,6 +22,31 @@ class MonitorTest(unittest.TestCase):
     units = [{'Id': 'wildrift-scraper.timer', 'LoadState': 'loaded', 'ActiveState': 'inactive'},
              {'Id': 'wildrift-scraper.service', 'LoadState': 'loaded', 'ActiveState': 'inactive'}]
 
+    def test_assistant_idle_and_active_have_different_freshness_limits(self):
+        ten_minutes = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=10)).isoformat()
+        data = {'heartbeatAt': ten_minutes, 'state': 'idle'}
+        self.assertTrue(monitor.assistant_status(data)['fresh'])
+        active = monitor.assistant_status({**data, 'state': 'running', 'current': {'phase': 'generating'}})
+        self.assertFalse(active['fresh'])
+        self.assertEqual(active['state'], 'unknown')
+        self.assertIsNone(active['current'])
+        self.assertEqual(active['lastObservedAttempt']['phase'], 'generating')
+
+    def test_assistant_stale_signal_preserves_real_last_success(self):
+        previous = {'accepted': 894, 'finished_at': '2026-09-01T00:00:00Z'}
+        result = monitor.assistant_status({'heartbeatAt': '2020-01-01T00:00:00Z', 'lastSuccessfulSync': previous})
+        self.assertFalse(result['fresh'])
+        self.assertEqual(result['lastSuccessfulSync'], previous)
+
+    def test_assistant_source_independent_from_database_observer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            file = Path(directory) / 'assistant.json'
+            file.write_text(json.dumps({'heartbeatAt': dt.datetime.now(dt.timezone.utc).isoformat(), 'state': 'running', 'current': {'accepted': 0}}), encoding='utf-8')
+            result = monitor.collect([{'id': 'wildrift', 'title': 'Wild Rift', 'description': '', 'adapter': 'wildrift', 'snapshot': '/missing', 'assistantSnapshot': str(file)}])
+        self.assertFalse(result['services'][0]['fresh'])
+        self.assertTrue(result['services'][0]['assistant']['fresh'])
+        self.assertEqual(result['services'][0]['assistant']['current']['accepted'], 0)
+
     def test_stale_snapshot_cannot_show_a_running_process(self):
         with patch.object(monitor, 'worker_installed', return_value=True):
             result = monitor.wildrift({'ok': True, 'collectedAt': '2020-01-01T00:00:00Z', 'history': [{'status': 'running', 'heartbeat_at': dt.datetime.now(dt.timezone.utc).isoformat()}]})
