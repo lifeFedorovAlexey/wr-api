@@ -57,12 +57,12 @@
     "fast-xml-parser": "^5.7.0"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1139.0",
-    "@aws-sdk/s3-presigned-post": "^3.1139.0",
-    "@aws-sdk/s3-request-presigner": "^3.1125.0",
+    "@aws-sdk/client-s3": "^3.1155.0",
+    "@aws-sdk/s3-presigned-post": "^3.1155.0",
+    "@aws-sdk/s3-request-presigner": "^3.1155.0",
     "basic-ftp": "6.2.3",
     "cheerio": "^1.2.0",
-    "dotenv": "^18.0.7",
+    "dotenv": "^18.0.8",
     "drizzle-orm": "^0.45.4",
     "postgres": "^3.4.9",
     "puppeteer": "^25.12.0",
@@ -72,7 +72,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "c8": "^12.0.0",
-    "eslint": "^10.11.0",
+    "eslint": "^10.13.0",
     "globals": "^17.13.0",
     "jscpd": "^5.1.2",
     "tsx": "^4.23.12"
