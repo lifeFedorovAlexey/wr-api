@@ -57,3 +57,19 @@ test("rejects duplicate champions, missing required values, broken links, and ma
   assert.throws(() => parseHubGameChampionStats(fixture.replace("/wildrift/en/champions/Aatrox", "/wildrift/en/items/Aatrox"), sourceUrl), /non-canonical champion link/);
   assert.throws(() => parseHubGameChampionStats(fixture.replace("Damage: 3 of 3", "Damage: high"), sourceUrl), /missing Damage rating/);
 });
+
+test("source versions exclude sentence punctuation and retain valid patch suffixes", () => {
+  for (const version of ["7.3", "7.3b", "12.10z"]) {
+    for (const punctuation of [".", ",", ";", ")"]) {
+      const page = fixture.replace("patch 7.3, as of", `patch ${version}, as of`)
+        .replace("applied up to 7.3b", `applied up to ${version}${punctuation}`);
+      const parsed = parseHubGameChampionStats(page, sourceUrl);
+      assert.equal(parsed.chinaLibraryPatch, version);
+      assert.equal(parsed.globalPatchThrough, version, punctuation);
+    }
+  }
+  for (const invalid of ["7..3", "7.3.4"]) {
+    assert.throws(() => parseHubGameChampionStats(fixture.replace("patch 7.3, as of", `patch ${invalid}, as of`), sourceUrl), /missing source version/);
+    assert.throws(() => parseHubGameChampionStats(fixture.replace("applied up to 7.3b", `applied up to ${invalid}`), sourceUrl), /missing source version/);
+  }
+});

@@ -99,3 +99,23 @@ test("an item snapshot can be repeated but never extended, shrunk or rewritten a
   const changed = rows.map((row, index) => index ? row : { ...row, contentHash: "corrected-source" });
   assert.throws(() => assertImmutablePatchSnapshot(stored, changed, "items"), /immutable items snapshot: changed values:/);
 });
+
+test("linked and catalog-only cards keep the same canonical item identity", () => {
+  const orbUrl = "https://hub-game.com/wildrift/en/items/infinity-orb";
+  const orbDetail = parseHubGameItemDetail(detailFixture.replaceAll("Warmog's Armor", "Infinity Orb")
+    .replaceAll("warmogs-armor", "infinity-orb"), orbUrl);
+  for (const name of ["Warmog's Armor", "Wármóg’s Ármor"]) {
+    const linkedHtml = indexFixture.replaceAll("Warmog's Armor", name);
+    const linkedIndex = parseHubGameItemCatalogIndex(linkedHtml, catalogUrl);
+    const detail = parseHubGameItemDetail(detailFixture.replaceAll("Warmog's Armor", name), detailUrl);
+    const linked = buildHubGameItemSnapshotRows(linkedIndex, [detail]);
+    const unlinkedHtml = linkedHtml.replace(/<a href="\/wildrift\/en\/items\/warmogs-armor"[^>]*>[^<]*<\/a>/,
+      '<a href="/wildrift/en/items/infinity-orb" title="Infinity Orb">Infinity Orb</a>');
+    const unlinkedIndex = parseHubGameItemCatalogIndex(unlinkedHtml, catalogUrl);
+    const unlinked = buildHubGameItemSnapshotRows(unlinkedIndex, [orbDetail]);
+    assert.equal(linkedIndex.items.find(item => item.name === name).slug, "warmogs-armor");
+    assert.equal(linked.rows.find(row => row.state.name === name).entitySlug, "warmogs-armor");
+    assert.equal(unlinked.rows.find(row => row.state.name === name).entitySlug, "warmogs-armor");
+    assert.equal(unlinked.rows.find(row => row.state.name === name).verificationStatus, "partial");
+  }
+});

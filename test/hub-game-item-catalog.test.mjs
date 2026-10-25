@@ -39,3 +39,11 @@ test("rejects pages without source identity or matching item count", () => {
   assert.throws(() => parseHubGameItemCatalog(fixture.replace("2 of 2 items", "3 of 3 items"), sourceUrl), /count mismatch/);
   assert.throws(() => parseHubGameItemCatalog(fixture, "https://example.com/items"), /Hub Game domain/);
 });
+
+test("item identities drop possessive apostrophes and combining accents consistently", () => {
+  for (const name of ["Warmog's Armor", "Warmog’s Armor", "Wármógʼs Ármor", "Wármógʼs Ármor".normalize("NFD")]) {
+    const catalog = parseHubGameItemCatalog(fixture.replaceAll("Infinity Orb", name), sourceUrl);
+    assert.equal(catalog.items[0].slug, "warmogs-armor", name);
+    assert.equal(catalog.items[0].name, name);
+  }
+});
