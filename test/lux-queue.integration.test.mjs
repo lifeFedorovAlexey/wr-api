@@ -72,6 +72,9 @@ test('Lux replies once in the source room, isolates authors and excludes private
     await sql`update lux_chat_queue set state='failed',lease_until=null where message_id=${silent.id}`;
     assert.equal((await queue.retryFailed(silent.id)).retried,true);
     assert.equal((await queue.take()).messageId,silent.id);
+    await sql`update lux_chat_queue set state='failed' where message_id=${silent.id}`;
+    await sql`delete from lux_conversations where user_id=1`;
+    await assert.rejects(queue.retryFailed(silent.id),/lux_retry_unavailable/);
   } finally {
     try {await sql.unsafe(`drop schema if exists ${schema} cascade`);} finally {await sql.end({timeout:2});}
   }
