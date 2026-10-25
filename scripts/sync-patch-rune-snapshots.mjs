@@ -111,7 +111,7 @@ async function upsertImmutableSnapshotRows(rows) {
       order by entity_slug
     `;
     assertImmutableRuneSnapshot(existingAfterInsert, rows);
-    return inserted.length;
+    return inserted;
   });
   return { inserted: insertedRows.length, unchangedExisting: records.length - insertedRows.length };
 }

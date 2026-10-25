@@ -2,6 +2,7 @@ import "dotenv/config";
 
 import { client } from "../db/client.js";
 import { parseHubGameItemDetail } from "../lib/hubGameItemDetail.mjs";
+import { assertImmutablePatchSnapshot } from "../lib/patchChampionStatSnapshots.mjs";
 import {
   buildHubGameItemSnapshotRows,
   parseHubGameItemCatalogIndex,
@@ -100,26 +101,18 @@ async function upsertImmutableSnapshotRows(rows) {
   });
   const recordsJson = JSON.stringify(records);
   const insertedRows = await client.begin(async (transaction) => {
-    const conflicts = await transaction`
-      select incoming.entity_slug
-      from jsonb_to_recordset(${recordsJson}::jsonb) as incoming (
-        patch_version text, dataset text, entity_slug text, content_hash text
-      )
-      join patch_data_snapshots existing
-        on existing.patch_version = incoming.patch_version
-        and existing.dataset = incoming.dataset
-        and existing.entity_slug = incoming.entity_slug
-      where existing.content_hash <> incoming.content_hash
-      order by incoming.entity_slug
+    await transaction`
+      select pg_advisory_xact_lock(hashtext(${records[0].dataset}), hashtext(${records[0].patch_version}))
     `;
-    if (conflicts.length) {
-      throw new Error(
-        `Refusing to overwrite immutable items snapshot ${records[0].patch_version}; `
-        + `source values changed for: ${conflicts.map((row) => row.entity_slug).join(", ")}. `
-        + "Review the source and add an explicit correction record.",
-      );
-    }
-    return transaction`
+    const existingBeforeInsert = await transaction`
+      select entity_slug, content_hash
+      from patch_data_snapshots
+      where patch_version = ${records[0].patch_version} and dataset = ${records[0].dataset}
+      order by entity_slug
+      for update
+    `;
+    assertImmutablePatchSnapshot(existingBeforeInsert, rows, "items");
+    const inserted = await transaction`
       insert into patch_data_snapshots (
         patch_version, dataset, entity_kind, entity_slug, state, source_kind, source_url,
         source_patch_version, source_updated_at, verification_status, source_evidence,
@@ -146,6 +139,20 @@ async function upsertImmutableSnapshotRows(rows) {
       on conflict (patch_version, dataset, entity_slug) do nothing
       returning entity_slug
     `;
+    if (inserted.length !== 0 && inserted.length !== rows.length) {
+      throw new Error(
+        `Only ${inserted.length} of ${rows.length} item snapshots were inserted. `
+        + "The transaction will roll back; inspect concurrent writes and retry.",
+      );
+    }
+    const existingAfterInsert = await transaction`
+      select entity_slug, content_hash
+      from patch_data_snapshots
+      where patch_version = ${records[0].patch_version} and dataset = ${records[0].dataset}
+      order by entity_slug
+    `;
+    assertImmutablePatchSnapshot(existingAfterInsert, rows, "items");
+    return inserted;
   });
   return { inserted: insertedRows.length, unchangedExisting: records.length - insertedRows.length };
 }

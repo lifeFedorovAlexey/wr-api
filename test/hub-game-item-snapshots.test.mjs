@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { parseHubGameItemDetail } from "../lib/hubGameItemDetail.mjs";
+import { assertImmutablePatchSnapshot } from "../lib/patchChampionStatSnapshots.mjs";
 import {
   buildHubGameItemSnapshotRows,
   parseHubGameItemCatalogIndex,
@@ -84,4 +85,17 @@ test("refuses incomplete detail fetches and source versions that disagree", () =
     ...detail,
     source: { ...detail.source, snapshot: { ...detail.source.snapshot, version: "7.2" } },
   }]), /does not match catalog snapshot/);
+});
+
+test("an item snapshot can be repeated but never extended, shrunk or rewritten at the same patch", () => {
+  const catalog = parseHubGameItemCatalogIndex(indexFixture, catalogUrl);
+  const detail = parseHubGameItemDetail(detailFixture, detailUrl);
+  const { rows } = buildHubGameItemSnapshotRows(catalog, [detail]);
+  const stored = rows.map(row => ({ entity_slug: row.entitySlug, content_hash: row.contentHash }));
+  assert.deepEqual(assertImmutablePatchSnapshot([], rows, "items"), { unchanged: 0 });
+  assert.deepEqual(assertImmutablePatchSnapshot(stored, rows, "items"), { unchanged: rows.length });
+  assert.throws(() => assertImmutablePatchSnapshot(stored.slice(1), rows, "items"), /immutable items snapshot: new source rows:/);
+  assert.throws(() => assertImmutablePatchSnapshot(stored, rows.slice(1), "items"), /immutable items snapshot: missing from source:/);
+  const changed = rows.map((row, index) => index ? row : { ...row, contentHash: "corrected-source" });
+  assert.throws(() => assertImmutablePatchSnapshot(stored, changed, "items"), /immutable items snapshot: changed values:/);
 });
