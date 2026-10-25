@@ -48,7 +48,7 @@ test("classifies item costs, thresholds, stats, and rune cooldowns from change s
       ["youmuus-ghostblade", "buff"],
       ["locket-enchant", "buff"],
       ["thornmail", "nerf"],
-      ["warmogs-armor", "nerf"],
+      ["warmogs-armor", "adjustment"],
       ["statikk-shiv", "buff"],
       ["yun-tal-wildarrows", "buff"],
     ],
@@ -168,4 +168,31 @@ test("classifies older item and rune value markup and strips rune-tree prefixes"
       ["hextech-flashtraption", "buff"],
     ],
   );
+});
+
+test("item parsing preserves mixed ranks and distinguishes execution from minimum thresholds", () => {
+  const catalog = { champions: new Map(), items: new Map([
+    ["threshold item", { slug: "threshold-item", name: "Threshold Item" }],
+  ]), runes: new Map(), spells: new Map() };
+  for (const [label, before, after, expected] of [
+    ["Execute health threshold", "5%", "10%", "buff"],
+    ["Execute health threshold", "10%", "5%", "nerf"],
+    ["Порог здоровья для казни", "5%", "10%", "buff"],
+    ["Minimum bonus health threshold", "900", "1250", "nerf"],
+    ["Минимальный порог дополнительного здоровья", "1250", "900", "buff"],
+    ["Trigger threshold", "900", "1250", "adjustment"],
+    ["Порог срабатывания", "1250", "900", "adjustment"],
+    ["Damage", "10/20", "20/15", "adjustment"],
+  ]) {
+    const body = `<h2>GAMEPLAY CHANGES</h2><h3>ITEM ADJUSTMENTS</h3><h4>Threshold Item</h4><ul><li>${label}: ${before} → ${after}</li></ul>`;
+    const page = {
+      url: "https://wildrift.leagueoflegends.com/en-us/news/game-updates/wild-rift-patch-notes-9-0/",
+      blades: [{ type: "articleMasthead", title: "Wild Rift Patch Notes 9.0" },
+        { type: "articleRichText", richText: { body } }],
+    };
+    const html = `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({ props: { pageProps: { page } } })}</script>`;
+    const parsed = parsePatchArticle(html, "9.0", "en-us", catalog);
+    const [row] = buildPatchChangeRows(parsed.changes, catalog, [], "9.0");
+    assert.equal(row.changeType, expected, `${label}: ${before} → ${after}`);
+  }
 });

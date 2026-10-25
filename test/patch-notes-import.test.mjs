@@ -68,7 +68,7 @@ test("archived versions are imported alongside the index without hiding an archi
   assert.deepEqual(visited, [
     { locale: "en-us", version: "9.0", url: "current-index", force: true },
     { locale: "en-us", version: "3.4", url: "archived-source", force: false },
-    { locale: "ru-ru", version: "3.4", url: "archived-translation", force: true },
+    { locale: "ru-ru", version: "3.4", url: "archived-translation", force: false },
   ]);
 });
 
@@ -111,4 +111,21 @@ test("archive reparsing includes current-parser articles without forcing every s
     log,
   });
   assert.deepEqual(visited, ["en-us:9.0", "en-us:3.4", "ru-ru:9.0", "ru-ru:3.4"]);
+});
+
+test("archive-only versions reuse stored HTML when their original URLs are no longer available", async () => {
+  const visited = [];
+  await runPatchNotesImport({
+    loadIndex: async () => [],
+    loadArchived: async () => [{ version: "3.4" }, { version: "3.4a" }],
+    loadReadyEnglish: async () => ["3.4a", "3.4"],
+    importPatch: async (item, locale, options) => {
+      if (options.force) throw new Error("Archived source URL now returns HTTP 404");
+      visited.push(`${locale}:${item.version}`);
+      return "parsed";
+    },
+    markFailed: async () => assert.fail("Stored HTML must not require an unrelated source refresh"),
+    log,
+  });
+  assert.deepEqual(visited, ["en-us:3.4a", "en-us:3.4", "ru-ru:3.4a", "ru-ru:3.4"]);
 });

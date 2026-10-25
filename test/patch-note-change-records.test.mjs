@@ -130,16 +130,34 @@ test("classifies aligned vectors by their shared direction, ignoring unchanged r
   assert.equal(row.changeType, "buff");
 });
 
-test("classifies aligned rank vectors by their aggregate direction", () => {
-  const [row] = buildPatchChangeRows([{
-    entityKind: "champion",
-    entitySlug: "ranked-champion",
-    entityName: "Ranked Champion",
-    changeName: "Ability",
-    details: [{ label: "Damage", before: "20/30/40/50", after: "10/25/40/55", text: "Damage: 20/30/40/50 → 10/25/40/55" }],
-  }], emptyCatalog);
+test("opposing rank changes remain adjustments regardless of their aggregate direction", () => {
+  for (const [before, after] of [["10/20", "20/15"], ["20/30/40/50", "10/25/40/55"], ["10/20", "20/10"]]) {
+    const [row] = buildPatchChangeRows([{
+      entityKind: "champion",
+      entitySlug: "ranked-champion",
+      entityName: "Ranked Champion",
+      changeName: "Ability",
+      details: [{ label: "Damage", before, after, text: `Damage: ${before} → ${after}` }],
+    }], emptyCatalog);
 
-  assert.equal(row.changeType, "nerf");
+    assert.equal(row.changeType, "adjustment", `${before} → ${after}`);
+  }
+});
+
+test("threshold utility follows explicit conditions and leaves bare thresholds unresolved", () => {
+  for (const [label, expected] of [
+    ["Execute health threshold", "buff"], ["Порог здоровья для казни", "buff"],
+    ["Minimum bonus health threshold", "nerf"], ["Минимальный порог дополнительного здоровья", "nerf"],
+    ["Trigger threshold", "adjustment"], ["Порог срабатывания", "adjustment"],
+  ]) {
+    for (const entityKind of ["champion", "item", "rune"]) {
+      const [row] = buildPatchChangeRows([{
+        entityKind, entitySlug: "threshold-entity", entityName: "Threshold Entity",
+        details: [{ label, before: "5%", after: "10%", text: `${label}: 5% → 10%` }],
+      }], emptyCatalog);
+      assert.equal(row.changeType, expected, `${entityKind}: ${label}`);
+    }
+  }
 });
 
 test("reclassifies a new marker only when the entity appears in an earlier patch", () => {
