@@ -191,6 +191,7 @@ jobs:
             upsert_env DATABASE_URL "${DATABASE_URL}" "${RELEASE_DIR}/.env"
             upsert_env GUIDES_SYNC_SECRET "${GUIDES_SYNC_SECRET}" "${RELEASE_DIR}/.env"
             upsert_env WR_CHAT_SHARED_SECRET "${WR_CHAT_SHARED_SECRET}" "${RELEASE_DIR}/.env"
+            upsert_env LUX_ENABLED "true" "${RELEASE_DIR}/.env"
 
             log_step "install dependencies and setup schema"
             cd "${RELEASE_DIR}"
@@ -203,6 +204,7 @@ jobs:
             npm run setup:guides
             npm run setup:admin
             npm run setup:chat
+            npm run setup:lux
             npm run setup:quizzes
             npm run setup:quiz-media-storage
             npm run setup:riftgg-cn-stats

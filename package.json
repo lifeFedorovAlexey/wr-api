@@ -27,6 +27,8 @@
     "setup:guides": "node ./scripts/setup-guides-table.mjs",
     "setup:admin": "node ./scripts/setup-admin-tables.mjs",
     "setup:chat": "node ./scripts/setup-chat-tables.mjs",
+    "setup:lux": "node ./scripts/setup-lux-chat.mjs",
+    "start:lux": "node ./scripts/lux-chat-worker.mjs",
     "setup:chat-media-lifecycle": "node ./scripts/setup-chat-media-lifecycle.mjs",
     "cleanup:chat": "node ./workers/cleanup-chat-history.mjs",
     "setup:riftgg-cn-stats": "node ./scripts/setup-riftgg-cn-stats-table.mjs",

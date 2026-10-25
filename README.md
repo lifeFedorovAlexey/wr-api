@@ -229,3 +229,11 @@ Deploys to Timeweb run from GitHub Actions on pushes to `main`.
 
 - `.github/workflows/update-champions.yml` refreshes champion stats
 - `.github/workflows/update-riftgg-cn-stats.yml` imports daily RiftGG CN data
+
+## Люкс в общем чате
+
+Люкс — служебный участник существующего общего чата. Напиши «@Люкс» или начни сообщение с «Люкс,». Она отвечает в той же ленте; отдельные комнаты не создаются. Память и архив обращений изолированы по ID автора. Старые обмены сжимаются; лор и последняя сохранённая CN-статистика загружаются с API. Цифры и ссылки в карточках берутся из базы.
+
+После setup:chat выполни npm run setup:lux и включи LUX_ENABLED=true. Локальный компьютер запускает npm run start:lux из каталога wr-api. Нужны WR_API_ORIGIN=https://wildriftallstats.ru/wr-api и существующий GUIDES_SYNC_SECRET. LM Studio слушает 127.0.0.1:1234/v1, модель lux-local, окно 16384; настройки LUX_LM_STUDIO_MODEL и LUX_CONTEXT_TOKENS переопределяют значения. Worker получает задания по HTTPS; внешний доступ к LM Studio и SSH-туннель не нужны. Компьютер и LM Studio должны работать для ответов.
+
+Пользователь может стереть собственную память через участника Люкс. Уже опубликованные сообщения общего чата сохраняются. При отключённом worker участник отображается не в сети; очередь обращений истекает через 15 минут.
