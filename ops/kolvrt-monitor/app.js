@@ -15,6 +15,7 @@ function displayStatus(row,service) { return row.status==='running' && (!service
 function overview(services) {
   const cards=el('div',null,'cards');
   for(const service of services){const card=el('a',null,'card');card.href='/'+service.id;const top=el('div',null,'card-top');top.append(el('h2',service.title),badge(service.state));card.append(top,el('p',service.description));
+    if(service.summary){card.append(el('p',service.summary));cards.append(card);continue;}
     const facts=el('div',null,'facts'),last=recent(service);facts.append(fact('Текущий процесс',service.current ? (names[service.current.job]||service.current.job)+' · '+(service.current.step||'') : labels[service.state]),fact('Последний запуск',date(last?.started_at)),fact('Результат',last ? labels[displayStatus(last,service)]||last.status:'Запусков пока нет'),fact('Исполнитель',last?.executor||'—'));card.append(facts);cards.append(card);}
   return cards;
 }

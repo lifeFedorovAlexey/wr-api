@@ -1,6 +1,7 @@
 """Read-only LAN monitoring hub. Producers publish snapshots; no shell from HTTP."""
 import argparse
 import datetime as dt
+import importlib.util
 import json
 from pathlib import Path
 import subprocess
@@ -48,42 +49,52 @@ def wildrift(data):
             'error': data.get('error') or (None if fresh else 'Нет свежего снимка из продовой БД')}
 
 
-def tver(data):
-    guest = data.get('guest') or {}
-    progress = guest.get('progress') or {}
-    fresh = data.get('collector', {}).get('ok') is True and age(data.get('collectedAt')) <= 25 and age(guest.get('observedAt')) <= 25
-    service = guest.get('service') or {}
-    live = fresh and guest.get('controlReachable') and guest.get('progressSource') == 'control'
-    active = live and (progress.get('activeSessions') or 0) > 0
-    state = 'unknown' if not fresh else 'offline' if not data.get('vm', {}).get('running') or service.get('ActiveState') != 'active' else 'warning' if not live else 'running' if active else 'idle'
-    sources = progress.get('sources') or []
-    pauses = [source for source in sources if source.get('pause')]
-    if state == 'idle' and pauses:
-        state = 'warning'
-    history = [{'id': row.get('id'), 'job': row.get('engine') or 'обход', 'executor': 'kolvrt', 'status': row.get('status'),
-                'started_at': row.get('startedAt'), 'finished_at': row.get('finishedAt'),
-                'heartbeat_at': guest.get('observedAt') if live and row.get('id') == progress.get('runId') else None,
-                'result': row.get('reason') or '', 'log_tail': '\n'.join(row.get('errors') or [])}
-               for row in guest.get('history', [])[:120]]
-    session = (progress.get('sessions') or [{}])[0]
-    current = {'id': progress.get('runId'), 'job': progress.get('nextSource') or progress.get('scenario') or 'обход', 'executor': 'kolvrt',
-               'step': session.get('stage') or progress.get('state'), 'result': session.get('detail')} if active else None
-    return {'state': state, 'fresh': fresh, 'observedAt': data.get('collectedAt'), 'current': current,
-            'history': history, 'jobs': [], 'nextAt': progress.get('nextSchedule'), 'sources': sources,
-            'processes': [{'Id': 'tver-journey (VM)', **service}], 'error': data.get('collector', {}).get('error') or (None if live else 'Нет свежего ответа процесса'),
-            'notice': 'На паузе: ' + ', '.join(source.get('source', '') for source in pauses) if pauses else None}
+class ExistingDashboard:
+    """Mount the installed crawler UI and presenter without another web process."""
+    def __init__(self, spec):
+        self.root = Path(spec['dashboard'])
+        self.snapshot = Path(spec['snapshot'])
+        self.prefix = '/' + spec['id']
+        module_spec = importlib.util.spec_from_file_location('tver_dashboard', self.root / 'dashboard.py')
+        self.module = importlib.util.module_from_spec(module_spec)
+        module_spec.loader.exec_module(self.module)
+
+    def status(self):
+        return self.module.presentation(self.module.read_snapshot(self.snapshot))
+
+    def page(self, route):
+        if route == self.prefix + '/api/status':
+            return json.dumps(self.status(), ensure_ascii=False).encode(), 'application/json'
+        files = {self.prefix: ('index.html', 'text/html'), self.prefix + '/app.js': ('app.js', 'text/javascript'),
+                 self.prefix + '/style.css': ('style.css', 'text/css')}
+        if route not in files:
+            return None
+        file, mime = files[route]
+        body = (self.root / file).read_bytes()
+        # Change mount URLs in the response only. Original files remain the source of truth.
+        if file == 'index.html':
+            body = body.replace(b'"/style.css"', f'"{self.prefix}/style.css"'.encode())
+            body = body.replace(b'"/app.js"', f'"{self.prefix}/app.js"'.encode())
+            nav = '<nav aria-label="Разделы">'.encode()
+            body = body.replace(nav, nav + '<a href="/">Все сервисы</a>'.encode())
+        elif file == 'app.js':
+            body = body.replace(b"'/api/status'", f"'{self.prefix}/api/status'".encode())
+        return body, mime
 
 
-def collect(config):
+def collect(config, dashboards=None):
     services = []
     for spec in config:
         base = {key: spec[key] for key in ('id', 'title', 'description')}
         try:
-            data = load(spec['snapshot'])
-            adapter = {'wildrift': wildrift, 'tver': tver}.get(spec['adapter'])
-            if adapter is None:
+            if spec['adapter'] == 'tver':
+                data = (dashboards or {})[spec['id']].status()
+                view = data['view']
+                base.update(state=view['state'], fresh=view['fresh'], observedAt=data.get('collectedAt'), summary=view['title'])
+            elif spec['adapter'] == 'wildrift':
+                base.update(wildrift(load(spec['snapshot'])))
+            else:
                 raise ValueError('Unknown adapter')
-            base.update(adapter(data))
         except (OSError, ValueError, KeyError, TypeError):
             base.update(state='unknown', fresh=False, history=[], jobs=[], error='Снимок состояния пока недоступен')
         services.append(base)
@@ -91,6 +102,14 @@ def collect(config):
 
 
 def handler(config, hosts):
+    dashboards = {}
+    for spec in config:
+        if spec['adapter'] == 'tver':
+            try:
+                dashboards[spec['id']] = ExistingDashboard(spec)
+            except (OSError, ImportError, ValueError, KeyError):
+                pass  # The hub and other services remain available if this installation is missing.
+
     class Handler(BaseHTTPRequestHandler):
         server_version = 'KolvrtMonitor'
 
@@ -110,11 +129,22 @@ def handler(config, hosts):
                 return self.respond(403, b'Host not allowed', 'text/plain')
             route = urlsplit(self.path).path.rstrip('/') or '/'
             if route == '/api/status':
-                return self.respond(200, json.dumps(collect(config), ensure_ascii=False).encode(), 'application/json; charset=utf-8')
+                return self.respond(200, json.dumps(collect(config, dashboards), ensure_ascii=False).encode(), 'application/json; charset=utf-8')
             if route == '/health':
                 return self.respond(200, b'ok', 'text/plain')
             files = {'/assets/app.js': ('app.js', 'text/javascript'), '/assets/style.css': ('style.css', 'text/css')}
-            for page in ['/'] + ['/' + spec['id'] for spec in config]:
+            for spec in config:
+                prefix = '/' + spec['id']
+                if spec['adapter'] == 'tver' and (route == prefix or route.startswith(prefix + '/')):
+                    try:
+                        mounted = dashboards[spec['id']].page(route)
+                    except (OSError, KeyError, ValueError, TypeError):
+                        return self.respond(503, b'Original dashboard unavailable', 'text/plain')
+                    if mounted:
+                        body, mime = mounted
+                        return self.respond(200, body, mime + '; charset=utf-8')
+                    return self.respond(404, b'Not found', 'text/plain')
+            for page in ['/'] + ['/' + spec['id'] for spec in config if spec['adapter'] != 'tver']:
                 files[page] = ('index.html', 'text/html')
             if route not in files:
                 return self.respond(404, b'Not found', 'text/plain')

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Install the monitor and worker units; never enable the scraper before cutover."""
+"""Install the shared web service. Prepare dormant worker units only with --worker."""
+import argparse
 import base64
 import os
 from pathlib import Path
@@ -24,37 +25,54 @@ def managed(directory):
     marker.touch(mode=0o644, exist_ok=True)
 
 
-if os.geteuid() != 0 or socket.gethostname() != 'kolvrt':
-    raise RuntimeError('Run as root on kolvrt')
-for directory in [WORKER, MONITOR]:
-    managed(directory)
-for file in (HERE / 'kolvrt-monitor').iterdir():
-    if file.is_file() and file.suffix in ('.py', '.html', '.css', '.js', '.json'):
-        shutil.copyfile(file, MONITOR / file.name)
-        os.chmod(MONITOR / file.name, 0o644)
-shutil.copyfile(HERE / 'wildrift-worker/compose.yaml', WORKER / 'compose.yaml')
-secrets = WORKER / 'secrets'
-secrets.mkdir(mode=0o700, exist_ok=True)
-os.chmod(secrets, 0o700)
-private = secrets / 'provision-private.pem'
-public = WORKER / 'provision-public.pem'
-if not private.exists():
-    old = os.umask(0o077)
-    try:
-        command('openssl', 'genpkey', '-algorithm', 'RSA', '-pkeyopt', 'rsa_keygen_bits:3072', '-out', str(private))
-    finally:
-        os.umask(old)
-    command('openssl', 'pkey', '-in', str(private), '-pubout', '-out', str(public))
-    os.chmod(public, 0o644)
-data = Path('/srv/data/wildrift-worker')
-data.mkdir(mode=0o755, exist_ok=True)
-os.chown(data, 10001, 10001)
-for directory in ['wildrift-worker', 'kolvrt-monitor']:
+def install_units(directory):
     for file in (HERE / directory).iterdir():
         if file.suffix in ('.service', '.timer'):
             shutil.copyfile(file, Path('/etc/systemd/system') / file.name)
-command('systemctl', 'daemon-reload')
-command('systemctl', 'enable', '--now', 'kolvrt-monitor.service')
-command('systemctl', 'restart', 'kolvrt-monitor.service')
-print('Monitor installed. Worker timers remain disabled until verified cutover.')
-print('RECIPIENT_PUBLIC_KEY=' + base64.b64encode(public.read_bytes()).decode())
+
+
+def install_worker():
+    managed(WORKER)
+    shutil.copyfile(HERE / 'wildrift-worker/compose.yaml', WORKER / 'compose.yaml')
+    secrets = WORKER / 'secrets'
+    secrets.mkdir(mode=0o700, exist_ok=True)
+    os.chmod(secrets, 0o700)
+    private = secrets / 'provision-private.pem'
+    public = WORKER / 'provision-public.pem'
+    if not private.exists():
+        old = os.umask(0o077)
+        try:
+            command('openssl', 'genpkey', '-algorithm', 'RSA', '-pkeyopt', 'rsa_keygen_bits:3072', '-out', str(private))
+        finally:
+            os.umask(old)
+        command('openssl', 'pkey', '-in', str(private), '-pubout', '-out', str(public))
+        os.chmod(public, 0o644)
+    data = Path('/srv/data/wildrift-worker')
+    data.mkdir(mode=0o755, exist_ok=True)
+    os.chown(data, 10001, 10001)
+    install_units('wildrift-worker')
+    print('Worker units prepared; timers are not enabled by this installer.')
+    print('RECIPIENT_PUBLIC_KEY=' + base64.b64encode(public.read_bytes()).decode())
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--worker', action='store_true', help='Also prepare the worker units and provisioning key')
+    args = parser.parse_args()
+    if os.geteuid() != 0 or socket.gethostname() != 'kolvrt':
+        raise RuntimeError('Run as root on kolvrt')
+    managed(MONITOR)
+    for name in ['monitor.py', 'index.html', 'style.css', 'app.js', 'services.json']:
+        shutil.copyfile(HERE / 'kolvrt-monitor' / name, MONITOR / name)
+        os.chmod(MONITOR / name, 0o644)
+    install_units('kolvrt-monitor')
+    if args.worker:
+        install_worker()
+    command('systemctl', 'daemon-reload')
+    command('systemctl', 'enable', '--now', 'kolvrt-monitor.service')
+    command('systemctl', 'restart', 'kolvrt-monitor.service')
+    print('Shared web service installed. Existing crawler files and collector are reused.')
+
+
+if __name__ == '__main__':
+    main()
