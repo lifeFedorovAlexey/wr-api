@@ -21,6 +21,7 @@ jobs:
     with:
       jobs: patch-notes
       force: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_run' }}
+      expected_api_sha: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || '' }}
     secrets: inherit
   sync:
     if: >-

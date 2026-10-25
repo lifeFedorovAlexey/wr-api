@@ -5,6 +5,17 @@ services:
     env_file: ./secrets/worker.env
     environment:
       SCRAPE_REVISION: ${SCRAPE_REVISION:?set source revision}
+      ASSET_PUBLIC_MODE: s3
+      DATABASE_POOL_MAX: 3
+      GUIDE_ASSETS_DIR: /tmp/wr-assets/guides
+      GUIDE_HERO_MEDIA_DIR: /tmp/wr-assets/hero
+      CHAMPION_ICONS_DIR: /tmp/wr-assets/icons
+      CN_FETCH_TIMEOUT_MS: 30000
+      CN_FETCH_RETRIES: 5
+      RIFTGG_REQUEST_TIMEOUT_MS: 20000
+      RIFTGG_FETCH_RETRIES: 2
+      PATCH_NOTES_REQUEST_TIMEOUT_MS: 30000
+      PATCH_NOTES_FETCH_RETRIES: 3
     read_only: true
     init: true
     user: '10001:10001'
@@ -21,8 +32,8 @@ services:
       options: {max-size: 10m, max-file: '3'}
   observer:
     image: ${WORKER_IMAGE:?set pinned worker image}
-    env_file: ./secrets/monitor.env
-    command: ['--status', '--output', '/state/status.json']
+    env_file: ./secrets/worker.env
+    command: ['--status', '--output', '/state/database-status.json']
     read_only: true
     init: true
     user: '10001:10001'

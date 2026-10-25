@@ -5,6 +5,7 @@ Requires=docker.service
 [Service]
 Type=oneshot
 WorkingDirectory=/srv/services/wildrift-worker
-ExecStart=/usr/bin/docker compose run --rm --name wildrift-monitor observer
+ExecStart=/usr/bin/python3 /srv/services/wildrift-worker/observe.py
 TimeoutStartSec=25
+TimeoutStopSec=5
 ExecStopPost=-/usr/bin/docker stop -t 2 wildrift-monitor

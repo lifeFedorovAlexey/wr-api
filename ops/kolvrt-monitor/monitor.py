@@ -3,12 +3,15 @@ import argparse
 import datetime as dt
 import importlib.util
 import json
+from html import escape
 from pathlib import Path
-import subprocess
+import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
 HERE = Path(__file__).resolve().parent
+UNIT_DIRECTORIES = tuple(Path(path) for path in ('/etc/systemd/system', '/run/systemd/system', '/usr/lib/systemd/system', '/lib/systemd/system'))
+WORKER_UNITS = ('wildrift-scraper.timer', 'wildrift-scraper.service')
 
 
 def age(value):
@@ -25,13 +28,19 @@ def load(file):
     return json.loads(path.read_text(encoding='utf-8'))
 
 
-def worker_process():
+def worker_installed():
+    """Only inspect fixed paths; the unprivileged web process never queries D-Bus."""
     try:
-        out = subprocess.run(['systemctl', 'show', 'wildrift-scraper.timer', 'wildrift-scraper.service', '--property=Id,ActiveState,SubState,Result,MainPID'],
-                             capture_output=True, text=True, timeout=2, check=True).stdout
-        return [dict(line.split('=', 1) for line in part.splitlines() if '=' in line) for part in out.strip().split('\n\n')]
-    except (OSError, subprocess.SubprocessError):
-        return []
+        for directory in UNIT_DIRECTORIES:
+            for name in WORKER_UNITS:
+                try:
+                    (directory / name).lstat()  # A masked or dangling unit is still installed.
+                    return True
+                except FileNotFoundError:
+                    pass
+        return False
+    except OSError:
+        return None
 
 
 def wildrift(data):
@@ -40,21 +49,65 @@ def wildrift(data):
     running = [run for run in history if run.get('status') == 'running' and age(run.get('heartbeat_at')) < 90]
     current = running[0] if running and fresh else None
     state = 'unknown' if not fresh else 'running' if current else 'warning' if any(job.get('due') for job in jobs) else 'idle'
-    processes = worker_process()
+    processes = data.get('processes', []) if age(data.get('processesObservedAt')) <= 90 else []
     timer = next((unit for unit in processes if unit.get('Id') == 'wildrift-scraper.timer'), {})
-    if fresh and timer and timer.get('ActiveState') != 'active' and not current:
+    worker = next((unit for unit in processes if unit.get('Id') == 'wildrift-scraper.service'), {})
+    notice = None
+    installed = worker_installed()
+    if installed is False:
+        state = 'unconfigured'
+        notice = 'Сборщик Wild Rift на kolvrt ещё не подключён.'
+        processes = []
+    elif installed is None or not timer.get('LoadState') or not worker.get('LoadState'):
+        state = 'unknown'
+        notice = 'Нет свежего состояния служб на kolvrt.'
+    elif fresh and timer.get('ActiveState') != 'active' and not current:
         state = 'offline'
     return {'state': state, 'fresh': fresh, 'observedAt': data.get('collectedAt'), 'current': current,
-            'jobs': jobs, 'history': history, 'processes': processes, 'fallbackHours': 2,
-            'error': data.get('error') or (None if fresh else 'Нет свежего снимка из продовой БД')}
+            'jobs': jobs, 'history': history, 'processes': processes, 'processesObservedAt': data.get('processesObservedAt'), 'fallbackHours': 2,
+            'notice': notice, 'error': data.get('error') or (None if fresh or state == 'unconfigured' else 'Нет свежего снимка из продовой БД')}
+
+
+def crawler_summary(data):
+    """Expose the original presenter's latest report without recreating its history UI."""
+    view, guest = data['view'], data.get('guest') or {}
+    progress, latest = guest.get('progress') or {}, guest.get('latest')
+    fresh = view.get('guestFresh', view['fresh'])
+    current, last = None, None
+    if latest:
+        unfinished = not latest.get('finishedAt') or latest.get('status') == 'running'
+        active = bool(fresh and view.get('live') and unfinished and latest.get('status') != 'interrupted'
+                      and latest.get('id') and progress.get('runId') == latest['id'] and progress.get('activeSessions', 0) > 0)
+        status = latest.get('status') or 'unknown'
+        if unfinished and status != 'interrupted':
+            status = 'running' if active else 'unfinished'
+        executor = ' · '.join(value for value in (data.get('host'), (data.get('vm') or {}).get('name')) if value)
+        last = {'id': latest.get('id'), 'job': latest.get('engine'), 'status': status,
+                'started_at': latest.get('startedAt'), 'finished_at': latest.get('finishedAt'), 'executor': executor or None,
+                'heartbeat_at': guest.get('observedAt') if active else None}
+        if active:
+            current = last
+    return {'state': view['state'], 'fresh': fresh, 'observedAt': guest.get('observedAt') or data.get('collectedAt'),
+            'summary': view['title'], 'current': current, 'lastRun': last}
+
+
+def shared_header(config, active):
+    links = []
+    for item in [{'id': '', 'title': 'Все сервисы'}, *config]:
+        current = ' class="nav-active" aria-current="page"' if item['id'] == active else ''
+        links.append(f'<a href="/{escape(item["id"])}"{current}>{escape(item["title"])}</a>')
+    return ('<header class="page-header"><a class="brand" href="/"><span class="brand-icon">к.</span>'
+            '<span>kolvrt<small>Мониторинг сервисов</small></span></a><nav aria-label="Сервисы">'
+            + ''.join(links) + '</nav><span id="clock" class="clock">Московское время</span></header>').encode()
 
 
 class ExistingDashboard:
     """Mount the installed crawler UI and presenter without another web process."""
-    def __init__(self, spec):
+    def __init__(self, spec, config):
         self.root = Path(spec['dashboard'])
         self.snapshot = Path(spec['snapshot'])
         self.prefix = '/' + spec['id']
+        self.spec, self.config = spec, config
         module_spec = importlib.util.spec_from_file_location('tver_dashboard', self.root / 'dashboard.py')
         self.module = importlib.util.module_from_spec(module_spec)
         module_spec.loader.exec_module(self.module)
@@ -73,12 +126,18 @@ class ExistingDashboard:
         body = (self.root / file).read_bytes()
         # Change mount URLs in the response only. Original files remain the source of truth.
         if file == 'index.html':
-            body = body.replace(b'"/style.css"', f'"{self.prefix}/style.css"'.encode())
+            body = body.replace(b'"/style.css"', b'"/assets/base.css"')
+            body = body.replace(b'</head>', b'<link rel="stylesheet" href="/assets/style.css"></head>')
             body = body.replace(b'"/app.js"', f'"{self.prefix}/app.js"'.encode())
-            nav = '<nav aria-label="Разделы">'.encode()
-            body = body.replace(nav, nav + '<a href="/">Все сервисы</a>'.encode())
+            def mount_header(match):
+                nav = re.search('<nav aria-label="Разделы">.*?</nav>'.encode(), match.group())
+                heading = ('<div class="hub-page-heading"><div><h1 class="hub-page-title">'
+                           + escape(self.spec['title']) + '</h1><p>' + escape(self.spec['description']) + '</p></div>').encode()
+                return shared_header(self.config, self.spec['id']) + heading + (nav.group() if nav else b'') + b'</div>'
+            body = re.sub(b'<header class="page-header">.*?</header>', mount_header, body, count=1, flags=re.DOTALL)
         elif file == 'app.js':
             body = body.replace(b"'/api/status'", f"'{self.prefix}/api/status'".encode())
+            body = body.replace(b"document.querySelectorAll('nav a')", 'document.querySelectorAll(\'nav[aria-label="Разделы"] a\')'.encode())
         return body, mime
 
 
@@ -89,10 +148,13 @@ def collect(config, dashboards=None):
         try:
             if spec['adapter'] == 'tver':
                 data = (dashboards or {})[spec['id']].status()
-                view = data['view']
-                base.update(state=view['state'], fresh=view['fresh'], observedAt=data.get('collectedAt'), summary=view['title'])
+                base.update(crawler_summary(data))
             elif spec['adapter'] == 'wildrift':
-                base.update(wildrift(load(spec['snapshot'])))
+                try:
+                    data = load(spec['snapshot'])
+                except (OSError, ValueError):
+                    data = {}
+                base.update(wildrift(data))
             else:
                 raise ValueError('Unknown adapter')
         except (OSError, ValueError, KeyError, TypeError):
@@ -106,7 +168,7 @@ def handler(config, hosts):
     for spec in config:
         if spec['adapter'] == 'tver':
             try:
-                dashboards[spec['id']] = ExistingDashboard(spec)
+                dashboards[spec['id']] = ExistingDashboard(spec, config)
             except (OSError, ImportError, ValueError, KeyError):
                 pass  # The hub and other services remain available if this installation is missing.
 
@@ -132,6 +194,12 @@ def handler(config, hosts):
                 return self.respond(200, json.dumps(collect(config, dashboards), ensure_ascii=False).encode(), 'application/json; charset=utf-8')
             if route == '/health':
                 return self.respond(200, b'ok', 'text/plain')
+            if route == '/assets/base.css':
+                try:
+                    root = next(Path(spec['dashboard']) for spec in config if spec['adapter'] == 'tver')
+                    return self.respond(200, (root / 'style.css').read_bytes(), 'text/css; charset=utf-8')
+                except (OSError, StopIteration):
+                    return self.respond(503, b'Shared stylesheet unavailable', 'text/plain')
             files = {'/assets/app.js': ('app.js', 'text/javascript'), '/assets/style.css': ('style.css', 'text/css')}
             for spec in config:
                 prefix = '/' + spec['id']
@@ -149,7 +217,10 @@ def handler(config, hosts):
             if route not in files:
                 return self.respond(404, b'Not found', 'text/plain')
             file, mime = files[route]
-            return self.respond(200, (HERE / file).read_bytes(), mime + '; charset=utf-8')
+            body = (HERE / file).read_bytes()
+            if file == 'index.html':
+                body = body.replace(b'<header data-shared-header></header>', shared_header(config, route.lstrip('/')))
+            return self.respond(200, body, mime + '; charset=utf-8')
 
         do_HEAD = do_GET
 

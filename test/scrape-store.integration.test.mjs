@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import postgres from "postgres";
 import { acquireCoordinator, releaseCoordinator, claimJob, heartbeat, finishJob } from "../lib/scrapeStore.mjs";
+import { runPatchNotesImport } from "../lib/patchNotesImport.mjs";
 
 test("PostgreSQL: mutual exclusion, stale lease recovery and successful/failed freshness", { skip: !process.env.SCRAPE_TEST_DATABASE_URL, timeout: 25000 }, async () => {
   const url = new URL(process.env.SCRAPE_TEST_DATABASE_URL);
@@ -29,6 +30,20 @@ test("PostgreSQL: mutual exclusion, stale lease recovery and successful/failed f
     const partial = await claimJob(a, 'guides', 'github', { force: true });
     await finishJob(a, partial, 'success', 'targeted only', '', false);
     assert.equal((await a`select last_success_at from scrape_job_state where job='guides'`)[0].last_success_at, null);
+    const patchSuccess = await claimJob(a, 'patch-notes', 'kolvrt', { force: true });
+    await finishJob(a, patchSuccess, 'success', 'previous complete import', '');
+    const [{ last_success_at: previousPatchSuccess }] = await a`select last_success_at from scrape_job_state where job='patch-notes'`;
+    const patchFailure = await claimJob(a, 'patch-notes', 'kolvrt', { force: true });
+    let patchStatus = 'success';
+    try {
+      await runPatchNotesImport({
+        loadIndex: async () => [{ version: '7.3c' }], loadReadyEnglish: async () => [],
+        importPatch: async () => 'failed', markFailed: async () => {}, log: { log() {}, error() {} },
+      });
+    } catch { patchStatus = 'failed'; }
+    await finishJob(a, patchFailure, patchStatus, 'article failed', '');
+    assert.equal((await a`select status from scrape_runs where id=${patchFailure.id}`)[0].status, 'failed');
+    assert.equal(+(await a`select last_success_at from scrape_job_state where job='patch-notes'`)[0].last_success_at, +previousPatchSuccess);
     const orphan = await claimJob(a, 'riftgg', 'kolvrt', { force: true });
     await a`update scrape_runs set heartbeat_at=now()-interval '91 seconds' where id=${orphan.id}`;
     await releaseCoordinator(a);

@@ -5,6 +5,7 @@ import * as dbSchema from "../db/schema.js";
 import { client, db } from "../db/client.js";
 import { buildPatchChangeRows, loadPatchChangeCatalog } from "../lib/patchNotesChangeRecords.mjs";
 import { enrichPatchSkinImages } from "../lib/patchSkinImages.mjs";
+import { runPatchNotesImport } from "../lib/patchNotesImport.mjs";
 import {
   parsePatchArticle,
   parsePatchIndex,
@@ -188,44 +189,16 @@ async function loadIndex(locale) {
 async function main() {
   const catalog = await loadPatchChangeCatalog(dbSchema, db);
   console.log(`[patch-notes] entity catalogs loaded champions=${catalog.champions.size} items=${catalog.items.size}`);
-  console.log("[patch-notes] English import phase started");
-  const englishItems = await loadIndex("en-us");
-  const latestEnglishVersion = englishItems[0]?.version;
-  for (const item of englishItems) {
-    try {
-      await importPatch(item, "en-us", {
-        force: FORCE_SOURCE_REFRESH || item.version === latestEnglishVersion,
-        catalog,
-      });
-    } catch (error) {
-      console.error(`[patch-notes] en-us ${item.version}: ${error.stack || error}`);
-      await markFailed("en-us", item.version, error).catch(() => undefined);
-    }
-  }
-
-  const readyEnglish = await client`
-    select patch_version from patch_notes
-    where locale = 'en-us' and parse_status = 'parsed' and parsed_payload is not null
-  `;
-  const englishVersions = new Set(readyEnglish.map((row) => row.patch_version));
-
-  console.log("[patch-notes] Russian import phase started after English phase");
-  const russianItems = await loadIndex("ru-ru");
-  const russianByVersion = new Map(russianItems.map((item) => [item.version, item]));
-  for (const version of englishVersions) {
-    const item = russianByVersion.get(version);
-    if (!item) continue;
-    try {
-      await importPatch(item, "ru-ru", {
-        force: FORCE_SOURCE_REFRESH || version === russianItems[0]?.version,
-        catalog,
-      });
-    } catch (error) {
-      console.error(`[patch-notes] ru-ru ${version}: ${error.stack || error}`);
-      await markFailed("ru-ru", version, error).catch(() => undefined);
-    }
-  }
-  console.log(`[patch-notes] finished: ${englishVersions.size} English versions available`);
+  await runPatchNotesImport({
+    loadIndex, importPatch, markFailed, catalog, forceRefresh: FORCE_SOURCE_REFRESH,
+    loadReadyEnglish: async () => {
+      const rows = await client`
+        select patch_version from patch_notes
+        where locale = 'en-us' and parse_status = 'parsed' and parsed_payload is not null
+      `;
+      return rows.map(row => row.patch_version);
+    },
+  });
 }
 
 main()
