@@ -1,0 +1,15 @@
+[Unit]
+Description=Wild Rift scheduled data collector
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/srv/services/wildrift-worker
+ExecStart=/usr/bin/docker compose run --rm --name wildrift-scraper worker
+ExecStop=/usr/bin/docker stop -t 15 wildrift-scraper
+TimeoutStartSec=3h
+TimeoutStopSec=30
+KillMode=control-group
+

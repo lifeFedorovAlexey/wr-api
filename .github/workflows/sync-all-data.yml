@@ -2,6 +2,7 @@ name: Sync All Data
 
 on:
   schedule:
+    - cron: "7,37 * * * *"
     - cron: "17 * * * *"
     - cron: "20 3 * * *"
     - cron: "17 4 * * 0"
@@ -25,10 +26,19 @@ on:
 
 concurrency:
   group: sync-all-data
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
+  fallback:
+    if: vars.KOLVRT_PRIMARY_ENABLED == 'true' && (github.event_name == 'workflow_dispatch' || github.event.schedule == '7,37 * * * *')
+    uses: ./.github/workflows/scrape-fallback.yml
+    with:
+      jobs: ${{ github.event_name != 'workflow_dispatch' && 'stats,riftgg,guides' || inputs.mode == 'champions-history' && 'stats' || inputs.mode == 'champions-history-riftgg' && 'stats,riftgg' || inputs.mode == 'guides' && 'guides' || 'stats,riftgg,guides' }}
+      force: ${{ github.event_name == 'workflow_dispatch' }}
+      slugs: ${{ inputs.slugs || '' }}
+    secrets: inherit
   sync:
+    if: vars.KOLVRT_PRIMARY_ENABLED != 'true' && github.event.schedule != '7,37 * * * *'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:

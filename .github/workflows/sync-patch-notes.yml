@@ -2,6 +2,7 @@ name: Sync Patch Notes
 
 on:
   schedule:
+    - cron: "12,42 * * * *"
     - cron: "41 5 * * *"
   workflow_dispatch:
   workflow_run:
@@ -14,10 +15,18 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  fallback:
+    if: vars.KOLVRT_PRIMARY_ENABLED == 'true' && (github.event_name == 'workflow_dispatch' || github.event.schedule == '12,42 * * * *' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'))
+    uses: ./.github/workflows/scrape-fallback.yml
+    with:
+      jobs: patch-notes
+      force: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_run' }}
+      expected_api_sha: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || '' }}
+    secrets: inherit
   sync:
     if: >-
-      github.event_name != 'workflow_run' ||
-      github.event.workflow_run.conclusion == 'success'
+      vars.KOLVRT_PRIMARY_ENABLED != 'true' && github.event.schedule != '12,42 * * * *' &&
+      (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
