@@ -1,4 +1,5 @@
 // db/schema.js
+import { sql } from "drizzle-orm";
 import {
   boolean,
   pgTable,
@@ -13,6 +14,7 @@ import {
   uniqueIndex,
   index,
   primaryKey,
+  check,
 } from "drizzle-orm/pg-core";
 
 export const champions = pgTable("champions", {
@@ -538,6 +540,7 @@ export const patchDataTransitions = pgTable(
     entityKind: text("entity_kind").notNull(),
     entitySlug: text("entity_slug").notNull(),
     propertyPath: text("property_path").notNull(),
+    // For new/removed transitions this is the type of the non-null side.
     valueType: text("value_type").notNull(),
     beforeValue: jsonb("before_value").notNull(),
     afterValue: jsonb("after_value").notNull(),
@@ -555,6 +558,20 @@ export const patchDataTransitions = pgTable(
     chainIdx: index("patch_data_transitions_chain_idx")
       .on(table.dataset, table.mode, table.entityKind, table.entitySlug, table.patchVersion),
     statusIdx: index("patch_data_transitions_status_idx").on(table.verificationStatus, table.patchVersion),
+    changeTypeCheck: check("patch_data_transitions_change_type_check", sql`
+      ${table.changeType} in ('new', 'buff', 'nerf', 'rework', 'adjustment', 'removed', 'unchanged')
+    `),
+    valuesCheck: check("patch_data_transitions_values_check", sql`
+      case ${table.changeType}
+        when 'new' then ${table.valueType} <> 'null'
+          and ${table.beforeValue} = 'null'::jsonb and jsonb_typeof(${table.afterValue}) = ${table.valueType}
+        when 'removed' then ${table.valueType} <> 'null'
+          and jsonb_typeof(${table.beforeValue}) = ${table.valueType} and ${table.afterValue} = 'null'::jsonb
+        else jsonb_typeof(${table.beforeValue}) = ${table.valueType}
+          and jsonb_typeof(${table.afterValue}) = ${table.valueType}
+          and (${table.changeType} <> 'unchanged' or ${table.beforeValue} = ${table.afterValue})
+      end
+    `),
   }),
 );
 

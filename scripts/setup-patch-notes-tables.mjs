@@ -2,7 +2,7 @@ import "dotenv/config";
 
 import { client } from "../db/client.js";
 
-async function main() {
+async function setupPatchNotes() {
   await client`
     create table if not exists patch_notes (
       patch_version text not null,
@@ -90,6 +90,9 @@ async function main() {
   `;
   await client`create index if not exists patch_data_snapshots_entity_version_idx on patch_data_snapshots (entity_kind, entity_slug, patch_version);`;
   await client`create index if not exists patch_data_snapshots_dataset_status_idx on patch_data_snapshots (dataset, verification_status, patch_version);`;
+}
+
+async function setupPatchDataTransitions() {
   await client`
     create table if not exists patch_data_transitions (
       id serial primary key,
@@ -112,14 +115,61 @@ async function main() {
       updated_at timestamptz not null default now(),
       check (locale in ('en-us', 'ru-ru')),
       check (value_type in ('number', 'string', 'boolean', 'null', 'object', 'array')),
-      check (jsonb_typeof(before_value) = value_type and jsonb_typeof(after_value) = value_type),
-      check (change_type in ('new', 'buff', 'nerf', 'rework', 'adjustment', 'removed')),
+      constraint patch_data_transitions_values_check check (
+        case change_type
+          when 'new' then value_type <> 'null'
+            and before_value = 'null'::jsonb and jsonb_typeof(after_value) = value_type
+          when 'removed' then value_type <> 'null'
+            and jsonb_typeof(before_value) = value_type and after_value = 'null'::jsonb
+          else jsonb_typeof(before_value) = value_type and jsonb_typeof(after_value) = value_type
+            and (change_type <> 'unchanged' or before_value = after_value)
+        end
+      ),
+      constraint patch_data_transitions_change_type_check
+        check (change_type in ('new', 'buff', 'nerf', 'rework', 'adjustment', 'removed', 'unchanged')),
       check (verification_status in ('verified', 'unresolved'))
     );
+  `;
+  // Upgrade the original same-type constraint atomically, preserving any legacy
+  // rows that need review. NOT VALID still checks every new insert/update.
+  await client`
+    do $$
+    begin
+      if not exists (
+        select 1 from pg_constraint
+        where conrelid = 'patch_data_transitions'::regclass
+          and conname = 'patch_data_transitions_values_check'
+      ) then
+        alter table patch_data_transitions
+          drop constraint if exists patch_data_transitions_check,
+          drop constraint if exists patch_data_transitions_change_type_check;
+        alter table patch_data_transitions
+          add constraint patch_data_transitions_change_type_check
+            check (change_type in ('new', 'buff', 'nerf', 'rework', 'adjustment', 'removed', 'unchanged')),
+          add constraint patch_data_transitions_values_check check (
+            case change_type
+              when 'new' then value_type <> 'null'
+                and before_value = 'null'::jsonb and jsonb_typeof(after_value) = value_type
+              when 'removed' then value_type <> 'null'
+                and jsonb_typeof(before_value) = value_type and after_value = 'null'::jsonb
+              else jsonb_typeof(before_value) = value_type and jsonb_typeof(after_value) = value_type
+                and (change_type <> 'unchanged' or before_value = after_value)
+            end
+          ) not valid;
+      end if;
+      begin
+        alter table patch_data_transitions validate constraint patch_data_transitions_values_check;
+      exception when check_violation then
+        raise warning 'Legacy patch transitions violate the current value contract; rows are preserved for review and cannot be replayed until corrected';
+      end;
+    end $$;
   `;
   await client`create unique index if not exists patch_data_transitions_identity_uidx on patch_data_transitions (patch_version, locale, mode, dataset, entity_slug, property_path);`;
   await client`create index if not exists patch_data_transitions_chain_idx on patch_data_transitions (dataset, mode, entity_kind, entity_slug, patch_version);`;
   await client`create index if not exists patch_data_transitions_status_idx on patch_data_transitions (verification_status, patch_version);`;
+}
+
+async function setupPatchDataDiscrepancies() {
   await client`
     create table if not exists patch_data_discrepancies (
       id serial primary key,
@@ -142,6 +192,12 @@ async function main() {
   `;
   await client`create index if not exists patch_data_discrepancies_patch_entity_idx on patch_data_discrepancies (patch_version, entity_kind, entity_slug);`;
   await client`create index if not exists patch_data_discrepancies_status_idx on patch_data_discrepancies (resolution_status);`;
+}
+
+async function main() {
+  await setupPatchNotes();
+  await setupPatchDataTransitions();
+  await setupPatchDataDiscrepancies();
   console.log("patch notes table is ready");
 }
 

@@ -86,3 +86,56 @@ test("rejects a value type that disagrees with recorded before/after data", () =
   assert.throws(() => applyPatchDataTransition({}, { ...source, before: "60" }), /values do not match number/);
   assert.throws(() => applyPatchDataTransition({}, { ...source, verificationStatus: "unresolved" }), /Only verified transitions/);
 });
+
+test("adds and removes explicitly absent values reversibly for every JSON value type", () => {
+  for (const [type, value] of [
+    ["number", 62], ["string", "active"], ["boolean", false],
+    ["object", { damage: 62 }], ["array", [10, 20]],
+  ]) {
+    const absent = { statsAtLevel1: { attackDamage: null } };
+    const present = { statsAtLevel1: { attackDamage: value } };
+    const added = { ...source, valueType: type, before: null, after: value, changeType: "new" };
+    const removed = { ...source, valueType: type, before: value, after: null, changeType: "removed" };
+    assert.deepEqual(applyPatchDataTransition(absent, added), present);
+    assert.deepEqual(reversePatchDataTransition(present, added), absent);
+    assert.deepEqual(applyPatchDataTransition(present, removed), absent);
+    assert.deepEqual(reversePatchDataTransition(absent, removed), present);
+    assert.deepEqual(absent, { statsAtLevel1: { attackDamage: null } });
+  }
+});
+
+test("unchanged evidence closes a history gap, including absent properties and unordered JSON object keys", () => {
+  const added = { ...source, patchVersion: "7.3", before: null, after: 60, changeType: "new" };
+  const unchanged = { ...source, patchVersion: "7.3a", before: 60, after: 60, changeType: "unchanged" };
+  const removed = { ...source, patchVersion: "7.3b", before: 60, after: null, changeType: "removed" };
+  const absent = { statsAtLevel1: { attackDamage: null } };
+  assert.deepEqual(reversePatchDataHistory(absent, [added, unchanged, removed],
+    ["7.3", "7.3a", "7.3b"], [source.propertyPath]), absent);
+  assert.deepEqual(applyPatchDataTransition(absent, {
+    ...source, valueType: "null", before: null, after: null, changeType: "unchanged",
+  }), absent);
+  const objectState = { statsAtLevel1: { attackDamage: { a: 1, b: 2 } } };
+  assert.deepEqual(applyPatchDataTransition(objectState, {
+    ...source, valueType: "object", before: { b: 2, a: 1 }, after: { a: 1, b: 2 }, changeType: "unchanged",
+  }), objectState);
+});
+
+test("rejects contradictory new, removed, and unchanged evidence instead of inventing absent fields", () => {
+  const absent = { statsAtLevel1: { attackDamage: null } };
+  for (const transition of [
+    { ...source, before: 60, after: 62, changeType: "new" },
+    { ...source, before: null, after: null, changeType: "new", valueType: "null" },
+    { ...source, before: null, after: "62", changeType: "new" },
+    { ...source, before: 60, after: 62, changeType: "removed" },
+    { ...source, before: null, after: null, changeType: "removed", valueType: "null" },
+    { ...source, before: "60", after: null, changeType: "removed" },
+    { ...source, before: 60, after: 62, changeType: "unchanged" },
+    { ...source, before: 60, after: null, changeType: "adjustment" },
+  ]) assert.throws(() => applyPatchDataTransition(absent, transition), /transitions require|values do not match/i);
+  assert.throws(() => applyPatchDataTransition({ statsAtLevel1: {} }, {
+    ...source, before: null, changeType: "new",
+  }), /Snapshot does not contain property/);
+  assert.throws(() => reversePatchDataHistory(absent, [
+    { ...source, before: 60, after: null, changeType: "removed" },
+  ], ["7.3a", "7.3b"], [source.propertyPath]), /missing verified change or no-change evidence/);
+});
