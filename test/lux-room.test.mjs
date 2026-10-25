@@ -9,6 +9,15 @@ test('Lux responds to addresses, not general champion mentions',() => {
     'люкс здарова','ЛЮКС здорово','люкс можешь помочь','lux hello','Люкс','здарова люкс','Привет Люкс']) assert.ok(isLuxAddress(value),value);
   for(const value of ['я играю за Люкс','забань люкс','@luxury привет','@люксовый','люксовый отель']) assert.ok(!isLuxAddress(value),value);
 });
+
+test('lookup validates ownership before accessing data and persists only server-produced sources',async()=>{
+  let claimed=false;const calls=[];
+  const handler=createLuxWorkerHandler({authorized:()=>true,enabled:()=>true,
+    queue:{claimLookup:async(id,token)=>{assert.equal(id,12);assert.equal(token,'owned');claimed=true;},
+      attachLookup:async(...args)=>calls.push(args)},dataTools:{execute:async()=>{assert.ok(claimed);return {data:{rows:[1]},sources:[{url:'/winrates'}]};}}});
+  const res=response();await handler({method:'POST',body:{action:'lookup',messageId:12,token:'owned',request:{tool:'statistics'}}},res);
+  assert.equal(res.code,200);assert.deepEqual(res.body,{data:{rows:[1]}});assert.equal(calls[0][2].sources[0].url,'/winrates');
+});
 test('worker authenticates and retrieves only the claimed author context',async () => {
   const job={messageId:12,userId:7,claim:{token:'lease',turn:{body:'@Люкс привет'},memory:{through_id:2},turns:[]}};
   let allowed=false;const calls=[];

@@ -26,7 +26,7 @@ test("provider uses LM Studio chat completions, strips thinking and does not exp
   assert.equal(await provider.complete([{ role: "user", content: "Привет" }]), "Привет!");
   assert.equal(sent.model, "local-model"); assert.equal(sent.stream, false);
   await assert.rejects(createLuxProvider(config, async () => ({ ok: false, status: 401 })).complete([]), /lux_unavailable/);
-  await assert.rejects(provider.complete([{ role: "user", content: "я".repeat(30000) }]), /lux_context_full/);
+  await assert.rejects(provider.complete([{ role: "user", content: "я".repeat(config.contextTokens+1000) }]), /lux_context_full/);
 });
 
 test("automatic model selection refuses ambiguity instead of picking an embedding or arbitrary model", async () => {

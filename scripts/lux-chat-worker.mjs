@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { luxConfig } from '../lib/lux/config.mjs';
 import { createLuxProvider } from '../lib/lux/provider.mjs';
 import { prepareLuxContext } from '../lib/lux/context.mjs';
+import { researchLux } from '../lib/lux/research.mjs';
 
 export async function runLuxWorker({env=process.env,fetchImpl=fetch,signal,once=false}={}) {
   const api = new URL(env.WR_API_ORIGIN || 'https://wildriftallstats.ru/wr-api');
@@ -30,9 +31,14 @@ export async function runLuxWorker({env=process.env,fetchImpl=fetch,signal,once=
         let result;
         try {
           const deadline=AbortSignal.any([AbortSignal.timeout(170000),...(signal?[signal]:[])]);
-          const context=await prepareLuxContext({...job,provider,config,signal:deadline});
+          const knowledge=job.researchVersion===1 ? await researchLux({job,provider,signal:deadline,
+            lookup:query=>request({action:'lookup',messageId:job.messageId,token:job.token,request:query})}) : job.knowledge;
+          const context=await prepareLuxContext({...job,knowledge,provider,config,signal:deadline});
           result={reply:await provider.complete(context.messages,{signal:deadline}),summary:context.summary,throughId:context.throughId};
-        } catch {result={error:true};}
+        } catch(error) {
+          console.warn('[lux] Generation unavailable:', /^lux_[a-z_]+$/.test(error.message)?error.message:'upstream unavailable');
+          result={error:true};
+        }
         // Retry acknowledgement with the same lease; never generate or publish a duplicate reply.
         let sent=false;
         for(let attempt=0;attempt<3 && !sent;attempt++) {

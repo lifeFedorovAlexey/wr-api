@@ -3,8 +3,9 @@ import { ensureAuthorized } from './utils/adminAuth.js';
 import { createLuxChatQueue } from '../lib/lux/chat-queue.mjs';
 import { createLuxStore } from '../lib/lux/store.mjs';
 import { loadLuxKnowledge } from '../lib/lux/knowledge.mjs';
+import { createLuxDataTools } from '../lib/lux/data-tools.mjs';
 
-export function createLuxWorkerHandler({ authorized, queue, knowledge, recall, enabled }) {
+export function createLuxWorkerHandler({ authorized, queue, knowledge, recall, enabled, dataTools }) {
   return async (req,res) => {
     res.setHeader('Cache-Control','no-store');
     if (!authorized(req,res)) return;
@@ -15,6 +16,18 @@ export function createLuxWorkerHandler({ authorized, queue, knowledge, recall, e
         await queue.heartbeat(); return res.status(200).json({ok:true});
       }
       if (req.body?.action === 'complete') return res.status(200).json(await queue.complete(req.body));
+      if (req.body?.action === 'lookup') {
+        const {messageId,token,request}=req.body;
+        await queue.claimLookup(messageId,token);
+        let result;
+        try { result=await dataTools.execute(request); }
+        catch(error) {
+          if(error.status!==400) throw error;
+          return res.status(200).json({data:{error:'invalid_lookup',message:'Исправь параметры запроса по схеме инструмента.'}});
+        }
+        await queue.attachLookup(messageId,token,result);
+        return res.status(200).json({data:result.data});
+      }
       if (req.body?.action !== 'take') return res.status(400).json({error:'lux_invalid_action'});
       const job = await queue.take();
       if (!job) return res.status(200).json({job:null});
@@ -22,7 +35,7 @@ export function createLuxWorkerHandler({ authorized, queue, knowledge, recall, e
         const data = await knowledge(job.claim.turn.body,job.claim.memory,job.claim.turns);
         const archive = await recall(job.userId,job.claim.turn.body,job.claim.memory.through_id);
         await queue.attachKnowledge(job,data.sources,data.entities);
-        return res.status(200).json({job:{ messageId:job.messageId, token:job.claim.token,
+        return res.status(200).json({job:{ researchVersion:1, messageId:job.messageId, token:job.claim.token,
           memory:job.claim.memory, turns:job.claim.turns, body:job.claim.turn.body,
           knowledge:data.knowledge, recall:archive }});
       } catch (error) {
@@ -39,4 +52,5 @@ export default createLuxWorkerHandler({
   enabled:() => process.env.LUX_ENABLED === 'true', queue:createLuxChatQueue(client),
   knowledge:(body,memory,turns) => loadLuxKnowledge(client,body,memory,turns),
   recall:(...args) => createLuxStore(client).recall(...args),
+  dataTools:createLuxDataTools(client),
 });
