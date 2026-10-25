@@ -1,0 +1,8 @@
+[Unit]
+Description=Refresh Wild Rift monitoring snapshot
+[Timer]
+OnBootSec=20s
+OnUnitInactiveSec=15s
+AccuracySec=1s
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,25 @@
+[Unit]
+Description=Kolvrt shared read-only monitoring dashboard
+Wants=network-online.target
+After=network-online.target
+[Service]
+Type=simple
+DynamicUser=yes
+ExecStart=/usr/bin/python3 /srv/services/kolvrt-monitor/monitor.py --bind 192.168.68.60 --port 80
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+Restart=on-failure
+RestartSec=5
+MemoryMax=128M
+TasksMax=48
+CPUQuota=25%
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+[Install]
+WantedBy=multi-user.target

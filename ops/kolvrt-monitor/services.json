@@ -1,0 +1,4 @@
+[
+  {"id":"wildrift","title":"Wild Rift","description":"Статистика, гайды и патчноуты","adapter":"wildrift","snapshot":"/srv/data/wildrift-worker/status.json"},
+  {"id":"tver-journey","title":"Обходчик сайта","description":"Tver Journey · Яндекс и Google","adapter":"tver","snapshot":"/run/tver-dashboard/status.json"}
+]

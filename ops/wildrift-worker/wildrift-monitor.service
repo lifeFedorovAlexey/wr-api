@@ -1,0 +1,10 @@
+[Unit]
+Description=Read-only snapshot of Wild Rift production scrape history
+After=network-online.target docker.service
+Requires=docker.service
+[Service]
+Type=oneshot
+WorkingDirectory=/srv/services/wildrift-worker
+ExecStart=/usr/bin/docker compose run --rm --name wildrift-monitor observer
+TimeoutStartSec=25
+ExecStopPost=-/usr/bin/docker stop -t 2 wildrift-monitor

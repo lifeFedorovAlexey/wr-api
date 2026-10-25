@@ -1,0 +1,38 @@
+name: wildrift-worker
+services:
+  worker:
+    image: ${WORKER_IMAGE:?set pinned worker image}
+    env_file: ./secrets/worker.env
+    environment:
+      SCRAPE_REVISION: ${SCRAPE_REVISION:?set source revision}
+    read_only: true
+    init: true
+    user: '10001:10001'
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    cpus: 2
+    mem_limit: 2g
+    pids_limit: 128
+    tmpfs:
+      - /tmp:size=384m,mode=1777
+      - /app/ui/data:size=128m,uid=10001,gid=10001
+    logging:
+      driver: local
+      options: {max-size: 10m, max-file: '3'}
+  observer:
+    image: ${WORKER_IMAGE:?set pinned worker image}
+    env_file: ./secrets/monitor.env
+    command: ['--status', '--output', '/state/status.json']
+    read_only: true
+    init: true
+    user: '10001:10001'
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    cpus: 0.25
+    mem_limit: 128m
+    pids_limit: 32
+    volumes: ['/srv/data/wildrift-worker:/state']
+    tmpfs: ['/tmp:size=8m,mode=1777']
+    logging:
+      driver: local
+      options: {max-size: 5m, max-file: '2'}
