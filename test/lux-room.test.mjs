@@ -5,7 +5,8 @@ process.env.DATABASE_URL ||= 'postgres://localhost:5432/test';
 const {createLuxWorkerHandler} = await import('../api/internal-chat-lux-worker.js');
 function response() {return {code:0,body:null,setHeader(){},status(code){this.code=code;return this;},json(body){this.body=body;return this;}};}
 test('Lux responds to addresses, not general champion mentions',() => {
-  for(const value of ['@Люкс привет','Привет, @lux!','Люкс, посоветуй','Люкс как дела?','Привет, Люкс!']) assert.ok(isLuxAddress(value),value);
+  for(const value of ['@Люкс привет','Привет, @lux!','Люкс, посоветуй','Люкс как дела?','Привет, Люкс!',
+    'люкс здарова','ЛЮКС здорово','люкс можешь помочь','lux hello','Люкс','здарова люкс','Привет Люкс']) assert.ok(isLuxAddress(value),value);
   for(const value of ['я играю за Люкс','забань люкс','@luxury привет','@люксовый','люксовый отель']) assert.ok(!isLuxAddress(value),value);
 });
 test('worker authenticates and retrieves only the claimed author context',async () => {
