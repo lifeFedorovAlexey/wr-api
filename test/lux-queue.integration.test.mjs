@@ -55,6 +55,23 @@ test('Lux replies once in the source room, isolates authors and excludes private
     await queue.complete({messageId:two.messageId,token:two.claim.token,reply:'must not publish',summary:'',throughId:0});
     assert.equal((await sql`select * from chat_messages where author_user_id=3`).length,1);
     assert.equal((await queue.status(1)).online,true);assert.equal(await queue.status(2),null);
+    const [failure]=await sql`insert into chat_messages(channel_id,author_user_id,body) values (1,1,'Люкс помоги') returning id,body`;
+    await queue.enqueue(failure);
+    const failedJob=await queue.take();
+    await queue.complete({messageId:failedJob.messageId,token:failedJob.claim.token,error:true});
+    await queue.complete({messageId:failedJob.messageId,token:failedJob.claim.token,error:true});
+    const [failedRow]=await sql`select * from lux_chat_queue where message_id=${failure.id}`;
+    assert.equal(failedRow.state,'failed');assert.ok(failedRow.reply_message_id);assert.deepEqual(failedRow.sources,[]);
+    assert.equal((await sql`select * from chat_messages where author_user_id=3`).length,2);
+    await assert.rejects(queue.retryFailed(failure.id),/lux_retry_unavailable/);
+    const [silent]=await sql`insert into chat_messages(channel_id,author_user_id,body) values (1,1,'Люкс лулу в лес норм?') returning id,body`;
+    await queue.enqueue(silent);const oldFailure=await queue.take();
+    // A pre-fix job failed without publishing any acknowledgement.
+    await sql`update lux_conversations set lease_token=null,lease_until=null where user_id=1`;
+    await sql`update lux_turns set status='failed' where id=${oldFailure.claim.turn.id}`;
+    await sql`update lux_chat_queue set state='failed',lease_until=null where message_id=${silent.id}`;
+    assert.equal((await queue.retryFailed(silent.id)).retried,true);
+    assert.equal((await queue.take()).messageId,silent.id);
   } finally {
     try {await sql.unsafe(`drop schema if exists ${schema} cascade`);} finally {await sql.end({timeout:2});}
   }

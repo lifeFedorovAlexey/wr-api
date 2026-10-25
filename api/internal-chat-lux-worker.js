@@ -16,6 +16,7 @@ export function createLuxWorkerHandler({ authorized, queue, knowledge, recall, e
         await queue.heartbeat(); return res.status(200).json({ok:true});
       }
       if (req.body?.action === 'complete') return res.status(200).json(await queue.complete(req.body));
+      if (req.body?.action === 'retry') return res.status(200).json(await queue.retryFailed(req.body.messageId));
       if (req.body?.action === 'lookup') {
         const {messageId,token,request}=req.body;
         await queue.claimLookup(messageId,token);

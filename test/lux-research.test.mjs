@@ -31,3 +31,38 @@ test('provider uses LM Studio structured JSON output for decisions',async()=>{
   });
   assert.deepEqual(await provider.complete([],{schema:{type:'object'}}),{tool:'done'});
 });
+
+test('a malformed plan is retried once with more output space',async()=>{
+  let calls=0;
+  const data=await researchLux({job,provider:{complete:async(_messages,options)=>{
+    if(calls++===0) throw new Error('lux_invalid_plan');
+    assert.equal(options.outputBudget,3072);return {tool:'done'};
+  }},lookup:async()=>assert.fail('unexpected lookup')});
+  assert.equal(calls,2);assert.deepEqual(data.lookups,[]);
+});
+
+test('repeated planner failure preserves valid data and lets the character answer instead of going silent',async()=>{
+  let calls=0;
+  const data=await researchLux({job,provider:{complete:async()=>{
+    if(calls++===0)return {tool:'statistics'};
+    throw new Error('lux_response_truncated');
+  }},lookup:async()=>({data:{rows:[{slug:'lulu',lane:'jungle',win_rate:null}]}})});
+  assert.equal(calls,3);assert.equal(data.retrievalUnavailable,true);
+  assert.equal(data.lookups[0].result.rows[0].slug,'lulu');
+});
+
+test('a failed data endpoint becomes an explicit unavailable result',async()=>{
+  const data=await researchLux({job,provider:{complete:async()=>({tool:'statistics'})},lookup:async()=>{throw new Error('Lux API status 503');}});
+  assert.equal(data.lookups[0].result.error,'lookup_unavailable');
+});
+
+test('structured replies accept a JSON fence but reject truncated output and arbitrary prose',async()=>{
+  const config=luxConfig({LUX_LM_STUDIO_MODEL:'local'});
+  const provider=(content,finish_reason='stop')=>createLuxProvider(config,async(_url,init)=>{
+    assert.ok(JSON.parse(init.body).max_tokens>=2048);
+    return {ok:true,json:async()=>({choices:[{finish_reason,message:{content}}]})};
+  });
+  assert.deepEqual(await provider('```json\n{"tool":"done"}\n```').complete([],{schema:{}}),{tool:'done'});
+  await assert.rejects(provider('{"tool":"do','length').complete([],{schema:{}}),/lux_response_truncated/);
+  await assert.rejects(provider('Here is an explanation').complete([],{schema:{}}),/lux_invalid_plan/);
+});
