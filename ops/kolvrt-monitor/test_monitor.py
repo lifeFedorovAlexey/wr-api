@@ -34,6 +34,17 @@ class MonitorTest(unittest.TestCase):
         result = monitor.collect([{'id': 'wildrift', 'title': 'Wild Rift', 'description': '', 'adapter': 'wildrift', 'snapshot': '/not-a-snapshot'}])
         self.assertEqual(result['services'][0]['state'], 'unknown')
 
+    def test_only_current_tver_run_receives_live_heartbeat(self):
+        now = dt.datetime.now(dt.timezone.utc).isoformat()
+        snapshot = {'collectedAt': now, 'collector': {'ok': True}, 'vm': {'running': True},
+                    'guest': {'observedAt': now, 'controlReachable': True, 'progressSource': 'control',
+                              'service': {'ActiveState': 'active'}, 'progress': {'activeSessions': 1, 'runId': 'current'},
+                              'history': [{'id': 'current', 'status': 'running'}, {'id': 'old', 'status': 'running'}]}}
+        result = monitor.tver(snapshot)
+        self.assertEqual(result['state'], 'running')
+        self.assertEqual(result['history'][0]['heartbeat_at'], now)
+        self.assertIsNone(result['history'][1]['heartbeat_at'])
+
 
 if __name__ == '__main__':
     unittest.main()

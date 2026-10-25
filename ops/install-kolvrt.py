@@ -55,5 +55,6 @@ for directory in ['wildrift-worker', 'kolvrt-monitor']:
             shutil.copyfile(file, Path('/etc/systemd/system') / file.name)
 command('systemctl', 'daemon-reload')
 command('systemctl', 'enable', '--now', 'kolvrt-monitor.service')
+command('systemctl', 'restart', 'kolvrt-monitor.service')
 print('Monitor installed. Worker timers remain disabled until verified cutover.')
 print('RECIPIENT_PUBLIC_KEY=' + base64.b64encode(public.read_bytes()).decode())
