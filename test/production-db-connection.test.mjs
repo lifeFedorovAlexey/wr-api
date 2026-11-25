@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { localDatabaseUrl, commandValue } from "../.github/actions/production-db/connection.mjs";
+import { localDatabaseUrl } from "../.github/actions/production-db/connection.mjs";
 
 test("private forwarding preserves encoded credentials and database options", () => {
   const config = "DATABASE_URL=postgresql://app:a%40b%3Ac@127.0.0.1:55432/wildrift?connect_timeout=10\n";
@@ -21,8 +21,4 @@ test("legacy cloud targets, missing configuration and injected lines fail closed
     assert.throws(() => localDatabaseUrl(config, 43210));
   }
   assert.throws(() => localDatabaseUrl("DATABASE_URL=postgres://app:secret@127.0.0.1:55432/wildrift", 22));
-});
-
-test("GitHub masking command cannot be split by encoded line breaks", () => {
-  assert.equal(commandValue("a%\r\nb"), "a%25%0D%0Ab");
 });

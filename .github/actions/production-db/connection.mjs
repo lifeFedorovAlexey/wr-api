@@ -12,7 +12,3 @@ export function localDatabaseUrl(configuration, port) {
   url.port = String(port);
   return { url: url.toString(), password: decodeURIComponent(url.password) };
 }
-
-export function commandValue(value) {
-  return value.replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A");
-}

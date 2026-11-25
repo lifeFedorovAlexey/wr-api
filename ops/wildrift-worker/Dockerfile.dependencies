@@ -1,0 +1,9 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+USER root
+ENV PUPPETEER_SKIP_DOWNLOAD=true
+COPY root/package.json root/package-lock.json /app/
+RUN cd /app && npm ci --omit=dev --ignore-scripts && npm cache clean --force
+COPY api/package.json api/package-lock.json /app/wr-api/
+RUN cd /app/wr-api && npm ci --omit=dev --ignore-scripts && npm cache clean --force
+USER 10001:10001

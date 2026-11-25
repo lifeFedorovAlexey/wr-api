@@ -3,7 +3,8 @@ import path from "node:path";
 import net from "node:net";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
-import { localDatabaseUrl, commandValue } from "./connection.mjs";
+import { localDatabaseUrl } from "./connection.mjs";
+import { exportVariable, saveState, setFailed, setSecret } from "@actions/core";
 
 const exec = promisify(execFile);
 let child;
@@ -54,8 +55,8 @@ try {
     throw new Error("Cannot read canonical database configuration over verified SSH; refusing legacy credentials");
   }
   const database = localDatabaseUrl(configuration, port);
-  console.log(`::add-mask::${commandValue(database.url)}`);
-  console.log(`::add-mask::${commandValue(database.password)}`);
+  setSecret(database.url);
+  setSecret(database.password);
   child = spawn("ssh", [...args, "-o", "ExitOnForwardFailure=yes", "-N", "-L", `127.0.0.1:${port}:127.0.0.1:55432`, `${user}@${host}`], { env, detached: true, stdio: "ignore" });
   let spawnError;
   child.on("error", error => { spawnError = error; });
@@ -77,8 +78,9 @@ try {
   } catch {
     throw new Error("Private PostgreSQL database is unavailable through the VPS tunnel");
   }
-  await fs.appendFile(process.env.GITHUB_STATE, `tunnelPid=${child.pid}\ndirectory=${directory}\n`);
-  await fs.appendFile(process.env.GITHUB_ENV, `DATABASE_URL=${database.url}\n`);
+  saveState("tunnelPid", child.pid);
+  saveState("directory", directory);
+  exportVariable("DATABASE_URL", database.url);
   console.log("Connected to production PostgreSQL through the VPS private tunnel");
 } catch (error) {
   if (child?.pid) { try { process.kill(-child.pid, "SIGTERM"); } catch { /* Already exited. */ } }
@@ -86,6 +88,5 @@ try {
   // SSH error objects can contain captured configuration; only emit our own summaries.
   const message = error.message.startsWith("Canonical ") || error.message.startsWith("Cannot read ") || error.message.startsWith("Private ") || error.message.startsWith("Existing ")
     ? error.message : "Production database tunnel setup failed";
-  console.error(`::error::${commandValue(message)}`);
-  process.exitCode = 1;
+  setFailed(message);
 }
