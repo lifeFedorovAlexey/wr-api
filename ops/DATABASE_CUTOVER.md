@@ -33,7 +33,9 @@ kolvrt, then run `sudo python3 /path/to/cutover-database.py`. The script:
 4. Keeps cloud-owned user, auth, quiz, chat, editorial, and patch data in the
    candidate. Imports local worker tables. Additional cloud statistics snapshots
    receive new IDs, with history references remapped. Cloud scrape history is
-   merged by UUID. Local champion rows take precedence; missing cloud rows remain.
+   merged by UUID. Archived patch source revisions are unioned by their version,
+   locale and content hash; conflicting HTML for the same hash stops the merge.
+   Local champion rows take precedence; missing cloud rows remain.
 5. Verifies cloud-owned table checksums, local guide/RiftGG checksums and validated
    foreign keys. Retains the original target database under `wr_before_cutover_*`,
    renames the candidate to `wildrift`, updates both release env and PM2 env, and

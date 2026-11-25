@@ -20,6 +20,10 @@ test("cutover remaps colliding snapshot IDs and preserves both histories", { ski
         UNIQUE(snapshot_id,slug,rank,lane),FOREIGN KEY(snapshot_id) REFERENCES champion_stats_snapshots(id));
       CREATE TABLE champions(slug text primary key,name text);
       CREATE TABLE scrape_runs(id text primary key,status text);
+      CREATE TABLE patch_note_source_revisions(patch_version text,locale text,content_hash text,raw_html text,archived_at timestamptz,PRIMARY KEY(patch_version,locale,content_hash));
+      INSERT INTO patch_note_source_revisions VALUES('7.3f','en-us','shared','same-html','2026-11-24T10:00Z'),('7.3f','en-us','local-only','local-html','2026-11-25T01:00Z');
+      CREATE TEMP TABLE old_source_revisions AS SELECT * FROM patch_note_source_revisions WITH NO DATA;
+      INSERT INTO old_source_revisions VALUES('7.3f','en-us','shared','same-html','2026-11-24T11:00Z'),('7.3f','en-us','cloud-only','cloud-html','2026-11-25T02:00Z');
       INSERT INTO champion_stats_snapshots VALUES(200,'cnHistory','2026-11-24','2026-11-25T07:17:00Z');
       SELECT setval('champion_stats_snapshots_id_seq',200);
       INSERT INTO champion_stats_history(snapshot_id,slug,rank,lane,win_rate) VALUES(200,'ahri','overall','mid',52.5);
@@ -54,10 +58,15 @@ test("cutover remaps colliding snapshot IDs and preserves both histories", { ski
     assert.equal((await sql`select name from champions where slug='ahri'`)[0].name, "local");
     assert.equal((await sql`select count(*)::int n from champions`)[0].n, 3);
     assert.deepEqual((await sql`select id,status from scrape_runs order by id`).map(r => [r.id, r.status]), [["cloud-only", "failed"], ["local-only", "success"], ["shared", "interrupted"]]);
+    assert.deepEqual((await sql`select content_hash from patch_note_source_revisions order by content_hash`).map(r => r.content_hash), ["cloud-only", "local-only", "shared"]);
     // A retry can reuse the already imported source snapshot without duplicating history.
     await sql`drop table imported_snapshot_ids`;
     await sql.unsafe(generated.stdout);
     assert.equal((await sql`select count(*)::int n from champion_stats_history`)[0].n, 2);
+    // A content-hash collision with different payload must stop the candidate merge.
+    await sql`drop table imported_snapshot_ids`;
+    await sql`update old_source_revisions set raw_html='unexpected-payload' where content_hash='shared'`;
+    await assert.rejects(sql.unsafe(generated.stdout), /Archived source revision payload differs/);
   } finally {
     if (sql) await sql.end({ timeout: 5 });
     await admin.unsafe(`DROP DATABASE IF EXISTS ${name}`);

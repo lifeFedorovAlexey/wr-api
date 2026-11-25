@@ -60,7 +60,7 @@ def table_metadata(db):
 
 def worker_table(name):
     return name.startswith(('guide_','riftgg_cn_')) or name in {
-      'champions','champion_guides','champion_stats_history','champion_stats_snapshots','scrape_runs','scrape_job_state'}
+      'champions','champion_guides','champion_stats_history','champion_stats_snapshots','scrape_runs','scrape_job_state','patch_note_source_revisions'}
 
 
 def fingerprint(db,name,ignore=()):
@@ -152,7 +152,9 @@ def merge_sql(metadata):
       'INSERT INTO public.champion_stats_snapshots('+','.join(map(ident,snapshot_columns))+') SELECT '+','.join('m.new_id' if c=='id' else 's.'+ident(c) for c in snapshot_columns)+' FROM old_source_snapshots s JOIN imported_snapshot_ids m ON m.old_id=s.id ON CONFLICT (id) DO NOTHING;',
       'INSERT INTO public.champion_stats_history('+','.join(map(ident,history_columns))+') SELECT '+','.join('m.new_id' if c=='snapshot_id' else 'h.'+ident(c) for c in history_columns)+' FROM old_source_history h JOIN imported_snapshot_ids m ON m.old_id=h.snapshot_id ON CONFLICT (snapshot_id,slug,rank,lane) DO NOTHING;',
       'INSERT INTO public.champions SELECT * FROM old_source_champions ON CONFLICT DO NOTHING;',
-      'INSERT INTO public.scrape_runs SELECT * FROM old_source_runs ON CONFLICT (id) DO NOTHING;']
+      'INSERT INTO public.scrape_runs SELECT * FROM old_source_runs ON CONFLICT (id) DO NOTHING;',
+      'INSERT INTO public.patch_note_source_revisions SELECT * FROM old_source_revisions ON CONFLICT (patch_version,locale,content_hash) DO NOTHING;',
+      "DO $$ BEGIN IF EXISTS (SELECT 1 FROM old_source_revisions s LEFT JOIN public.patch_note_source_revisions t USING (patch_version,locale,content_hash) WHERE t.content_hash IS NULL OR t.raw_html IS DISTINCT FROM s.raw_html) THEN RAISE EXCEPTION 'Archived source revision payload differs for the same content hash'; END IF; END $$;"]
     return '\n'.join(pieces)+'\n'
 
 
@@ -248,6 +250,7 @@ def main():
               "CREATE TEMP TABLE old_source_history AS SELECT h.* FROM public.champion_stats_history h JOIN old_source_snapshots s ON s.id=h.snapshot_id;\n"
               "CREATE TEMP TABLE old_source_champions AS SELECT * FROM public.champions;\n"
               "CREATE TEMP TABLE old_source_runs AS SELECT * FROM public.scrape_runs;\n"+
+              "CREATE TEMP TABLE old_source_revisions AS SELECT * FROM public.patch_note_source_revisions;\n"+
               '\n'.join('DELETE FROM public.'+ident(t)+';' for t in worker)+'\n').encode())
             with worker_data.open('rb') as src:
                 shutil.copyfileobj(src,f)
