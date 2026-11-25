@@ -48,7 +48,7 @@ def main():
     with (ROOT/'.dependency-update.lock').open('a') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         manifest=json.loads((BUNDLE/'bundle.json').read_text())
-        expected={'root/package.json','root/package-lock.json','api/package.json','api/package-lock.json','Dockerfile.dependencies'}
+        expected={'root/package.json','root/package-lock.json','api/package.json','api/package-lock.json','Dockerfile.dependencies','update-dependencies.py'}
         if set(manifest['sha256'])!=expected:
             raise RuntimeError('Incomplete dependency bundle')
         for name,digest in manifest['sha256'].items():
@@ -69,7 +69,7 @@ def main():
         if p.returncode:
             raise RuntimeError('Dependency image build failed; original image remains active')
         for directory in ['/app','/app/wr-api']:
-            report=json.loads(run(['docker','run','--rm','--entrypoint','npm','--workdir',directory,image,'audit','--omit=dev','--json'],timeout=120))
+            report=json.loads(run(['docker','run','--rm','--env','NPM_CONFIG_CACHE=/tmp/security-npm-cache','--entrypoint','npm','--workdir',directory,image,'audit','--omit=dev','--json'],timeout=120))
             if report.get('metadata',{}).get('vulnerabilities',{}).get('total')!=0:
                 raise RuntimeError('Dependency audit is not clean: '+directory)
         # Native image processing must remain available after ignore-scripts.
