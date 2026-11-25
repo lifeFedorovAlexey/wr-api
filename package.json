@@ -57,8 +57,8 @@
     "basic-ftp": "6.2.4",
     "cheerio": "^1.2.0",
     "fast-xml-parser": "^5.7.0",
-    "minimatch@>=7 <11.0.1": "^11.0.1",
-    "glob@>=9 <=14.0.1": "^14.0.2"
+    "minimatch@>=7 <12": "^11.0.1",
+    "glob@>=9 <15": "^14.0.2"
   },
   "dependencies": {
     "@actions/core": "^3.0.1",
