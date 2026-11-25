@@ -146,7 +146,8 @@ def merge_sql(metadata):
     history_columns=[c for c in columns['champion_stats_history'] if c!='id']
     # Reuse a source snapshot only if it was already imported; otherwise allocate a
     # fresh target ID. Both workers assigned serial IDs independently after the dump.
-    pieces=["CREATE TEMP TABLE imported_snapshot_ids(old_id integer PRIMARY KEY,new_id integer NOT NULL);",
+    pieces=["SET search_path=pg_temp,public;",
+      "CREATE TEMP TABLE imported_snapshot_ids(old_id integer PRIMARY KEY,new_id integer NOT NULL);",
       "INSERT INTO imported_snapshot_ids SELECT s.id,coalesce((SELECT min(t.id) FROM champion_stats_snapshots t WHERE t.source=s.source AND t.stats_date=s.stats_date AND t.started_at=s.started_at),nextval(pg_get_serial_sequence('public.champion_stats_snapshots','id'))) FROM old_source_snapshots s;",
       'INSERT INTO public.champion_stats_snapshots('+','.join(map(ident,snapshot_columns))+') SELECT '+','.join('m.new_id' if c=='id' else 's.'+ident(c) for c in snapshot_columns)+' FROM old_source_snapshots s JOIN imported_snapshot_ids m ON m.old_id=s.id ON CONFLICT (id) DO NOTHING;',
       'INSERT INTO public.champion_stats_history('+','.join(map(ident,history_columns))+') SELECT '+','.join('m.new_id' if c=='snapshot_id' else 'h.'+ident(c) for c in history_columns)+' FROM old_source_history h JOIN imported_snapshot_ids m ON m.old_id=h.snapshot_id ON CONFLICT (snapshot_id,slug,rank,lane) DO NOTHING;',

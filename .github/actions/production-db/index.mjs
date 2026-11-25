@@ -65,6 +65,18 @@ try {
     if (spawnError || child.exitCode !== null || Date.now() > deadline) throw new Error("Private PostgreSQL SSH forward did not start");
     await new Promise(resolve => setTimeout(resolve, 200));
   }
+  try {
+    const { default: postgres } = await import("postgres");
+    const sql = postgres(database.url, { max: 1, connect_timeout: 10, onnotice() {}, connection: { default_transaction_read_only: "on", statement_timeout: 10000 } });
+    try {
+      const [row] = await sql`select current_database() as name, to_regclass('public.scrape_job_state')::text as coordinator`;
+      if (row.name !== "wildrift" || !row.coordinator) throw new Error("Unexpected production database");
+    } finally {
+      await sql.end({ timeout: 3 });
+    }
+  } catch {
+    throw new Error("Private PostgreSQL database is unavailable through the VPS tunnel");
+  }
   await fs.appendFile(process.env.GITHUB_STATE, `tunnelPid=${child.pid}\ndirectory=${directory}\n`);
   await fs.appendFile(process.env.GITHUB_ENV, `DATABASE_URL=${database.url}\n`);
   console.log("Connected to production PostgreSQL through the VPS private tunnel");

@@ -43,6 +43,8 @@ test("cutover remaps colliding snapshot IDs and preserves both histories", { ski
     const generated = spawnSync(process.platform === "win32" ? "python" : "python3", ["-c", py, file], { input: JSON.stringify(metadata), encoding: "utf8" });
     assert.ifError(generated.error);
     assert.equal(generated.status, 0, generated.stderr);
+    // pg_dump clears search_path in the data restore preceding this merge.
+    await sql.unsafe("SET search_path=''");
     await sql.unsafe(generated.stdout);
     const history = await sql`select s.id,s.stats_date::text,h.win_rate from champion_stats_snapshots s join champion_stats_history h on h.snapshot_id=s.id order by s.stats_date`;
     assert.equal(history.length, 2);
