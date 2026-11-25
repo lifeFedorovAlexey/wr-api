@@ -50,22 +50,25 @@ async function setupPatchNotes() {
       updated_at timestamptz not null default now(),
       unique (patch_version, locale, ordinal),
       check (locale in ('en-us', 'ru-ru')),
-      check (entity_kind in ('champion', 'item', 'rune', 'spell', 'system', 'skin')),
+      check (entity_kind in ('champion', 'item', 'rune', 'spell', 'system', 'skin', 'augment')),
       check (change_type in ('buff', 'nerf', 'rework', 'adjustment'))
     );
   `;
-  await client`alter table patch_note_changes drop constraint if exists patch_note_changes_entity_kind_check;`;
-  await client`
-    alter table patch_note_changes
-    add constraint patch_note_changes_entity_kind_check
-    check (entity_kind in ('champion', 'item', 'rune', 'spell', 'system', 'skin'));
-  `;
-  await client`alter table patch_note_changes drop constraint if exists patch_note_changes_change_type_check;`;
-  await client`
-    alter table patch_note_changes
-    add constraint patch_note_changes_change_type_check
-    check (change_type in ('new', 'buff', 'nerf', 'rework', 'adjustment', 'removed'));
-  `;
+  // Keep the original constraints if validation fails against existing data.
+  await client.begin(async (transaction) => {
+    await transaction`alter table patch_note_changes drop constraint if exists patch_note_changes_entity_kind_check;`;
+    await transaction`
+      alter table patch_note_changes
+      add constraint patch_note_changes_entity_kind_check
+      check (entity_kind in ('champion', 'item', 'rune', 'spell', 'system', 'skin', 'augment'));
+    `;
+    await transaction`alter table patch_note_changes drop constraint if exists patch_note_changes_change_type_check;`;
+    await transaction`
+      alter table patch_note_changes
+      add constraint patch_note_changes_change_type_check
+      check (change_type in ('new', 'buff', 'nerf', 'rework', 'adjustment', 'removed'));
+    `;
+  });
   await client`create index if not exists patch_note_changes_patch_locale_idx on patch_note_changes (patch_version, locale);`;
   await client`create index if not exists patch_note_changes_direction_idx on patch_note_changes (patch_version, locale, change_type);`;
   await client`
