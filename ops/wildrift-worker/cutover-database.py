@@ -175,6 +175,12 @@ def main():
     live_switch_attempted=False
     paused=[]
     emit('preflight')
+    target_env={}
+    for line in Path('/etc/wildrift-prod-postgres/env').read_text().splitlines():
+        k,sep,value=line.partition('=')
+        if sep: target_env[k]=value.strip().strip('\"\'')
+    from urllib.parse import quote
+    target_url='postgresql://'+quote(target_env['POSTGRES_USER'],safe='')+':'+quote(target_env['POSTGRES_PASSWORD'],safe='')+'@127.0.0.1:55432/wildrift'
     if not BASE.is_file() or BASE.stat().st_size<1024:
         raise RuntimeError('Original nonempty migration dump is required')
     if shutil.disk_usage('/srv/data/wildrift-prod-postgres').free<3*1024**3:
@@ -202,7 +208,7 @@ def main():
         baseline[name]=fingerprint(base_db,name,ignore)
         if fingerprint('wildrift',name,ignore)!=baseline[name]:
             raise RuntimeError('Local edits require reconciliation before replacing table: '+name)
-    prepare=vps('prepare',stamp)
+    prepare=vps('prepare',stamp,targetUrl=target_url)
     emit('source_configuration_verified',hostKeyVerified=prepare['hostKeyVerified'])
     try:
         # Pause all local writers/readers that could reconnect during database rename.
@@ -266,12 +272,6 @@ def main():
         pg('postgres','ALTER DATABASE wildrift RENAME TO '+ident(original)+';')
         renamed=True
         pg('postgres','ALTER DATABASE '+ident(candidate)+' RENAME TO wildrift; ALTER DATABASE wildrift ALLOW_CONNECTIONS true;')
-        target_env={}
-        for line in Path('/etc/wildrift-prod-postgres/env').read_text().splitlines():
-            k,sep,value=line.partition('=')
-            if sep: target_env[k]=value.strip().strip('\"\'')
-        from urllib.parse import quote
-        target_url='postgresql://'+quote(target_env['POSTGRES_USER'],safe='')+':'+quote(target_env['POSTGRES_PASSWORD'],safe='')+'@127.0.0.1:55432/wildrift'
         # From this point new writes may reach the new database: never automatically
         # roll back to an old copy and silently discard them.
         live_switch_attempted=True

@@ -14,8 +14,8 @@ API = ['wr-api','wr-api-public','wr-api-auth']
 KEY = 'AAAAC3NzaC1lZDI1NTE5AAAAIBfMb1HX+oexiMuSL7BQSG4IT/R1Fh8LjoOWNkrbHBhU'
 
 
-def command(args, env=None):
-    p=subprocess.run(args,capture_output=True,text=True,env=env,timeout=45)
+def command(args, env=None, cwd=None):
+    p=subprocess.run(args,capture_output=True,text=True,env=env,cwd=cwd,timeout=45)
     if p.returncode:
         raise RuntimeError(Path(args[0]).name+' failed; secret output suppressed')
     return p.stdout
@@ -72,6 +72,14 @@ def main():
             urls.append(cfg.get('DATABASE_URL') or cfg.get('env',{}).get('DATABASE_URL') or read_url(files[str(file)]))
         if len(set(urls))!=1 or not urlsplit(urls[0]).hostname:
             raise RuntimeError('API processes use different database configurations')
+        # Prove password authentication through the actual VPS reverse forward
+        # before stopping any live process. A listening TCP port alone is insufficient.
+        probe="""import postgres from 'postgres';
+const sql=postgres(process.env.DATABASE_URL,{max:1,connect_timeout:10,onnotice(){},connection:{default_transaction_read_only:'on',statement_timeout:10000}});
+try { const [r]=await sql`select current_database() as name`; if(r.name!=='wildrift') throw new Error('Unexpected database'); }
+finally {await sql.end({timeout:3});}
+"""
+        command(['node','--input-type=module','-e',probe],{**os.environ,'DATABASE_URL':data['targetUrl']},selected[0]['pm2_env']['pm_cwd'])
         for file in [Path('/var/www/wr-api/.env'),Path('/var/www/wr-api/shared/database.env')]:
             files[str(file.resolve())]=file.read_text() if file.exists() else None
         state={'files':files,'apps':[{'name':a['name'],'status':a['pm2_env'].get('status')} for a in current if a['name'] in API+['wr-chat']],
