@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Wild Rift production backup at 03:10 Moscow time
+
+[Timer]
+OnCalendar=*-*-* 00:10:00 UTC
+RandomizedDelaySec=10min
+Persistent=true
+Unit=wildrift-postgres-backup.service
+
+[Install]
+WantedBy=timers.target

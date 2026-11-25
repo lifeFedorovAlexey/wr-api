@@ -29,7 +29,7 @@ jobs:
       - run: npm ci --omit=dev
         env:
           PUPPETEER_SKIP_DOWNLOAD: 'true'
-      - run: node --test test/scrape-schedule.test.mjs test/scrape-store.integration.test.mjs
+      - run: node --test test/scrape-schedule.test.mjs test/scrape-store.integration.test.mjs test/database-cutover.integration.test.mjs
         env:
           SCRAPE_TEST_DATABASE_URL: postgres://postgres:integration-test-only@127.0.0.1:5432/wildrift_dev
       - run: python3 ops/kolvrt-monitor/test_monitor.py

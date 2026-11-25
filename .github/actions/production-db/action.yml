@@ -1,0 +1,17 @@
+name: Connect to production PostgreSQL through VPS
+description: Use the canonical VPS configuration and a private SSH forward to kolvrt
+inputs:
+  ssh-host:
+    required: true
+    description: Public VPS hostname
+  ssh-user:
+    required: true
+    description: Existing deployment SSH user
+  ssh-password:
+    required: true
+    description: Existing deployment SSH password
+runs:
+  using: node24
+  main: index.mjs
+  post: post.mjs
+  post-if: always()

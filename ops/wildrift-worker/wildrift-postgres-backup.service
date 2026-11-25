@@ -1,0 +1,13 @@
+[Unit]
+Description=Backup Wild Rift production PostgreSQL locally and on VPS
+Requires=docker.service
+Wants=network-online.target
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+User=root
+UMask=0077
+Nice=10
+ExecStart=/usr/bin/python3 /srv/services/wildrift-worker/backup-postgres.py
+TimeoutStartSec=30min

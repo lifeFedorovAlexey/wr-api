@@ -35,6 +35,8 @@ def install_worker():
     shutil.copyfile(HERE / 'wildrift-worker/compose.yaml', WORKER / 'compose.yaml')
     shutil.copyfile(HERE / 'wildrift-worker/observe.py', WORKER / 'observe.py')
     os.chmod(WORKER / 'observe.py', 0o644)
+    shutil.copyfile(HERE / 'wildrift-worker/backup-postgres.py', WORKER / 'backup-postgres.py')
+    os.chmod(WORKER / 'backup-postgres.py', 0o644)
     secrets = WORKER / 'secrets'
     secrets.mkdir(mode=0o700, exist_ok=True)
     os.chmod(secrets, 0o700)

@@ -12,7 +12,9 @@ on:
         type: string
         default: ''
     secrets:
-      DATABASE_URL: {required: true}
+      TIMEWEB_HOST: {required: true}
+      TIMEWEB_USER: {required: true}
+      TIMEWEB_PASSWORD: {required: true}
       S3_ENDPOINT: {required: true}
       S3_BUCKET: {required: true}
       S3_PUBLIC_BASE_URL: {required: true}
@@ -26,7 +28,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 240
     env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
       DATABASE_POOL_MAX: 3
       S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
       S3_BUCKET: ${{ secrets.S3_BUCKET }}
@@ -69,6 +70,12 @@ jobs:
         working-directory: app
       - run: npm ci --omit=dev
         working-directory: app/wr-api
+      - name: Connect to the production database through VPS
+        uses: ./app/wr-api/.github/actions/production-db
+        with:
+          ssh-host: ${{ secrets.TIMEWEB_HOST }}
+          ssh-user: ${{ secrets.TIMEWEB_USER }}
+          ssh-password: ${{ secrets.TIMEWEB_PASSWORD }}
       - name: Run only due jobs under the shared database lock
         working-directory: app/wr-api
         env:
