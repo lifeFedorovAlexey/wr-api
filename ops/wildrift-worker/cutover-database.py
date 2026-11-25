@@ -19,6 +19,7 @@ USER='wildrift_app'
 IMAGE='postgres:18.7-bookworm'
 SSH=['ssh','-T','-o','BatchMode=yes','-o','ConnectTimeout=10','-o','StrictHostKeyChecking=yes','-i','/root/.ssh/timeweb_ed25519','root@176.98.178.32']
 BASE=ROOT/'source-20261124-191835.dump'
+PATCH_FETCH_FIELDS=('parse_status','parse_error','updated_at','title','description','source_url','published_at','image_url','raw_html','content_hash','parser_version')
 
 
 def emit(stage,**fields):
@@ -70,6 +71,30 @@ def fingerprint(db,name,ignore=()):
     result=rows(db,'SELECT json_build_object(\'rows\',count(*),\'hash\',md5(coalesce(string_agg(h,\'\' order by h),\'\'))) FROM '
       '(SELECT md5(('+expression+')::text) h FROM public.'+ident(name)+' t) s;')
     return result[0]
+
+
+def validate_patch_baseline(base_rows,target_rows):
+    base={tuple(row['key']):row for row in base_rows}
+    target={tuple(row['key']):row for row in target_rows}
+    if set(base)!=set(target):
+        raise RuntimeError('Local patch list changed; reconciliation required')
+    for key,current in target.items():
+        original=base[key]
+        if current['structuredHash']!=original['structuredHash']:
+            raise RuntimeError('Local parsed patch data changed; reconciliation required')
+        if current['fullHash']!=original['fullHash'] and current['status']!='failed':
+            raise RuntimeError('Local successful patch metadata changed; reconciliation required')
+
+
+def verify_local_baseline(base_db,target_db,names):
+    for name in names:
+        ignore=PATCH_FETCH_FIELDS if name=='patch_notes' else ()
+        if fingerprint(target_db,name,ignore)!=fingerprint(base_db,name,ignore):
+            raise RuntimeError('Local edits require reconciliation before replacing table: '+name)
+        if name=='patch_notes':
+            expression='to_jsonb(t)'+''.join(' - '+literal(key) for key in PATCH_FETCH_FIELDS)
+            query="SELECT json_build_object('key',json_build_array(patch_version,locale),'status',parse_status,'fullHash',md5(to_jsonb(t)::text),'structuredHash',md5(("+expression+")::text)) FROM public.patch_notes t;"
+            validate_patch_baseline(rows(base_db,query),rows(target_db,query))
 
 
 def vps(mode,stamp,**payload):
@@ -204,12 +229,7 @@ def main():
     if metadata!=base_metadata:
         raise RuntimeError('Target schema differs from the original migration dump; automatic replacement refused')
     source_owned=[name for name in names if not worker_table(name)]
-    baseline={}
-    for name in source_owned:
-        ignore=('parse_status','parse_error','updated_at') if name=='patch_notes' else ()
-        baseline[name]=fingerprint(base_db,name,ignore)
-        if fingerprint('wildrift',name,ignore)!=baseline[name]:
-            raise RuntimeError('Local edits require reconciliation before replacing table: '+name)
+    verify_local_baseline(base_db,'wildrift',source_owned)
     prepare=vps('prepare',stamp,targetUrl=target_url)
     emit('source_configuration_verified',hostKeyVerified=prepare['hostKeyVerified'])
     try:
@@ -224,10 +244,7 @@ def main():
             if time.monotonic()>deadline:
                 raise RuntimeError('Local import did not finish within 10 minutes; try again after it finishes')
             time.sleep(3)
-        for name in source_owned:
-            ignore=('parse_status','parse_error','updated_at') if name=='patch_notes' else ()
-            if fingerprint('wildrift',name,ignore)!=baseline[name]:
-                raise RuntimeError('Local table changed while waiting for worker: '+name)
+        verify_local_baseline(base_db,'wildrift',source_owned)
         # Freeze private writes only. Next.js and its public snapshot keep running.
         stopped=True
         vps('stop',stamp)

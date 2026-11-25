@@ -27,7 +27,9 @@ kolvrt, then run `sudo python3 /path/to/cutover-database.py`. The script:
 2. Restores the original migration dump as a baseline. Tables not owned by local
    statistics/guide/RiftGG workers must match that baseline. Unexpected local
    edits stop the operation. Checksums normalize the session timezone to UTC.
-   Only failure diagnostics on `patch_notes` may differ from the baseline.
+   On `patch_notes`, a failed fetch/parse retry may change fetch metadata and
+   failure diagnostics only; the structured parsed payload and effective-date
+   fields must match the baseline. Successful local edits stop the operation.
 3. Pauses local timers and private API/chat processes. Next.js remains online.
    Dumps the final cloud database and restores a separate candidate database.
 4. Keeps cloud-owned user, auth, quiz, chat, editorial, and patch data in the
