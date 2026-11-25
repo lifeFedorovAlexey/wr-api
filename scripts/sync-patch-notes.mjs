@@ -6,6 +6,7 @@ import { client, db } from "../db/client.js";
 import { buildPatchChangeRows, loadPatchChangeCatalog } from "../lib/patchNotesChangeRecords.mjs";
 import { enrichPatchSkinImages } from "../lib/patchSkinImages.mjs";
 import { runPatchNotesImport } from "../lib/patchNotesImport.mjs";
+import { shouldSkipPatchReparse } from "../lib/patchParserVersionPolicy.mjs";
 import {
   parsePatchArticle,
   parsePatchIndex,
@@ -164,7 +165,7 @@ async function markFailed(locale, version, error) {
 
 async function importPatch(item, locale, { force = false, reparse = false, catalog } = {}) {
   const stored = await getStored(locale, item.version);
-  if (stored && !force && !reparse && stored.parser_version === PATCH_NOTES_PARSER_VERSION && stored.parse_status === "parsed") {
+  if (shouldSkipPatchReparse(stored, PATCH_NOTES_PARSER_VERSION, { force, reparse })) {
     return "skipped";
   }
 
