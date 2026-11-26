@@ -1,6 +1,11 @@
 name: Worker Release
 
 on:
+  workflow_call:
+    inputs:
+      publish:
+        type: boolean
+        default: false
   workflow_run:
     workflows: [API Pipeline]
     types: [completed]
@@ -35,7 +40,7 @@ jobs:
         id: source
         env:
           GH_TOKEN: ${{ github.token }}
-          PUBLISH: ${{ github.event_name != 'workflow_dispatch' || inputs.publish }}
+          PUBLISH: ${{ github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.publish) }}
         run: python3 ops/wildrift-worker/release.py resolve
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         if: steps.source.outputs.build == 'true'
@@ -54,7 +59,7 @@ jobs:
         if: steps.source.outputs.build == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          PUBLISH: ${{ github.event_name != 'workflow_dispatch' || inputs.publish }}
+          PUBLISH: ${{ github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.publish) }}
         run: python3 ops/wildrift-worker/release.py build
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: steps.source.outputs.build == 'true'

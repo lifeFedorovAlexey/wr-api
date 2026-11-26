@@ -344,4 +344,3 @@ try {
     await client.end({ timeout: 5 });
   } catch { /* best-effort cleanup */ }
 }
-
