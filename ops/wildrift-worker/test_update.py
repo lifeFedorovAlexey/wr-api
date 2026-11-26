@@ -148,6 +148,12 @@ class UpdateTest(unittest.TestCase):
 
 
 class ObserverRecoveryTest(unittest.TestCase):
+    def test_stop_does_not_touch_foreign_container(self):
+        info = [{'Config': {'Labels': {'com.docker.compose.project': 'foreign'}}}]
+        with patch.object(observer.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, json.dumps(info))) as command:
+            observer.stop_owned_monitor()
+        self.assertEqual(command.call_count, 1)
+
     def test_only_stopped_owned_monitor_is_removed(self):
         for status, project, expected in [('created', 'wildrift-worker', True),
                                            ('exited', 'wildrift-worker', True),

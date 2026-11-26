@@ -101,6 +101,10 @@ class ObserverTest(unittest.TestCase):
         preparation = patch.object(observer, 'prepare_monitor', return_value=True)
         preparation.start()
         self.addCleanup(preparation.stop)
+        stopping = patch.object(observer, 'stop_owned_monitor', side_effect=lambda: observer.subprocess.run(
+            ['/usr/bin/docker', 'stop', '-t', '1', 'wildrift-monitor']))
+        stopping.start()
+        self.addCleanup(stopping.stop)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name) / 'status.json'

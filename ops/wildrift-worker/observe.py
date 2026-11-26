@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import time
 
@@ -68,6 +69,21 @@ def prepare_monitor():
     return removed.returncode == 0
 
 
+def stop_owned_monitor():
+    try:
+        result = subprocess.run(['/usr/bin/docker', 'inspect', 'wildrift-monitor'],
+                                capture_output=True, text=True, timeout=2, check=False)
+        if result.returncode:
+            return
+        labels = json.loads(result.stdout)[0].get('Config', {}).get('Labels') or {}
+        if (labels.get('com.docker.compose.project') == 'wildrift-worker'
+                and labels.get('com.docker.compose.service') == 'observer'):
+            subprocess.run(['/usr/bin/docker', 'stop', '-t', '1', 'wildrift-monitor'],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3, check=False)
+    except (OSError, ValueError, KeyError, IndexError, subprocess.SubprocessError):
+        pass
+
+
 def observe(path=STATE):
     previous = read_snapshot(path)
     raw_path = path.with_name('database-status.json')
@@ -96,11 +112,7 @@ def observe(path=STATE):
     if not successful:
         # Stop a timed-out container before publishing an explicit stale snapshot.
         if launched:
-            try:
-                subprocess.run(['/usr/bin/docker', 'stop', '-t', '1', 'wildrift-monitor'],
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2, check=False)
-            except (OSError, subprocess.SubprocessError):
-                pass
+            stop_owned_monitor()
         data = {**previous, 'ok': False, 'error': 'Не удалось обновить данные сборщика. Показана последняя полученная история.'}
     data['processes'], data['processesObservedAt'] = process_snapshot()
     publish(path, data)
@@ -108,4 +120,7 @@ def observe(path=STATE):
 
 
 if __name__ == '__main__':
-    raise SystemExit(0 if observe() else 1)
+    if sys.argv[1:] == ['--stop-owned']:
+        stop_owned_monitor()
+    else:
+        raise SystemExit(0 if observe() else 1)

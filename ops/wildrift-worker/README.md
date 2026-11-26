@@ -23,7 +23,7 @@ generated diagnostic package.
 
 The installer preserves the deployed `.env`, `compose.yaml`, credentials, DB
 volumes, backup service and VPS publisher. It installs only `update.py`, the
-observer recovery fix, and `wildrift-worker-update.service/.timer` under the
+observer recovery fix (including its service unit), and `wildrift-worker-update.service/.timer` under the
 existing service directory and `/etc/systemd/system`.
 
 ## Update transaction
