@@ -23,6 +23,7 @@ done
 install -o root -g root -m 0755 "$SOURCE/update.py" "$TARGET/update.py"
 install -o root -g root -m 0755 "$SOURCE/observe.py" "$TARGET/observe.py"
 install -o root -g root -m 0644 "$SOURCE/wildrift-monitor.service" /etc/systemd/system/
+install -o root -g root -m 0644 "$SOURCE/wildrift-scraper.service" /etc/systemd/system/
 install -o root -g root -m 0644 "$SOURCE/wildrift-worker-update.service" /etc/systemd/system/
 install -o root -g root -m 0644 "$SOURCE/wildrift-worker-update.timer" /etc/systemd/system/
 systemctl daemon-reload
