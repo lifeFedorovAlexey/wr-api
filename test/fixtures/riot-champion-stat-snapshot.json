@@ -1,0 +1,28 @@
+{
+  "fragmentId": "OTHER CHAMPION STATS ADJUSTMENTS",
+  "type": "characterChanges",
+  "characters": [
+    {
+      "character": { "name": "ZED" },
+      "changes": [
+        {
+          "title": "Base Stats",
+          "description": {
+            "body": "<ul><li>Attack Speed Ratio: 0.667</li><li>Base Attack Speed: 0.667</li><li>Base Bonus Attack Speed: 0.05</li><li>Attack Speed per Level: 0.01</li><li>Base Attack Damage: 58 → 60</li><li>[Removed] Attack Speed: 15%</li></ul>"
+          }
+        }
+      ]
+    },
+    {
+      "character": { "name": "UNLISTED CHAMPION" },
+      "changes": [
+        {
+          "title": "Base Stats",
+          "description": {
+            "body": "<ul><li>Base Health: 650</li><li>Health per Level: 120</li></ul>"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -478,6 +478,22 @@ export const patchNotes = pgTable(
   }),
 );
 
+export const patchNoteSourceRevisions = pgTable(
+  "patch_note_source_revisions",
+  {
+    patchVersion: text("patch_version").notNull(),
+    locale: text("locale").notNull(),
+    contentHash: text("content_hash").notNull(),
+    sourceUrl: text("source_url").notNull(),
+    rawHtml: text("raw_html").notNull(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.patchVersion, table.locale, table.contentHash] }),
+    archivedAtIdx: index("patch_note_source_revisions_archived_at_idx").on(table.archivedAt),
+  }),
+);
+
 export const patchNoteChanges = pgTable(
   "patch_note_changes",
   {
@@ -492,6 +508,7 @@ export const patchNoteChanges = pgTable(
     changeType: text("change_type").notNull(),
     sectionName: text("section_name"),
     changeName: text("change_name"),
+    scope: jsonb("scope"),
     details: jsonb("details").notNull().default([]),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -529,6 +546,35 @@ export const patchDataSnapshots = pgTable(
   }),
 );
 
+export const patchDataSnapshotCorrections = pgTable(
+  "patch_data_snapshot_corrections",
+  {
+    id: serial("id").primaryKey(),
+    patchVersion: text("patch_version").notNull(),
+    dataset: text("dataset").notNull(),
+    entityKind: text("entity_kind").notNull(),
+    entitySlug: text("entity_slug").notNull(),
+    correctedEntitySlug: text("corrected_entity_slug"),
+    previousContentHash: text("previous_content_hash").notNull(),
+    correctedContentHash: text("corrected_content_hash").notNull(),
+    correctedState: jsonb("corrected_state").notNull(),
+    sourceKind: text("source_kind").notNull(),
+    sourceUrl: text("source_url").notNull(),
+    sourcePatchVersion: text("source_patch_version"),
+    sourceUpdatedAt: pgDate("source_updated_at", { mode: "string" }),
+    verificationStatus: text("verification_status").notNull(),
+    sourceEvidence: jsonb("source_evidence").notNull().default([]),
+    reason: text("reason").notNull(),
+    correctionHash: text("correction_hash").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    correctionHashUidx: uniqueIndex("patch_data_snapshot_corrections_hash_uidx").on(table.correctionHash),
+    entityIdx: index("patch_data_snapshot_corrections_entity_idx")
+      .on(table.patchVersion, table.dataset, table.entitySlug, table.id),
+  }),
+);
+
 export const patchDataTransitions = pgTable(
   "patch_data_transitions",
   {
@@ -540,7 +586,6 @@ export const patchDataTransitions = pgTable(
     entityKind: text("entity_kind").notNull(),
     entitySlug: text("entity_slug").notNull(),
     propertyPath: text("property_path").notNull(),
-    // For new/removed transitions this is the type of the non-null side.
     valueType: text("value_type").notNull(),
     beforeValue: jsonb("before_value").notNull(),
     afterValue: jsonb("after_value").notNull(),
@@ -558,20 +603,6 @@ export const patchDataTransitions = pgTable(
     chainIdx: index("patch_data_transitions_chain_idx")
       .on(table.dataset, table.mode, table.entityKind, table.entitySlug, table.patchVersion),
     statusIdx: index("patch_data_transitions_status_idx").on(table.verificationStatus, table.patchVersion),
-    changeTypeCheck: check("patch_data_transitions_change_type_check", sql`
-      ${table.changeType} in ('new', 'buff', 'nerf', 'rework', 'adjustment', 'removed', 'unchanged')
-    `),
-    valuesCheck: check("patch_data_transitions_values_check", sql`
-      case ${table.changeType}
-        when 'new' then ${table.valueType} <> 'null'
-          and ${table.beforeValue} = 'null'::jsonb and jsonb_typeof(${table.afterValue}) = ${table.valueType}
-        when 'removed' then ${table.valueType} <> 'null'
-          and jsonb_typeof(${table.beforeValue}) = ${table.valueType} and ${table.afterValue} = 'null'::jsonb
-        else jsonb_typeof(${table.beforeValue}) = ${table.valueType}
-          and jsonb_typeof(${table.afterValue}) = ${table.valueType}
-          and (${table.changeType} <> 'unchanged' or ${table.beforeValue} = ${table.afterValue})
-      end
-    `),
   }),
 );
 

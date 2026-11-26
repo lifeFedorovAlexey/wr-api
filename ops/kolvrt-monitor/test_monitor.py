@@ -98,6 +98,9 @@ class MonitorTest(unittest.TestCase):
 
 class ObserverTest(unittest.TestCase):
     def setUp(self):
+        preparation = patch.object(observer, 'prepare_monitor', return_value=True)
+        preparation.start()
+        self.addCleanup(preparation.stop)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name) / 'status.json'
@@ -110,6 +113,7 @@ class ObserverTest(unittest.TestCase):
         now = dt.datetime.now(dt.timezone.utc).isoformat()
         def command(args, **kwargs):
             if args[0] == '/usr/bin/docker':
+                self.assertIn('-T', args)
                 self.raw_path.write_text(json.dumps({'ok': True, 'collectedAt': now, 'history': [{'id': 'new-run'}]}), encoding='utf-8')
                 self.assertEqual(json.loads(self.path.read_text(encoding='utf-8')), self.previous)
                 return subprocess.CompletedProcess(args, 0)

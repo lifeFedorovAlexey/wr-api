@@ -18,6 +18,7 @@ import {
   createGuideAssetStore,
 } from "../lib/guideAssets.mjs";
 import { buildObjectStoragePublicUrl, createObjectStorageClient, shouldUseS3PublicUrls } from "../lib/objectStorage.mjs";
+import { isValidPatchVersion } from "../lib/patchVersion.mjs";
 
 const DEFAULT_PATCH_LIMIT = 20;
 const MAX_PATCH_LIMIT = 20;
@@ -46,7 +47,7 @@ function parseOptions(argv) {
   }
   if (options.updateDatabase && !options.apply) throw new Error("--update-db requires --apply");
   for (const version of options.patchVersions) {
-    if (!/^\d+\.\d+[a-z]?$/.test(version)) throw new Error(`Invalid patch version: ${version}`);
+    if (!isValidPatchVersion(version)) throw new Error(`Invalid patch version: ${version}`);
   }
   if (options.mirrorApiOrigin) validateMirrorApiOrigin(options.mirrorApiOrigin);
   return options;
