@@ -26,6 +26,8 @@ install -o root -g root -m 0644 "$SOURCE/wildrift-monitor.service" /etc/systemd/
 install -o root -g root -m 0644 "$SOURCE/wildrift-worker-update.service" /etc/systemd/system/
 install -o root -g root -m 0644 "$SOURCE/wildrift-worker-update.timer" /etc/systemd/system/
 systemctl daemon-reload
+[[ "$monitor_active" != active ]] || systemctl start wildrift-monitor.timer
+trap - EXIT
 systemctl enable --now wildrift-worker-update.timer
 systemctl start --no-block wildrift-worker-update.service
 echo 'Worker auto-update timer enabled; existing database, compose and secrets preserved.'
