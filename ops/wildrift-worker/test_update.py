@@ -1,9 +1,11 @@
 import hashlib
+import io
 import importlib.util
 import json
 from pathlib import Path
 import subprocess
 import tempfile
+import tarfile
 import unittest
 from unittest.mock import patch
 
@@ -173,6 +175,25 @@ class ObserverRecoveryTest(unittest.TestCase):
 
 
 class ReleaseGateTest(unittest.TestCase):
+    def test_saved_config_digest_is_used_instead_of_containerd_index_id(self):
+        config = json.dumps({'architecture': 'amd64', 'os': 'linux', 'config': {'User': '10001:10001'}}).encode()
+        digest = hashlib.sha256(config).hexdigest()
+        config_path = 'blobs/sha256/' + digest
+        image = 'wildrift-worker:worker-v1-test'
+        manifest = json.dumps([{'Config': config_path, 'RepoTags': [image]}]).encode()
+        index = b'{"schemaVersion":2,"manifests":[]}'
+        with tempfile.TemporaryDirectory() as directory:
+            archive = Path(directory) / 'image.tar.gz'
+            with tarfile.open(archive, mode='w:gz') as saved:
+                for name, data in [(config_path, config), ('manifest.json', manifest), ('index.json', index)]:
+                    entry = tarfile.TarInfo(name)
+                    entry.size = len(data)
+                    saved.addfile(entry, io.BytesIO(data))
+            self.assertNotEqual(hashlib.sha256(index).hexdigest(), digest)
+            self.assertEqual(releaser.archive_image_id(archive, image), 'sha256:' + digest)
+            with self.assertRaises(ValueError):
+                releaser.archive_image_id(archive, 'another-image:tag')
+
     def test_newest_pipeline_attempt_must_be_successful(self):
         runs = [dict(id=1, name='API Pipeline', head_branch='main', event='push', conclusion='success'),
                 dict(id=2, name='API Pipeline', head_branch='main', event='workflow_dispatch', conclusion=None)]

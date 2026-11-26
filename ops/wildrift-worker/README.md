@@ -13,6 +13,12 @@ lockfiles determine dependencies. Both production dependency audits and native
 module imports must pass. No container-registry credentials, new inbound ports,
 self-hosted Actions runner or passwordless general sudo are needed.
 
+The manifest records the saved image's configuration digest, which Docker 26
+uses as its image ID. Containerd-backed builders can report an OCI index digest
+instead; that builder-specific ID is not used. CI loads the actual compressed
+archive into a temporary isolated Docker 26.1.5 daemon and runs native module
+imports there before publishing. This matches the Docker version on kolvrt.
+
 ## One-time installation
 
 On kolvrt, run `sudo bash ops/wildrift-worker/install.sh` from the checked-out,
