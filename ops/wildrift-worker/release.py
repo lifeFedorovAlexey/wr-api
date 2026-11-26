@@ -8,11 +8,14 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import tarfile
+import time
 
 OWNER = 'lifeFedorovAlexey'
 API = OWNER + '/wr-api'
 DATA = OWNER + '/wildriftchampionsData'
 BASE = 'node@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d'
+CLASSIC_DOCKER = 'docker:26.1.4-dind@sha256:dd43b430341a40d88f4f30edb03865daa9d6fa39c9b1da70f27e2a89cec3eae1'
 STATE = Path(os.environ.get('RUNNER_TEMP', '.')) / 'worker-source.json'
 
 
@@ -54,6 +57,60 @@ def resolve():
     print(json.dumps(dict(build=build, api=api, data=data, tag=tag)))
 
 
+def archive_image_id(archive, image):
+    """The classic Docker ID is the config digest, not an OCI index digest.
+
+    Containerd-backed builders report the index as inspect.Id. Docker 26's
+    classic store reports the config as inspect.Id after loading that archive.
+    Read the config actually referenced by the saved image instead of assuming
+    the two stores expose the same identifier.
+    """
+    with tarfile.open(archive, mode='r:gz') as saved:
+        member = saved.getmember('manifest.json')
+        if not member.isfile() or member.size > 1024**2:
+            raise ValueError('Unexpected Docker archive manifest')
+        entries = json.load(saved.extractfile(member))
+        images = [entry for entry in entries if image in entry.get('RepoTags', [])]
+        if len(images) != 1:
+            raise ValueError('Archive must contain exactly one matching worker image')
+        config = saved.getmember(images[0]['Config'])
+        if not config.isfile() or config.size > 1024**2:
+            raise ValueError('Unexpected Docker image configuration')
+        data = saved.extractfile(config).read()
+        info = json.loads(data)
+        if info.get('os') != 'linux' or info.get('architecture') != 'amd64':
+            raise ValueError('Worker must target kolvrt: linux/amd64')
+        return 'sha256:' + hashlib.sha256(data).hexdigest()
+
+
+def verify_classic_load(archive, image, image_id):
+    """Exercise the actual host's Docker generation before publishing."""
+    name = 'worker-docker26-compatibility'
+    subprocess.run(['docker', 'run', '--rm', '--privileged', '--detach', '--name', name,
+                    '--network', 'none', '-e', 'DOCKER_TLS_CERTDIR=', CLASSIC_DOCKER,
+                    '--storage-driver=vfs', '--iptables=false', '--bridge=none'], check=True)
+    try:
+        for _ in range(30):
+            ready = subprocess.run(['docker', 'exec', name, 'docker', 'info'],
+                                   capture_output=True, timeout=10)
+            if ready.returncode == 0:
+                break
+            time.sleep(1)
+        else:
+            raise RuntimeError('Docker 26 compatibility daemon did not start')
+        with archive.open('rb') as source:
+            subprocess.run(['docker', 'exec', '-i', name, 'docker', 'load'], stdin=source, check=True)
+        loaded = json.loads(run('docker', 'exec', name, 'docker', 'image', 'inspect', image))[0]
+        if loaded['Id'] != image_id:
+            raise RuntimeError('Docker 26 loaded a different image configuration')
+        smoke = 'await import("sharp");await import("postgres");await import("dotenv");console.log("DOCKER26_LOAD_OK")'
+        subprocess.run(['docker', 'exec', name, 'docker', 'run', '--rm', '--network', 'none',
+                        '--workdir', '/app/wr-api', '--entrypoint', 'node', image,
+                        '--input-type=module', '-e', smoke], check=True)
+    finally:
+        subprocess.run(['docker', 'rm', '--force', name], check=False)
+
+
 def build():
     source = json.loads(STATE.read_text())
     image = 'wildrift-worker:' + source['tag']
@@ -73,7 +130,6 @@ def build():
                                'audit', '--omit=dev', '--json'))
         if audit['metadata']['vulnerabilities']['total']:
             raise RuntimeError('Production dependencies are vulnerable')
-    info = json.loads(run('docker', 'image', 'inspect', image))[0]
     archive = Path('worker-image.tar.gz')
     with archive.open('wb') as raw, gzip.GzipFile(fileobj=raw, mode='wb', mtime=0) as compressed:
         process = subprocess.Popen(['docker', 'save', image], stdout=subprocess.PIPE)
@@ -85,9 +141,11 @@ def build():
         raise RuntimeError('Release exceeds GitHub asset size limit')
     with archive.open('rb') as file:
         digest = hashlib.file_digest(file, 'sha256').hexdigest()
+    image_id = archive_image_id(archive, image)
+    verify_classic_load(archive, image, image_id)
     manifest = dict(schema='wildrift-worker-release', version=1, repository=API,
                     api=source['api'], data=source['data'], tag=source['tag'], image=image,
-                    imageId=info['Id'], archive=archive.name, size=archive.stat().st_size,
+                    imageId=image_id, archive=archive.name, size=archive.stat().st_size,
                     sha256=digest, workflowRunId=int(os.environ['GITHUB_RUN_ID']))
     Path('worker-release.json').write_text(json.dumps(manifest, indent=2) + '\n')
     if source['publish']:
