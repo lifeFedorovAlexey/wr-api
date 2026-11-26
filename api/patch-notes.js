@@ -1,11 +1,32 @@
 import { and, asc, desc, eq, inArray, isNotNull } from "drizzle-orm";
 
 import { db } from "../db/client.js";
-import { champions, guideEntities, patchDataSnapshots, patchNoteChanges, patchNotes } from "../db/schema.js";
+import {
+  champions,
+  guideEntities,
+  patchDataSnapshotCorrections,
+  patchDataSnapshots,
+  patchNoteChanges,
+  patchNotes,
+} from "../db/schema.js";
 import { buildPublicIconPath } from "../lib/championIcons.mjs";
 import { buildGuideAssetKey, buildPublicGuideAssetPath } from "../lib/guideAssets.mjs";
-import { buildPatchSkinAssetKey } from "../lib/patchSkinImages.mjs";
+import {
+  buildPatchSkinAssetKey,
+  resolvePatchSkinImageFallback,
+} from "../lib/patchSkinImages.mjs";
 import { buildPublicChampionStats } from "../lib/patchChampionStatSnapshots.mjs";
+import { buildPublicPatchItemDataForDetail } from "../lib/publicPatchItemDataForDetail.mjs";
+import { buildPublicPatchReferenceData } from "../lib/publicPatchReferenceData.mjs";
+import { buildPublicPatchDetailResponse } from "../lib/publicPatchDetailResponse.mjs";
+import { countPatchChampionChanges } from "../lib/patchChampionChangeCounts.mjs";
+import { countPatchChangeEntities } from "../lib/patchNoteEntityCounts.mjs";
+import { comparePatchVersions } from "../lib/patchVersion.mjs";
+import {
+  resolvePatchChangeDisplayNameWithStatus,
+} from "../lib/patchNotePreviewNames.mjs";
+import { localizePatchNoteDisplayLabels } from "../lib/patchNoteDisplayLabels.mjs";
+import { normalizePatchChangeEntityClassification } from "../lib/patchNoteEntityClassification.mjs";
 import { setCors } from "./utils/cors.js";
 
 function setPublicCache(res) {
@@ -16,21 +37,58 @@ function setNoStore(res) {
   res.setHeader("Cache-Control", "no-store");
 }
 
-function toPublicPatch(row, changes = [], championStats = null) {
-  return {
-    version: row.patchVersion,
-    locale: row.locale,
-    title: row.title,
-    description: row.description,
-    sourceUrl: row.sourceUrl,
-    publishedAt: row.publishedAt,
-    effectiveDate: row.effectiveDate,
-    effectiveRegion: row.effectiveRegion,
-    effectiveDateSourceUrl: row.effectiveDateSourceUrl,
-    imageUrl: row.imageUrl,
-    changes,
-    championStats,
-  };
+function isMissingRelationError(error) {
+  for (let current = error; current; current = current.cause) {
+    if (current.code === "42P01") return true;
+  }
+  return false;
+}
+
+function isMissingColumnError(error) {
+  for (let current = error; current; current = current.cause) {
+    if (current.code === "42703") return true;
+  }
+  return false;
+}
+
+const PATCH_DATA_CORRECTION_FIELDS = {
+  id: patchDataSnapshotCorrections.id,
+  patchVersion: patchDataSnapshotCorrections.patchVersion,
+  dataset: patchDataSnapshotCorrections.dataset,
+  entityKind: patchDataSnapshotCorrections.entityKind,
+  entitySlug: patchDataSnapshotCorrections.entitySlug,
+  previousContentHash: patchDataSnapshotCorrections.previousContentHash,
+  correctedContentHash: patchDataSnapshotCorrections.correctedContentHash,
+  correctedState: patchDataSnapshotCorrections.correctedState,
+  sourceKind: patchDataSnapshotCorrections.sourceKind,
+  sourceUrl: patchDataSnapshotCorrections.sourceUrl,
+  sourcePatchVersion: patchDataSnapshotCorrections.sourcePatchVersion,
+  sourceUpdatedAt: patchDataSnapshotCorrections.sourceUpdatedAt,
+  verificationStatus: patchDataSnapshotCorrections.verificationStatus,
+  sourceEvidence: patchDataSnapshotCorrections.sourceEvidence,
+  reason: patchDataSnapshotCorrections.reason,
+  createdAt: patchDataSnapshotCorrections.createdAt,
+};
+
+async function loadPatchDataCorrectionRows(where) {
+  const selectRows = (includeCorrectedSlug) => db
+    .select(includeCorrectedSlug
+      ? { ...PATCH_DATA_CORRECTION_FIELDS, correctedEntitySlug: patchDataSnapshotCorrections.correctedEntitySlug }
+      : PATCH_DATA_CORRECTION_FIELDS)
+    .from(patchDataSnapshotCorrections)
+    .where(where)
+    .orderBy(asc(patchDataSnapshotCorrections.id));
+
+  try {
+    return await selectRows(true);
+  } catch (error) {
+    if (isMissingRelationError(error)) return [];
+    if (!isMissingColumnError(error)) throw error;
+
+    // Keep reads working until the additive corrected_entity_slug migration is applied.
+    // Legacy correction rows did not contain a canonical-slug replacement.
+    return (await selectRows(false)).map((row) => ({ ...row, correctedEntitySlug: null }));
+  }
 }
 
 const PUBLIC_FIELDS = {
@@ -46,14 +104,6 @@ const PUBLIC_FIELDS = {
   imageUrl: patchNotes.imageUrl,
   parsedPayload: patchNotes.parsedPayload,
 };
-
-function compareVersions(left, right) {
-  const a = String(left).match(/^(\d+)\.(\d+)([a-z]?)$/i) || [];
-  const b = String(right).match(/^(\d+)\.(\d+)([a-z]?)$/i) || [];
-  return Number(b[1] || 0) - Number(a[1] || 0)
-    || Number(b[2] || 0) - Number(a[2] || 0)
-    || String(b[3] || "").localeCompare(String(a[3] || ""));
-}
 
 function sourceFromStoredImage(imageUrl) {
   const query = String(imageUrl || "").split("?", 2)[1] || "";
@@ -72,10 +122,16 @@ function storedGuideAssetKey(imageUrl) {
 
 async function loadImageCatalog() {
   const [championRows, guideRows] = await Promise.all([
-    db.select({ slug: champions.slug, icon: champions.icon }).from(champions),
+    db.select({
+      slug: champions.slug,
+      icon: champions.icon,
+      name: champions.name,
+      nameLocalizations: champions.nameLocalizations,
+    }).from(champions),
     db.select({
       kind: guideEntities.kind,
       slug: guideEntities.slug,
+      name: guideEntities.name,
       imageUrl: guideEntities.imageUrl,
       tooltipImageUrl: guideEntities.tooltipImageUrl,
     }).from(guideEntities).where(inArray(guideEntities.kind, ["item", "rune", "summonerSpell"])),
@@ -87,7 +143,7 @@ async function loadImageCatalog() {
   };
 }
 
-function resolveChangeImageUrl(row, catalog) {
+export function resolveChangeImageUrl(row, catalog, env = process.env) {
   const storedSource = sourceFromStoredImage(row.imageUrl);
   if (row.entityKind === "champion" && row.entitySlug) {
     const sourceUrl = catalog.champions.get(row.entitySlug)?.icon || storedSource;
@@ -110,7 +166,14 @@ function resolveChangeImageUrl(row, catalog) {
       const assetKey = storedGuideAssetKey(row.imageUrl) || buildPatchSkinAssetKey(row.entitySlug, sourceUrl);
       return buildPublicGuideAssetPath(assetKey, sourceUrl);
     }
-    return row.imageUrl;
+    if (row.imageUrl) return row.imageUrl;
+
+    const fallback = resolvePatchSkinImageFallback(row);
+    if (fallback?.imageUrl) {
+      const assetKey = buildPatchSkinAssetKey(fallback.assetSlug || row.entitySlug, fallback.imageUrl);
+      return buildPublicGuideAssetPath(assetKey, fallback.imageUrl, env);
+    }
+    return null;
   }
 
   // Older imports persisted proxy URLs. Resolve them through the same S3 asset
@@ -129,8 +192,38 @@ function directRiotSkinSource(value) {
   }
 }
 
-function toPublicChange(row, catalog) {
-  return { ...row, imageUrl: resolveChangeImageUrl(row, catalog) };
+function toPublicChange(row, catalog, locale) {
+  const classifiedRow = normalizePatchChangeEntityClassification(row);
+  const displayRow = localizePatchNoteDisplayLabels(classifiedRow, locale);
+  const nameResolution = resolvePatchChangeDisplayNameWithStatus(displayRow, catalog);
+  return {
+    ...displayRow,
+    displayNameRu: nameResolution.displayNameRu,
+    nameStatus: nameResolution.nameStatus,
+    imageUrl: resolveChangeImageUrl(classifiedRow, catalog),
+  };
+}
+
+function loadPatchChangeRows(version, locale) {
+  return db
+    .select({
+      ordinal: patchNoteChanges.ordinal,
+      entityKind: patchNoteChanges.entityKind,
+      entitySlug: patchNoteChanges.entitySlug,
+      entityName: patchNoteChanges.entityName,
+      imageUrl: patchNoteChanges.imageUrl,
+      changeType: patchNoteChanges.changeType,
+      sectionName: patchNoteChanges.sectionName,
+      changeName: patchNoteChanges.changeName,
+      scope: patchNoteChanges.scope,
+      details: patchNoteChanges.details,
+    })
+    .from(patchNoteChanges)
+    .where(and(
+      eq(patchNoteChanges.patchVersion, version),
+      eq(patchNoteChanges.locale, locale),
+    ))
+    .orderBy(patchNoteChanges.ordinal);
 }
 
 export default async function handler(req, res) {
@@ -158,32 +251,25 @@ export default async function handler(req, res) {
         .select(PUBLIC_FIELDS)
         .from(patchNotes)
         .where(eq(patchNotes.patchVersion, version));
-      const selected = rows.find((row) => row.locale === requestedLocale && row.parsedPayload);
+      const selected = rows.find((row) => row.locale === requestedLocale && row.parsedPayload)
+        || (localeQuery === undefined && requestedLocale === "ru-ru"
+          ? rows.find((row) => row.locale === "en-us" && row.parsedPayload)
+          : null);
       if (!selected) {
         setNoStore(res);
         return res.status(404).json({ error: "Not Found" });
       }
-      const imageCatalog = await loadImageCatalog();
-      const changes = await db
-        .select({
-          ordinal: patchNoteChanges.ordinal,
-          entityKind: patchNoteChanges.entityKind,
-          entitySlug: patchNoteChanges.entitySlug,
-          entityName: patchNoteChanges.entityName,
-          imageUrl: patchNoteChanges.imageUrl,
-          changeType: patchNoteChanges.changeType,
-          sectionName: patchNoteChanges.sectionName,
-          changeName: patchNoteChanges.changeName,
-          details: patchNoteChanges.details,
-        })
-        .from(patchNoteChanges)
-        .where(and(
-          eq(patchNoteChanges.patchVersion, version),
-          eq(patchNoteChanges.locale, selected.locale),
-        ))
-        .orderBy(patchNoteChanges.ordinal);
-      const [statSnapshots, championRows] = await Promise.all([
+      const englishChangesPromise = selected.locale === "en-us"
+        ? null
+        : loadPatchChangeRows(version, "en-us");
+      const [imageCatalog, changes, englishChangeRows, statSnapshots, statCorrections, itemSnapshots, itemCorrections, referenceSnapshots, referenceCorrections, championRows] = await Promise.all([
+        loadImageCatalog(),
+        loadPatchChangeRows(version, selected.locale),
+        englishChangesPromise,
         db.select({
+          patchVersion: patchDataSnapshots.patchVersion,
+          dataset: patchDataSnapshots.dataset,
+          entityKind: patchDataSnapshots.entityKind,
           entitySlug: patchDataSnapshots.entitySlug,
           state: patchDataSnapshots.state,
           verificationStatus: patchDataSnapshots.verificationStatus,
@@ -191,22 +277,78 @@ export default async function handler(req, res) {
           sourceUrl: patchDataSnapshots.sourceUrl,
           sourcePatchVersion: patchDataSnapshots.sourcePatchVersion,
           sourceUpdatedAt: patchDataSnapshots.sourceUpdatedAt,
+          sourceEvidence: patchDataSnapshots.sourceEvidence,
+          contentHash: patchDataSnapshots.contentHash,
+        })
+          .from(patchDataSnapshots)
+          .where(eq(patchDataSnapshots.dataset, "champion-base-stats"))
+          .orderBy(asc(patchDataSnapshots.patchVersion), asc(patchDataSnapshots.entitySlug)),
+        loadPatchDataCorrectionRows(eq(patchDataSnapshotCorrections.dataset, "champion-base-stats")),
+        db.select({
+          patchVersion: patchDataSnapshots.patchVersion,
+          dataset: patchDataSnapshots.dataset,
+          entityKind: patchDataSnapshots.entityKind,
+          entitySlug: patchDataSnapshots.entitySlug,
+          state: patchDataSnapshots.state,
+          verificationStatus: patchDataSnapshots.verificationStatus,
+          sourceKind: patchDataSnapshots.sourceKind,
+          sourceUrl: patchDataSnapshots.sourceUrl,
+          sourcePatchVersion: patchDataSnapshots.sourcePatchVersion,
+          sourceUpdatedAt: patchDataSnapshots.sourceUpdatedAt,
+          sourceEvidence: patchDataSnapshots.sourceEvidence,
+          contentHash: patchDataSnapshots.contentHash,
         })
           .from(patchDataSnapshots)
           .where(and(
-            eq(patchDataSnapshots.patchVersion, version),
-            eq(patchDataSnapshots.dataset, "champion-base-stats"),
+            eq(patchDataSnapshots.dataset, "items"),
           ))
-          .orderBy(asc(patchDataSnapshots.entitySlug)),
-        db.select({ slug: champions.slug, name: champions.name }).from(champions),
+          .orderBy(asc(patchDataSnapshots.patchVersion), asc(patchDataSnapshots.entitySlug)),
+        loadPatchDataCorrectionRows(and(
+            eq(patchDataSnapshotCorrections.dataset, "items"),
+          )),
+        db.select({
+          patchVersion: patchDataSnapshots.patchVersion,
+          dataset: patchDataSnapshots.dataset,
+          entityKind: patchDataSnapshots.entityKind,
+          entitySlug: patchDataSnapshots.entitySlug,
+          state: patchDataSnapshots.state,
+          contentHash: patchDataSnapshots.contentHash,
+          verificationStatus: patchDataSnapshots.verificationStatus,
+          sourceKind: patchDataSnapshots.sourceKind,
+          sourceUrl: patchDataSnapshots.sourceUrl,
+          sourcePatchVersion: patchDataSnapshots.sourcePatchVersion,
+          sourceUpdatedAt: patchDataSnapshots.sourceUpdatedAt,
+          sourceEvidence: patchDataSnapshots.sourceEvidence,
+        })
+          .from(patchDataSnapshots)
+          .where(inArray(patchDataSnapshots.dataset, ["runes", "summoner-spells"])),
+        loadPatchDataCorrectionRows(inArray(patchDataSnapshotCorrections.dataset, ["runes", "summoner-spells"])),
+        db.select({
+          slug: champions.slug,
+          name: champions.name,
+          nameLocalizations: champions.nameLocalizations,
+        }).from(champions),
       ]);
-      const championStats = buildPublicChampionStats(statSnapshots, championRows, version);
+      const championStats = buildPublicChampionStats(statSnapshots, championRows, version, selected.locale, statCorrections);
+      const patchItemData = buildPublicPatchItemDataForDetail({
+        patchVersion: version,
+        snapshots: itemSnapshots,
+        corrections: itemCorrections,
+        changes: changes.map((row) => toPublicChange(row, imageCatalog, selected.locale)),
+        englishChanges: (englishChangeRows || changes).map(normalizePatchChangeEntityClassification),
+      });
+      const runeData = buildPublicPatchReferenceData(referenceSnapshots, "runes", referenceCorrections, version);
+      const summonerSpellData = buildPublicPatchReferenceData(referenceSnapshots, "summoner-spells", referenceCorrections, version);
       setPublicCache(res);
-      return res.status(200).json(toPublicPatch(
-        selected,
-        changes.map((row) => toPublicChange(row, imageCatalog)),
+      return res.status(200).json(buildPublicPatchDetailResponse({
+        patch: selected,
+        changes: patchItemData.changes,
         championStats,
-      ));
+        itemData: patchItemData.itemData,
+        currentItemBaseline: patchItemData.currentItemBaseline,
+        runeData,
+        summonerSpellData,
+      }));
     }
 
     const rows = await db
@@ -221,24 +363,30 @@ export default async function handler(req, res) {
       current[row.locale] = row;
       byVersion.set(row.patchVersion, current);
     }
-    const previewRows = await db
+    const storedPreviewRows = await db
       .select({
         patchVersion: patchNoteChanges.patchVersion,
         locale: patchNoteChanges.locale,
         entityKind: patchNoteChanges.entityKind,
         entitySlug: patchNoteChanges.entitySlug,
         entityName: patchNoteChanges.entityName,
+        sectionName: patchNoteChanges.sectionName,
+        changeName: patchNoteChanges.changeName,
         imageUrl: patchNoteChanges.imageUrl,
         changeType: patchNoteChanges.changeType,
+        scope: patchNoteChanges.scope,
       })
       .from(patchNoteChanges)
       .orderBy(patchNoteChanges.ordinal);
+    const previewRows = storedPreviewRows.map(normalizePatchChangeEntityClassification);
     const imageCatalog = await loadImageCatalog();
     const previewsByPatch = new Map();
+    const championChangeCountsByPatch = countPatchChampionChanges(previewRows);
+    const changeCountsByPatch = countPatchChangeEntities(previewRows);
     for (const row of previewRows) {
-      if (row.entityKind !== "champion" && row.entityKind !== "item") continue;
+      if (row.scope?.type === "game-mode") continue;
+      if (!["champion", "item", "rune", "spell"].includes(row.entityKind)) continue;
       const imageUrl = resolveChangeImageUrl(row, imageCatalog);
-      if (!imageUrl) continue;
       const key = `${row.patchVersion}:${row.locale}`;
       const previews = previewsByPatch.get(key) || {
         new: [], buff: [], adjustment: [], rework: [], nerf: [], removed: [], seen: new Set(),
@@ -250,10 +398,12 @@ export default async function handler(req, res) {
       const previewKey = `${tone}:${identity}`;
       if (!previews.seen.has(previewKey)) {
         previews.seen.add(previewKey);
+        const nameResolution = resolvePatchChangeDisplayNameWithStatus(row, imageCatalog);
         previews[tone].push({
           entityKind: row.entityKind,
           entitySlug: row.entitySlug,
-          entityName: row.entityName,
+          entityName: nameResolution.displayNameRu,
+          nameStatus: nameResolution.nameStatus,
           imageUrl,
         });
       }
@@ -274,6 +424,10 @@ export default async function handler(req, res) {
           effectiveDateSourceUrl: selected.effectiveDateSourceUrl,
           imageUrl: selected.imageUrl,
           availableLocales: Object.keys(locales),
+          championChangeCounts: championChangeCountsByPatch.get(`${patchVersion}:${selected.locale}`)
+            || { buff: 0, nerf: 0, adjustment: 0 },
+          changeCountsByKind: changeCountsByPatch.get(`${patchVersion}:${selected.locale}`)
+            || { champions: 0, items: 0, runes: 0, spells: 0, skins: 0, system: 0, total: 0 },
           iconPreviews: (() => {
             const previews = previewsByPatch.get(`${patchVersion}:${selected.locale}`);
             if (!previews) return { new: [], buff: [], adjustment: [], rework: [], nerf: [], removed: [] };
@@ -290,7 +444,7 @@ export default async function handler(req, res) {
       })
       .sort((a, b) => {
         const dateDiff = new Date(b.publishedAt || 0).getTime() - new Date(a.publishedAt || 0).getTime();
-        return dateDiff || compareVersions(a.version, b.version);
+        return dateDiff || -comparePatchVersions(a.version, b.version);
       });
     setPublicCache(res);
     return res.status(200).json({ count: items.length, items });

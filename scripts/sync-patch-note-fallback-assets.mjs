@@ -4,10 +4,10 @@ import * as dbSchema from "../db/schema.js";
 import { client, db } from "../db/client.js";
 import {
   buildGuideAssetKey,
-  buildGuideAssetMirrorApiUrl,
   buildGuideAssetStorageKey,
   createGuideAssetStore,
 } from "../lib/guideAssets.mjs";
+import { mirrorGuideAssetThroughApi } from "../lib/guideAssetMirrorCheck.mjs";
 import { loadPatchChangeCatalog } from "../lib/patchNotesChangeRecords.mjs";
 import { createObjectStorageClient } from "../lib/objectStorage.mjs";
 
@@ -58,14 +58,6 @@ function getMirrorApiOrigin() {
   return option?.slice("--mirror-api-origin=".length).trim().replace(/\/+$/, "") || null;
 }
 
-async function mirrorThroughApi(assetKey, sourceUrl, mirrorApiOrigin) {
-  const url = buildGuideAssetMirrorApiUrl(assetKey, sourceUrl, mirrorApiOrigin);
-  const response = await fetch(url, { method: "HEAD", signal: AbortSignal.timeout(60_000) });
-  if (!response.ok) {
-    throw new Error(`Mirror API returned HTTP ${response.status} for ${assetKey} at ${new URL(url).pathname}`);
-  }
-}
-
 async function main() {
   const mirrorApiOrigin = getMirrorApiOrigin();
   const objectStorage = createObjectStorageClient(process.env);
@@ -98,9 +90,14 @@ async function main() {
 
     const assetKey = buildGuideAssetKey("guide", kind, slug, "image");
     if (mirrorApiOrigin && !useDirectStorage) {
-      await mirrorThroughApi(assetKey, sourceUrl, mirrorApiOrigin);
-      uploaded += 1;
-      console.log(`[patch-note-assets] ${slug} -> checked/mirrored through API`);
+      const mirrorStatus = await mirrorGuideAssetThroughApi(assetKey, sourceUrl, mirrorApiOrigin);
+      if (mirrorStatus === "already-available") {
+        skipped += 1;
+        console.log(`[patch-note-assets] ${slug} -> already available through API`);
+      } else {
+        uploaded += 1;
+        console.log(`[patch-note-assets] ${slug} -> mirrored through API`);
+      }
       continue;
     }
 

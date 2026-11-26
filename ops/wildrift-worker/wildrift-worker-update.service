@@ -1,0 +1,15 @@
+[Unit]
+Description=Install a verified Wild Rift worker release with rollback
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/srv/services/wildrift-worker
+ExecStart=/usr/bin/python3 /srv/services/wildrift-worker/update.py
+TimeoutStartSec=50min
+TimeoutStopSec=90
+Nice=10
+UMask=0077

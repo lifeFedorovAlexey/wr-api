@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import time
 
@@ -51,19 +52,54 @@ def publish(path, data):
         Path(temporary).unlink(missing_ok=True)
 
 
+def prepare_monitor():
+    """Remove only our stopped orphan; never replace an active/foreign container."""
+    result = subprocess.run(['/usr/bin/docker', 'inspect', 'wildrift-monitor'],
+                            capture_output=True, text=True, timeout=2, check=False)
+    if result.returncode:
+        return True  # No named container; compose will also detect daemon errors.
+    container = json.loads(result.stdout)[0]
+    labels = container.get('Config', {}).get('Labels') or {}
+    ours = (labels.get('com.docker.compose.project') == 'wildrift-worker'
+            and labels.get('com.docker.compose.service') == 'observer')
+    if not ours or container['State']['Status'] not in ('created', 'exited', 'dead'):
+        return False
+    removed = subprocess.run(['/usr/bin/docker', 'rm', 'wildrift-monitor'],
+                             capture_output=True, timeout=2, check=False)
+    return removed.returncode == 0
+
+
+def stop_owned_monitor():
+    try:
+        result = subprocess.run(['/usr/bin/docker', 'inspect', 'wildrift-monitor'],
+                                capture_output=True, text=True, timeout=2, check=False)
+        if result.returncode:
+            return
+        labels = json.loads(result.stdout)[0].get('Config', {}).get('Labels') or {}
+        if (labels.get('com.docker.compose.project') == 'wildrift-worker'
+                and labels.get('com.docker.compose.service') == 'observer'):
+            subprocess.run(['/usr/bin/docker', 'stop', '-t', '1', 'wildrift-monitor'],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3, check=False)
+    except (OSError, ValueError, KeyError, IndexError, subprocess.SubprocessError):
+        pass
+
+
 def observe(path=STATE):
     previous = read_snapshot(path)
     raw_path = path.with_name('database-status.json')
     started_ns = time.time_ns()
     successful = False
+    launched = False
     try:
         # The final snapshot preserves history. A raw file must be produced by
         # this invocation, even when filesystem timestamp resolution is coarse.
-        raw_path.unlink(missing_ok=True)
-        result = subprocess.run(['/usr/bin/docker', 'compose', 'run', '--rm', '--name', 'wildrift-monitor', 'observer'],
-                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=18, check=False)
-        successful = result.returncode == 0
-    except (OSError, subprocess.SubprocessError):
+        if prepare_monitor():
+            raw_path.unlink(missing_ok=True)
+            launched = True
+            result = subprocess.run(['/usr/bin/docker', 'compose', 'run', '--rm', '-T', '--name', 'wildrift-monitor', 'observer'],
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=18, check=False)
+            successful = result.returncode == 0
+    except (OSError, ValueError, KeyError, IndexError, subprocess.SubprocessError):
         pass
     if successful:
         data = read_snapshot(raw_path)
@@ -75,11 +111,8 @@ def observe(path=STATE):
             successful = False
     if not successful:
         # Stop a timed-out container before publishing an explicit stale snapshot.
-        try:
-            subprocess.run(['/usr/bin/docker', 'stop', '-t', '1', 'wildrift-monitor'],
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2, check=False)
-        except (OSError, subprocess.SubprocessError):
-            pass
+        if launched:
+            stop_owned_monitor()
         data = {**previous, 'ok': False, 'error': 'Не удалось обновить данные сборщика. Показана последняя полученная история.'}
     data['processes'], data['processesObservedAt'] = process_snapshot()
     publish(path, data)
@@ -87,4 +120,7 @@ def observe(path=STATE):
 
 
 if __name__ == '__main__':
-    raise SystemExit(0 if observe() else 1)
+    if sys.argv[1:] == ['--stop-owned']:
+        stop_owned_monitor()
+    else:
+        raise SystemExit(0 if observe() else 1)

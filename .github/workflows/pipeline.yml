@@ -52,6 +52,17 @@ jobs:
       contents: read
       security-events: write
 
+  worker-image-check:
+    name: Verify worker image without publishing
+    if: github.event_name == 'workflow_dispatch' && !inputs.deploy
+    needs: [ci, security]
+    uses: ./.github/workflows/worker-release.yml
+    with:
+      publish: false
+    permissions:
+      contents: write
+      actions: read
+
   deploy:
     name: Deploy API To Timeweb
     needs:

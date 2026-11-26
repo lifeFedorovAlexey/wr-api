@@ -1,0 +1,11 @@
+[Unit]
+Description=Check for tested Wild Rift worker releases every five minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=5min
+RandomizedDelaySec=20s
+Unit=wildrift-worker-update.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,69 @@
+name: Worker Release
+
+on:
+  workflow_call:
+    inputs:
+      publish:
+        type: boolean
+        default: false
+  workflow_run:
+    workflows: [API Pipeline]
+    types: [completed]
+    branches: [main]
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish a production image (main only, both pipelines must pass)
+        type: boolean
+        default: false
+
+concurrency:
+  group: worker-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  release:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Resolve checked source revisions
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISH: ${{ github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.publish) }}
+        run: python3 ops/wildrift-worker/release.py resolve
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        if: steps.source.outputs.build == 'true'
+        with:
+          repository: lifeFedorovAlexey/wildriftchampionsData
+          ref: ${{ steps.source.outputs.data }}
+          path: app
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        if: steps.source.outputs.build == 'true'
+        with:
+          ref: ${{ steps.source.outputs.api }}
+          path: app/wr-api
+          persist-credentials: false
+      - name: Build, audit and package the worker
+        if: steps.source.outputs.build == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISH: ${{ github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.publish) }}
+        run: python3 ops/wildrift-worker/release.py build
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: steps.source.outputs.build == 'true'
+        with:
+          name: worker-release-manifest
+          path: worker-release.json
+          retention-days: 7

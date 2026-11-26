@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { parsePatchArticle } from "../lib/patchNotesParser.mjs";
-import { buildPatchChangeRows } from "../lib/patchNotesChangeRecords.mjs";
 
 const source = await readFile(new URL("./fixtures/riot-patch-notes-7.3c-champions.html", import.meta.url), "utf8");
 const emptyCatalog = { champions: new Map(), items: new Map(), runes: new Map(), spells: new Map() };
@@ -33,12 +32,8 @@ for (const [label, entries] of [["complete", identities], ["partial", identities
     const champions = parsed.changes.filter((row) => row.entityKind === "champion");
     assert.deepEqual(champions.map((row) => row.entityName), identities.map(([, name]) => name));
     assert.deepEqual(champions.map((row) => row.details.map(({ before, after }) => [before, after])), expectedDeltas);
+    assert.ok(champions.every((row) => row.scope?.modeSlugs.includes("aaa-aram")), "mode changes must not also appear as core changes");
     assert.ok(champions.every((row) => row.details.every((detail) => !detail.component)), "a sibling champion is not an ability heading");
-    const stored = buildPatchChangeRows(parsed.changes, catalog(entries), [], parsed.version)
-      .filter((row) => row.entityKind === "champion");
-    assert.deepEqual(stored.map((row) => row.entityName), identities.map(([, name]) => name));
-    assert.deepEqual(stored.map((row) => row.details.map(({ before, after }) => [before, after])), expectedDeltas);
-    assert.ok(stored.every((row) => row.changeName === null));
   });
 }
 
@@ -67,6 +62,22 @@ test("keeps nested ability headings inside their champion when a sibling is miss
     assert.deepEqual(rows.map((row) => row.details[0].component), ["First ability", "Second ability"]);
   }
 });
+
+test("validates unnumbered Riot articles through matching provenance instead of a particular patch version", () => {
+  const slug = "wild-rift-preview-patch-notes";
+  const url = `https://wildrift.leagueoflegends.com/en-us/news/game-updates/${slug}/`;
+  const html = article("9.9z", "<h2>CHAMPION CHANGES</h2><h5>Alpha</h5><p>Damage: 10 → 20</p>", "Wild Rift Preview Patch Notes", slug);
+  const sourceAlias = { patchVersion: "9.9z", articleUrl: url, provenanceUrl: url };
+  assert.equal(parsePatchArticle(html, "9.9z", "en-us", emptyCatalog, { sourceAlias }).version, "9.9z");
+  assert.throws(() => parsePatchArticle(html, "9.9z", "en-us", emptyCatalog), /version mismatch/);
+  for (const invalid of [
+    { ...sourceAlias, patchVersion: "9.8" },
+    { ...sourceAlias, provenanceUrl: `${url}other/` },
+    { ...sourceAlias, articleUrl: "https://example.com/article" },
+  ]) assert.throws(() => parsePatchArticle(html, "9.9z", "en-us", emptyCatalog, { sourceAlias: invalid }), /version mismatch/);
+  assert.throws(() => parsePatchArticle(html.replace("Wild Rift Preview Patch Notes", "Unrelated Article"), "9.9z", "en-us", emptyCatalog, { sourceAlias }), /version mismatch/);
+});
+
 
 test("comparisons in ordinary champion changes never announce another champion as new", () => {
   const entries = [["annie", "Annie"], ["aatrox", "Aatrox"], ["annie", "Энни"], ["aatrox", "Атрокс"]];

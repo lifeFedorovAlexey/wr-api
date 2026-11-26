@@ -18,6 +18,29 @@ test("resolveChampionLocalizedName uses override for broken K'Sante ru localizat
   );
 });
 
+test("resolveChampionLocalizedName applies official Russian names missing from the Hub catalog", () => {
+  const officialNames = new Map([
+    ["chogath", "Чо'Гат"],
+    ["hwei", "Хвэй"],
+    ["skarner", "Скарнер"],
+    ["taliyah", "Талия"],
+    ["yunara", "Юнара"],
+  ]);
+
+  for (const [slug, expected] of officialNames) {
+    assert.equal(
+      resolveChampionLocalizedName({
+        slug,
+        lang: "ru_ru",
+        nameLocalizations: { en_us: slug },
+        fallbackName: slug,
+      }),
+      expected,
+      slug,
+    );
+  }
+});
+
 test("resolveChampionLocalizedName falls back to english when requested localization is cjk", () => {
   assert.equal(
     resolveChampionLocalizedName({

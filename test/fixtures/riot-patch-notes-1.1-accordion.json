@@ -1,0 +1,96 @@
+{
+  "en-us": {
+    "sourceUrl": "https://wildrift.leagueoflegends.com/en-us/news/game-updates/wild-rift-patch-notes-1-1/",
+    "groups": [
+      {
+        "label": "Physical",
+        "content": {
+          "type": "html",
+          "body": "<ul><li>Caulfield's Warhammer: 10% CDR → 10 Ability Haste</li><li>Stinger: 10% CDR → 10 Ability Haste</li><li>Black Cleaver: 20% CDR → 25 Ability Haste</li><li>Trinity Force: 20% CDR → 25 Ability Haste</li><li>Umbral Glaive: 10% CDR → 10 Ability Haste</li><li>Youmuu's Ghostblade: 10% CDR → 10 Ability Haste</li><li>Duskblade of Draktharr: 10% CDR → 10 Ability Haste</li><li>Manamune: 10% CDR → 10 Ability Haste</li><li>Muramana: 10% CDR → 10 Ability Haste</li><li>Maw of Malmortius: 10% CDR → 10 Ability Haste</li><li>Death's Dance: 10% CDR → 15 Ability Haste</li></ul>"
+        }
+      },
+      {
+        "label": "Magic",
+        "content": {
+          "type": "html",
+          "body": "<ul><li>Fiendish Codex: 10% CDR → 10 Ability Haste</li><li>Lost Chapter: 10% CDR → 10 Ability Haste<ul><li>Passive - Haste: Renamed to Insight</li><li>Passive - Insight: Grants 10 Ability Haste</li></ul></li><li>Sheen: 10% CDR → 10 Ability Haste</li><li>Lich Bane: 10% CDR → 10 Ability Haste</li><li>Nashor's Tooth: 20% CDR → 25 Ability Haste</li><li>Luden's Echo: 10% CDR → 10 Ability Haste</li><li>Harmonic Echo: 10% CDR → 10 Ability Haste</li><li>Awakened Soulstealer: 20% CDR → 25% Ability Haste<ul><li>Ultimate CDR per stack: 3% → 3 Ultimate Haste per stack</li><li>Ultimate Haste affects your ultimate ability's cooldown as Ability Haste would</li></ul></li><li>Athene's Unholy Grail: 10% CDR → 10 Ability Haste</li><li>Ardent Censer: 10% CDR → 10 Ability Haste</li><li>Archangel's Staff: 20% CDR → 25 Ability Haste</li><li>Seraph's Embrace: 20% CDR → 25 Ability Haste</li></ul>"
+        }
+      },
+      {
+        "label": "Defense",
+        "content": {
+          "type": "html",
+          "body": "<ul><li>Kindlegem: 10% CDR → 10 Ability Haste</li><li>Glacial Shroud: 10% CDR → 10 Ability Haste</li><li>Iceborn Gauntlet: 20% CDR → 25 Ability Haste</li><li>Spirit Visage: 10% CDR → 10 Ability Haste</li><li>Abyssal Mask: 10% CDR → 10 Ability Haste</li><li>Zeke's Convergence: 10% CDR → 10 Ability Haste</li><li>Warmog's Armor: 10% CDR → 10 Ability Haste</li><li>Guardian's Vow: 10% CDR → 10 Ability Haste</li><li>Winter's Approach: 10% CDR → 10 Ability Haste</li><li>Fimbulwinter: 10% CDR → 10 Ability Haste</li></ul>"
+        }
+      },
+      {
+        "label": "Boots",
+        "content": {
+          "type": "html",
+          "body": "Ionian Boots of Lucidity: 10% CDR → 15 Ability Haste<ul><li>Summoner Spell cooldown reduction: 10% → 15%</li></ul>"
+        }
+      },
+      {
+        "label": "Evolved Blue Buff",
+        "content": {
+          "type": "html",
+          "body": "<ul><li>20% CDR → 20 Ability Haste</li></ul>"
+        }
+      },
+      {
+        "label": "Runes",
+        "content": {
+          "type": "html",
+          "body": "Hunter - Genius<ul><li>2.5% CDR + 1.5% CDR per Unique Takedown → 2.5 Ability Haste + 2.5 Ability Haste per Unique Take Down</li><li>Max Ability Haste: 15</li></ul>"
+        }
+      }
+    ]
+  },
+  "ru-ru": {
+    "sourceUrl": "https://wildrift.leagueoflegends.com/ru-ru/news/game-updates/wild-rift-patch-notes-1-1/",
+    "groups": [
+      {
+        "label": "Физический урон",
+        "content": {
+          "type": "html",
+          "body": "<ul>\n<li>Боевой молот Колфилда: 10% сокращения перезарядки → 10 ускорения умений.</li>\n<li>Жало: 10% сокращения перезарядки → 10 ускорения умений.</li>\n<li>Черная секира: 20% сокращения перезарядки → 25 ускорения умений.</li>\n<li>Тройственный Союз: 20% сокращения перезарядки → 25 ускорения умений.</li>\n<li>Теневая глефа: 10% сокращения перезарядки → 10 ускорения умений.</li>\n<li>Призрачный клинок Йомуу: 10% сокращения перезарядки → 10 ускорения умений.</li>\n<li>Сумеречный клинок Драктарра: 10% сокращения перезарядки → 10 ускорения умений.</li>\n<li>Манамунэ: 10% сокращения перезарядки → 10 ускорения умений.</li>\n<li>Мурамана: 10% сокращения перезарядки → 10 ускорения умений.</li>\n<li>Зев Малмортиуса: 10% сокращения перезарядки → 10 ускорения умений.</li>\n<li>Танец смерти: 10% сокращения перезарядки → 15 ускорения умений.</li>\n</ul>"
+        }
+      },
+      {
+        "label": "Магический урон",
+        "content": {
+          "type": "html",
+          "body": "<ul>\n<li>Бесовской манускрипт: 10% сокращения перезарядки → 10 ускорения умений.</li>\n<li>Потерянная глава: 10% сокращения перезарядки → 10 ускорения умений.\n<ul>\n<li>Пассивный эффект – Спешка: переименован из Haste в Insight в английской версии.</li>\n<li>Пассивный эффект – Спешка: 10 ускорения умений.</li>\n</ul>\n</li>\n<li>Сияние: 10% сокращения перезарядки → 10 ускорения умений.</li>\n<li>Гроза Личей: 10% сокращения перезарядки → 10 ускорения умений.</li>\n<li>Зуб Нашора: 20% сокращения перезарядки → 25 ускорения умений.</li>\n<li>Эхо Людена: 10% сокращения перезарядки → 10 ускорения умений.</li>\n<li>Мелодичное эхо: 10% сокращения перезарядки → 10 ускорения умений.</li>\n<li>Пробужденный пожиратель душ: 20% сокращения перезарядки → 25 ускорения умений.\n<ul>\n<li>3% сокращения перезарядки абсолютного умения за заряд → 3% ускорения абсолютного умения за заряд.</li>\n<li>Ускорение абсолютного умения действует на него так же, как и сокращение перезарядки.</li>\n</ul>\n</li>\n<li>Нечестивый грааль Афина: 10% сокращения перезарядки → 10 ускорения умений.</li>\n<li>Пылающая кадильница: 10% сокращения перезарядки → 10 ускорения умений.</li>\n<li>Посох архангела: 20% сокращения перезарядки → 25 ускорения умений.</li>\n<li>Объятья серафима: 20% сокращения перезарядки → 25 ускорения умений.</li>\n</ul>"
+        }
+      },
+      {
+        "label": "Защита",
+        "content": {
+          "type": "html",
+          "body": "<ul>\n<li>Воспламеняющий камень: 10% сокращения перезарядки → 10 ускорения умений.</li>\n<li>Ледяная пелена: 10% сокращения перезарядки → 10 ускорения умений.</li>\n<li>Хладорожденная рукавица: 20% сокращения перезарядки → 25 ускорения умений.</li>\n<li>Облачение духов: 10% сокращения перезарядки → 10 ускорения умений.</li>\n<li>Маска пустоты: 10% сокращения перезарядки → 10 ускорения умений.</li>\n<li>Конвергенция Зика: 10% сокращения перезарядки → 10 ускорения умений.</li>\n<li>Доспех Вармога: 10% сокращения перезарядки → 10 ускорения умений.</li>\n<li>Клятва рыцаря: 10% сокращения перезарядки → 10 ускорения умений.</li>\n<li>Вестник зимы: 10% сокращения перезарядки → 10 ускорения умений.</li>\n<li>Великанская зима: 10% сокращения перезарядки → 10 ускорения умений.</li>\n</ul>"
+        }
+      },
+      {
+        "label": "Ботинки",
+        "content": {
+          "type": "html",
+          "body": "<ul>\n<li>Ионийские сапоги просветления: 10% сокращения перезарядки → 15 ускорения умений.\n<ul>\n<li>Сокращение перезарядки заклинаний призывателя: 10% → 15%</li>\n</ul>\n</li>\n</ul>"
+        }
+      },
+      {
+        "label": "Усиленный синий страж",
+        "content": {
+          "type": "html",
+          "body": "<ul><li>20% сокращения перезарядки → 20 ускорения умений.</li></ul>"
+        }
+      },
+      {
+        "label": "Руны",
+        "content": {
+          "type": "html",
+          "body": "<ul>\n<li>Охотник: гений\n<ul>\n<li>2,5% сокращения перезарядки + 1,5% сокращения перезарядки за каждое уникальное участие в убийстве → 2,5 ускорения умений + 2,5 ускорения умений за каждое уникальное участие в убийстве.</li>\n<li>Максимальное ускорение умений: 15.</li>\n</ul>\n</li>\n</ul>"
+        }
+      }
+    ]
+  }
+}
