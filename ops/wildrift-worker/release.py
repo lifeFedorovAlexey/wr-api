@@ -15,6 +15,7 @@ OWNER = 'lifeFedorovAlexey'
 API = OWNER + '/wr-api'
 DATA = OWNER + '/wildriftchampionsData'
 BASE = 'node@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d'
+CLASSIC_DOCKER = 'docker:26.1.4-dind@sha256:dd43b430341a40d88f4f30edb03865daa9d6fa39c9b1da70f27e2a89cec3eae1'
 STATE = Path(os.environ.get('RUNNER_TEMP', '.')) / 'worker-source.json'
 
 
@@ -86,7 +87,7 @@ def verify_classic_load(archive, image, image_id):
     """Exercise the actual host's Docker generation before publishing."""
     name = 'worker-docker26-compatibility'
     subprocess.run(['docker', 'run', '--rm', '--privileged', '--detach', '--name', name,
-                    '--network', 'none', '-e', 'DOCKER_TLS_CERTDIR=', 'docker:26.1.5-dind',
+                    '--network', 'none', '-e', 'DOCKER_TLS_CERTDIR=', CLASSIC_DOCKER,
                     '--storage-driver=vfs', '--iptables=false', '--bridge=none'], check=True)
     try:
         for _ in range(30):

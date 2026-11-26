@@ -16,8 +16,9 @@ self-hosted Actions runner or passwordless general sudo are needed.
 The manifest records the saved image's configuration digest, which Docker 26
 uses as its image ID. Containerd-backed builders can report an OCI index digest
 instead; that builder-specific ID is not used. CI loads the actual compressed
-archive into a temporary isolated Docker 26.1.5 daemon and runs native module
-imports there before publishing. This matches the Docker version on kolvrt.
+archive into a temporary isolated Docker 26.1.4 daemon and runs native module
+imports there before publishing. This uses the classic image store from the
+26.1 family deployed on kolvrt (Debian's 26.1.5+dfsg1 build).
 
 ## One-time installation
 
