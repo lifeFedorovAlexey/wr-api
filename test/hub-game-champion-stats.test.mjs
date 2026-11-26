@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { load } from "cheerio";
 import { parseHubGameChampionStats } from "../lib/hubGameChampionStats.mjs";
 
 const sourceUrl = "https://hub-game.com/wildrift/en/champions/stats";
@@ -59,7 +60,9 @@ test("accepts multi-letter suffixes in Hub champion source-version metadata", ()
 });
 
 test("requires the matching Hub growth dataset and level curve", () => {
-  assert.throws(() => parseHubGameChampionStats(fixture.replace(/<script>[\s\S]*?<\/script>/, ""), sourceUrl), /invalid 15-level growth curve/);
+  const withoutGrowth = load(fixture);
+  withoutGrowth("script").remove();
+  assert.throws(() => parseHubGameChampionStats(withoutGrowth.html(), sourceUrl), /invalid 15-level growth curve/);
   assert.throws(() => parseHubGameChampionStats(fixture.replace("0.74,0.78", "0.74,0.78,0.82"), sourceUrl), /invalid 15-level growth curve/);
   assert.throws(() => parseHubGameChampionStats(fixture.replace("\\\"hpG\\\":136", "\\\"hpG\\\":-136"), sourceUrl), /invalid health growth/);
 });

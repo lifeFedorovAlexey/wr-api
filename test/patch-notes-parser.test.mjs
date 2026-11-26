@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { load } from "cheerio";
 
 import { assertPatchArticleReadyForImport, extractPatchVersion, parsePatchArticle, parsePatchIndex } from "../lib/patchNotesParser.mjs";
 import { buildPatchChangeRows } from "../lib/patchNotesChangeRecords.mjs";
@@ -453,7 +454,7 @@ test("keeps item groups, system headings, and rune labels out of entity identiti
 });
 
 test("parses nested removal-list items and does not duplicate item cards under a mode heading", () => {
-  const sourcePage = JSON.parse(riotItemScopeCoverage.match(/<script[^>]*>([\s\S]*?)<\/script>/u)[1]).props.pageProps.page;
+  const sourcePage = JSON.parse(load(riotItemScopeCoverage)("script").first().text()).props.pageProps.page;
   const items = new Map([
     ["example blade", { slug: "example-blade", name: "Example Blade" }],
     ["retired blade", { slug: "retired-blade", name: "Retired Blade" }],
