@@ -3753,6 +3753,33 @@ test("parses Russian 6.2j AAA ARAM augmentations with mixed-script mode headings
   assert.equal(changes.some((change) => change.entityName === "Серия J"), false);
 });
 
+test("keeps the Russian 7.3g AAA ARAM block out of core rune and item changes", () => {
+  const changes = parseChanges("7.3g", "ru-ru", `
+    <h2>РУНЫ&nbsp;</h2>
+    <h4>Полная сосредоточенность</h4>
+    <ul><li>Порог здоровья для срабатывания: 65% → 70%</li></ul>
+    <h3>ААА ARAM</h3>
+    <h4>Обновление особых сюрпризов</h4>
+    <ul><li>Таинственный особый сюрприз будет доступен ограниченное время.</li></ul>
+    <h4>Изменения предметов</h4>
+    <h5>Преимущество Дюрана</h5>
+    <ul><li>Сила атаки: 25 → 40</li></ul>
+  `, emptyCatalog, "");
+
+  const runes = changes.filter(({ entityKind }) => entityKind === "rune");
+  assert.deepEqual(runes.map(({ entityName }) => entityName), ["Полная сосредоточенность"]);
+  assert.notEqual(runes[0].scope?.type, "game-mode");
+
+  for (const name of ["Обновление особых сюрпризов", "Преимущество Дюрана"]) {
+    const rows = changes.filter(({ entityName }) => entityName === name);
+    assert.equal(rows.length, 1, name);
+    assert.deepEqual(rows[0].scope?.modeSlugs, ["aaa-aram"], name);
+  }
+  const durand = changes.find(({ entityName }) => entityName === "Преимущество Дюрана");
+  assert.equal(durand.entityKind, "item");
+  assert.ok(durand.details.some(({ before, after }) => before === "25" && after === "40"));
+});
+
 test("recognizes a game mode printed as a br-separated paragraph prefix", () => {
   const changes = parseChanges("9.9", "ru-ru", `
     <h2>ИЗМЕНЕНИЯ ИГРОВЫХ РЕЖИМОВ</h2>
