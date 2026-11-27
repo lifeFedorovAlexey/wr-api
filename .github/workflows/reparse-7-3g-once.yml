@@ -1,0 +1,76 @@
+name: Reparse 7.3g once
+on:
+  push:
+    branches: [ops/reparse-7-3g-once]
+    paths: [.github/workflows/reparse-7-3g-once.yml]
+permissions:
+  contents: read
+concurrency:
+  group: reparse-7-3g-once
+  cancel-in-progress: false
+jobs:
+  reparse:
+    if: github.event.before == 'ba0604479f0187e395d1eba73cad1fcc37f5612b' && github.run_attempt == '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_POOL_MAX: 3
+      PUPPETEER_SKIP_DOWNLOAD: 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22.13.0
+      - run: npm ci --omit=dev
+      - name: Connect to production database through the existing VPS action
+        uses: ./.github/actions/production-db
+        with:
+          ssh-host: ${{ secrets.TIMEWEB_HOST }}
+          ssh-user: ${{ secrets.TIMEWEB_USER }}
+          ssh-password: ${{ secrets.TIMEWEB_PASSWORD }}
+      - name: Validate and replace archived 7.3g data for both locales only
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { spawn } from 'node:child_process';
+          import { setTimeout as wait } from 'node:timers/promises';
+          import { acquireCoordinator, connectScrapeStore, releaseCoordinator } from './lib/scrapeStore.mjs';
+
+          const controller = new AbortController();
+          const sql = connectScrapeStore(process.env.DATABASE_URL, { onclose: () => controller.abort() });
+          let locked = false;
+          const flags = ['scripts/sync-patch-notes.mjs', '--offline', '--reparse-archived', '--patch-version=7.3g'];
+          function run(extra) {
+            return new Promise((resolve, reject) => {
+              const proc = spawn(process.execPath, [...flags, ...extra], { signal: controller.signal, stdio: ['ignore', 'pipe', 'inherit'] });
+              let output = '';
+              proc.stdout.setEncoding('utf8');
+              proc.stdout.on('data', chunk => { process.stdout.write(chunk); output += chunk; });
+              proc.once('error', reject);
+              proc.once('close', code => code === 0 ? resolve(output) : reject(new Error('7.3g import exited with ' + code)));
+            });
+          }
+          try {
+            for (let retry = 0; retry < 24 && !locked; retry++) {
+              if (retry) await wait(5000, undefined, { signal: controller.signal });
+              locked = (await acquireCoordinator(sql)).acquired;
+            }
+            assert.ok(locked, 'Another scraper holds the production lock');
+            const dry = await run(['--dry-run']);
+            const reports = dry.split('\n').filter(line => line.startsWith('[patch-notes:dry-run] {'))
+              .map(line => JSON.parse(line.slice('[patch-notes:dry-run] '.length)));
+            assert.deepEqual(reports.map(report => [report.patchVersion, report.locale, report.sourceAction]),
+              [['7.3g', 'en-us', 'parse-archive'], ['7.3g', 'ru-ru', 'parse-archive']]);
+            const written = await run([]);
+            for (const locale of ['en-us', 'ru-ru']) {
+              assert.ok(written.includes('[patch-notes] ' + locale + ' 7.3g: archived HTML '),
+                'No import confirmation for ' + locale);
+            }
+          } finally {
+            if (locked && !controller.signal.aborted) await releaseCoordinator(sql);
+            await sql.end({ timeout: 5 });
+          }
+          NODE
